@@ -1,0 +1,59 @@
+# Render.com Blueprint for RunClub Manager.
+#
+# How to use:
+#   1. Push this file to the main branch on GitHub.
+#   2. In Render dashboard → "New +" → "Blueprint" → select this repo.
+#   3. Render creates the web service AND the PostgreSQL database, and links
+#      DATABASE_URL automatically via fromDatabase.
+#   4. Set the secret env vars (JWT_SECRET, SEED_TOKEN) once after the first
+#      deploy, then redeploy.
+#
+# After the first deploy:
+#   - Allow seeding once:  set ALLOW_SEED=true and SEED_TOKEN=<random 32+ chars>
+#   - Curl: POST https://<your-app>.onrender.com/api/seed?token=<SEED_TOKEN>
+#   - Then immediately set ALLOW_SEED=false (or remove SEED_TOKEN) and redeploy.
+
+databases:
+  - name: runclub-db
+    plan: basic-256mb        # $7/month, 256MB RAM, 1GB storage
+    region: singapore        # closest to KR; change to oregon/frankfurt as needed
+    postgresMajorVersion: '16'
+
+services:
+  - type: web
+    name: runclub-manager
+    runtime: node
+    plan: starter            # $7/month, always-on, no sleep
+    region: singapore
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: runclub-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true     # Render auto-generates a 32+ char secret
+      # ── Seed gating (production-only) ──────────────────────────────
+      # ALLOW_SEED + SEED_TOKEN must both be set to call /api/seed in prod.
+      # Flip ALLOW_SEED back to 'false' immediately after first seed.
+      - key: ALLOW_SEED
+        value: 'false'
+      - key: SEED_TOKEN
+        sync: false             # set manually before first seed
+      # ── First admin (used when SEED_MODE=production) ───────────────
+      - key: SEED_MODE
+        value: production
+      - key: SEED_ADMIN_PHONE
+        sync: false             # e.g. 010-1234-5678
+      - key: SEED_ADMIN_PASSWORD
+        sync: false             # ≥ 8 chars, will be hashed at seed time
+      - key: SEED_ADMIN_NAME
+        sync: false             # e.g. "장호준 코치"
+      - key: SEED_ADMIN_EMAIL
+        sync: false             # optional

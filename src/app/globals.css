@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+@theme inline {
+  /* ── Neutral Palette ── */
+  --color-bg: #ffffff;
+  --color-bg-subtle: #f7f8fa;
+  --color-bg-hover: #f1f3f5;
+
+  --color-border: #e1e4e8;
+  --color-border-strong: #c9ced4;
+  --color-border-subtle: #eef0f2;
+
+  --color-text: #1a1d21;
+  --color-text-secondary: #51585f;
+  --color-text-muted: #8a9098;
+  --color-text-disabled: #b5bac0;
+
+  /* ── Primary (Accent) ── */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-active: #1e40af;
+  --color-primary-bg: #eff6ff;
+  --color-primary-border: #bfdbfe;
+
+  /* ── Semantic ── */
+  --color-success: #0f9d58;
+  --color-success-bg: #e6f4ea;
+  --color-success-border: #b7dfc3;
+
+  --color-warning: #d97706;
+  --color-warning-bg: #fef3c7;
+  --color-warning-border: #fcd89a;
+
+  --color-danger: #dc2626;
+  --color-danger-bg: #fef2f2;
+  --color-danger-border: #fecaca;
+
+  /* ── Session Types ── */
+  --color-ebw: #ea580c;
+  --color-ebw-bg: #fff7ed;
+  --color-slowrun: #2563eb;
+  --color-slowrun-bg: #eff6ff;
+  --color-marathon: #059669;
+  --color-marathon-bg: #ecfdf5;
+
+  --font-sans: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-bg-subtle);
+  letter-spacing: -0.01em;
+  line-height: 1.5;
+  font-size: 14px;
+  font-weight: 400;
+}
+
+::selection {
+  background: #bfdbfe;
+  color: #0c2a5e;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d4d7dc; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #b8bcc2; border: 2px solid transparent; background-clip: padding-box; }
+
+/* Hide number spinner */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+
+/* ── Utility base styles for document-like UI ── */
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+/* Table styles */
+table { border-collapse: collapse; }
+
+/* ── Form input shared style ── */
+.form-input,
+.form-input:where(select),
+.form-input:where(textarea) {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  background: #fff;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--color-text);
+  border-radius: 4px;
+  transition: border-color 0.12s, box-shadow 0.12s;
+  font-family: inherit;
+}
+.form-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+.form-input::placeholder { color: var(--color-text-disabled); }
+.form-input:disabled { background: var(--color-bg-hover); color: var(--color-text-muted); cursor: not-allowed; }
+
+/* ── Animations ── */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-down {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: fade-in 0.15s ease-out; }
+.animate-slide-up { animation: slide-up 0.18s ease-out; }
+.animate-slide-down { animation: slide-down 0.18s ease-out; }
+
+/* Scrollbar hide utility (for horizontal filter chips etc.) */
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hide::-webkit-scrollbar { display: none; }

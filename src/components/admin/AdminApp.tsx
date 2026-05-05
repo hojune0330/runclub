@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { LayoutDashboard, Calendar, Users, Ticket, Megaphone, BarChart3, QrCode } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { LayoutDashboard, Calendar, Users, Ticket, Megaphone, BarChart3, QrCode, LogOut, ChevronDown, HelpCircle, Menu, X } from 'lucide-react';
+import { useAuth } from '@/store/AuthContext';
 import Dashboard from './Dashboard';
 import SessionManagement from './SessionManagement';
 import MemberManagement from './MemberManagement';
@@ -9,22 +10,80 @@ import PassManagement from './PassManagement';
 import NoticeManagement from './NoticeManagement';
 import Statistics from './Statistics';
 import AdminQR from './AdminQR';
+import Help from './Help';
 import { cn } from '@/lib/utils';
 
-type AdminTab = 'dashboard' | 'sessions' | 'members' | 'passes' | 'notices' | 'stats' | 'qr';
+type AdminTab = 'dashboard' | 'sessions' | 'members' | 'passes' | 'notices' | 'stats' | 'qr' | 'help';
 
-const navItems: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
-  { id: 'sessions', label: '세션 관리', icon: Calendar },
-  { id: 'members', label: '회원 관리', icon: Users },
-  { id: 'passes', label: '수강권', icon: Ticket },
-  { id: 'notices', label: '공지', icon: Megaphone },
+const navGroups: { label: string; items: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] }[] = [
+  {
+    label: '현황',
+    items: [
+      { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
+      { id: 'stats', label: '통계', icon: BarChart3 },
+    ],
+  },
+  {
+    label: '운영',
+    items: [
+      { id: 'sessions', label: '세션 관리', icon: Calendar },
+      { id: 'qr', label: '출석 QR', icon: QrCode },
+      { id: 'notices', label: '공지사항', icon: Megaphone },
+    ],
+  },
+  {
+    label: '회원',
+    items: [
+      { id: 'members', label: '회원 관리', icon: Users },
+      { id: 'passes', label: '수강권 관리', icon: Ticket },
+    ],
+  },
+  {
+    label: '지원',
+    items: [
+      { id: 'help', label: '도움말', icon: HelpCircle },
+    ],
+  },
+];
+
+// Bottom navigation (mobile) — top 5 admin tabs
+const bottomNav: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
+  { id: 'dashboard', label: '홈', icon: LayoutDashboard },
+  { id: 'sessions', label: '세션', icon: Calendar },
+  { id: 'qr', label: 'QR', icon: QrCode },
+  { id: 'members', label: '회원', icon: Users },
   { id: 'stats', label: '통계', icon: BarChart3 },
-  { id: 'qr', label: 'QR 생성', icon: QrCode },
 ];
 
 export default function AdminApp() {
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Allow Dashboard widgets (and other children) to programmatically switch tabs
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as AdminTab;
+      if (detail) {
+        setActiveTab(detail);
+        setDrawerOpen(false);
+      }
+    };
+    window.addEventListener('admin:navigate', handler);
+    return () => window.removeEventListener('admin:navigate', handler);
+  }, []);
+
+  useEffect(() => {
+    if (drawerOpen) document.body.style.overflow = 'hidden';
+    else document.body.style.overflow = '';
+    return () => { document.body.style.overflow = ''; };
+  }, [drawerOpen]);
+
+  const selectTab = (t: AdminTab) => {
+    setActiveTab(t);
+    setDrawerOpen(false);
+  };
 
   const renderContent = () => {
     switch (activeTab) {
@@ -35,64 +94,224 @@ export default function AdminApp() {
       case 'notices': return <NoticeManagement />;
       case 'stats': return <Statistics />;
       case 'qr': return <AdminQR />;
+      case 'help': return <Help />;
     }
   };
 
+  const handleLogout = async () => {
+    if (confirm('로그아웃 하시겠습니까?')) {
+      await logout();
+    }
+  };
+
+  const currentLabel = navGroups.flatMap(g => g.items).find(i => i.id === activeTab)?.label ?? '';
+
   return (
-    <div className="min-h-screen bg-gray-50/80">
-      {/* Top Header */}
-      <header className="bg-white border-b border-gray-200/80 sticky top-11 z-40">
-        <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gray-900 flex items-center justify-center">
-                <span className="text-[14px] font-extrabold text-white">RC</span>
-              </div>
-              <div>
-                <h1 className="text-[15px] sm:text-[16px] font-extrabold text-gray-900 tracking-tight leading-none">런클럽 관리자</h1>
-                <p className="text-[10px] sm:text-[11px] text-gray-500 font-medium">Run Club Manager</p>
-              </div>
+    <div className="min-h-screen bg-[var(--color-bg-subtle)] md:flex">
+      {/* ─── Desktop Sidebar ─── */}
+      <aside className="hidden md:flex w-[236px] shrink-0 bg-white border-r border-[var(--color-border)] flex-col sticky top-0 h-screen">
+        {/* Brand */}
+        <div className="h-[56px] px-5 flex items-center border-b border-[var(--color-border)]">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded bg-[var(--color-primary)] flex items-center justify-center">
+              <span className="text-white text-[12px] font-bold">R</span>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="text-right mr-1 sm:mr-2 hidden sm:block">
-                <p className="text-[13px] font-bold text-gray-700">장호준 코치</p>
-                <p className="text-[11px] text-gray-400">관리자</p>
+            <span className="text-[15px] font-semibold text-[var(--color-text)]">런클럽 매니저</span>
+          </div>
+        </div>
+
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto py-3 px-2">
+          {navGroups.map(group => (
+            <div key={group.label} className="mb-4">
+              <p className="text-[11px] text-[var(--color-text-muted)] font-semibold uppercase tracking-wider px-3 mb-1.5">
+                {group.label}
+              </p>
+              {group.items.map(item => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    className={cn(
+                      "w-full flex items-center gap-2.5 px-3 py-2 rounded text-[13.5px] transition-colors",
+                      isActive
+                        ? "bg-[var(--color-primary-bg)] text-[var(--color-primary)] font-medium"
+                        : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text)]"
+                    )}
+                  >
+                    <Icon size={15} strokeWidth={isActive ? 2 : 1.6} />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
+
+        {/* User */}
+        <div className="border-t border-[var(--color-border)] p-2 relative">
+          <button
+            onClick={() => setUserMenuOpen(v => !v)}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded hover:bg-[var(--color-bg-hover)] transition-colors"
+          >
+            <div className="w-7 h-7 rounded-full bg-[var(--color-primary)] flex items-center justify-center shrink-0">
+              <span className="text-white text-[12px] font-medium">{user?.name.charAt(0)}</span>
+            </div>
+            <div className="flex-1 min-w-0 text-left">
+              <p className="text-[13px] font-medium text-[var(--color-text)] truncate">{user?.name}</p>
+              <p className="text-[11px] text-[var(--color-text-muted)]">관리자</p>
+            </div>
+            <ChevronDown size={14} className={cn("text-[var(--color-text-muted)] transition-transform", userMenuOpen && "rotate-180")} />
+          </button>
+          {userMenuOpen && (
+            <div className="absolute bottom-full left-2 right-2 mb-1 bg-white border border-[var(--color-border)] rounded shadow-md py-1 animate-slide-up">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-danger)] transition-colors"
+              >
+                <LogOut size={13} />
+                로그아웃
+              </button>
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {/* ─── Main ─── */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {/* Top bar */}
+        <header className="h-[52px] md:h-[56px] bg-white border-b border-[var(--color-border)] px-3 md:px-8 flex items-center justify-between sticky top-0 z-30">
+          <div className="flex items-center gap-2 md:hidden">
+            <button
+              onClick={() => setDrawerOpen(true)}
+              aria-label="메뉴 열기"
+              className="w-9 h-9 rounded-md inline-flex items-center justify-center text-[var(--color-text-secondary)] active:bg-[var(--color-bg-hover)]"
+            >
+              <Menu size={18} />
+            </button>
+            <div className="flex items-center gap-1.5">
+              <div className="w-6 h-6 rounded bg-[var(--color-primary)] flex items-center justify-center">
+                <span className="text-white text-[11px] font-bold">R</span>
               </div>
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center shadow-sm">
-                <span className="text-[14px] font-bold text-white">장</span>
-              </div>
+              <span className="text-[14px] font-semibold text-[var(--color-text)]">{currentLabel || '관리자'}</span>
             </div>
           </div>
 
-          {/* Tab Navigation */}
-          <nav className="flex gap-0.5 -mb-px overflow-x-auto scrollbar-none">
-            {navItems.map(item => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={cn(
-                    "flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-3 text-[12px] sm:text-[13px] border-b-2 transition-all whitespace-nowrap font-semibold",
-                    isActive
-                      ? "border-gray-900 text-gray-900"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-200"
-                  )}
-                >
-                  <Icon size={16} strokeWidth={isActive ? 2.2 : 1.5} />
-                  {item.label}
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      </header>
+          <div className="hidden md:flex items-center gap-2 text-[13px] text-[var(--color-text-muted)]">
+            <span>관리자</span>
+            <span>›</span>
+            <span className="text-[var(--color-text)] font-medium">{currentLabel}</span>
+          </div>
 
-      {/* Content */}
-      <main className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 animate-fade-in">
-        {renderContent()}
-      </main>
+          <div className="text-[11px] md:text-[12px] text-[var(--color-text-muted)] tabular-nums">
+            {new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
+          </div>
+        </header>
+
+        <main className="flex-1 px-3 md:px-8 py-4 md:py-6 pb-[80px] md:pb-6 animate-fade-in">
+          {renderContent()}
+        </main>
+
+        {/* ─── Mobile Bottom Nav ─── */}
+        <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-[var(--color-border)] grid grid-cols-5 h-[64px] pb-[env(safe-area-inset-bottom)]">
+          {bottomNav.map(item => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => selectTab(item.id)}
+                className={cn(
+                  "flex flex-col items-center justify-center gap-0.5 transition-colors",
+                  isActive ? "text-[var(--color-primary)]" : "text-[var(--color-text-muted)] active:text-[var(--color-text)]"
+                )}
+                aria-label={item.label}
+              >
+                <Icon size={19} strokeWidth={isActive ? 2.2 : 1.7} />
+                <span className="text-[10.5px] font-medium leading-none">{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+
+      {/* ─── Mobile Drawer ─── */}
+      {drawerOpen && (
+        <>
+          <div
+            className="md:hidden fixed inset-0 bg-black/40 z-40"
+            onClick={() => setDrawerOpen(false)}
+            aria-hidden
+          />
+          <aside className="md:hidden fixed top-0 left-0 bottom-0 w-[280px] max-w-[82vw] bg-white z-50 flex flex-col shadow-xl animate-slide-up">
+            <div className="h-[52px] px-4 flex items-center justify-between border-b border-[var(--color-border)]">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded bg-[var(--color-primary)] flex items-center justify-center">
+                  <span className="text-white text-[11px] font-bold">R</span>
+                </div>
+                <span className="text-[14.5px] font-semibold text-[var(--color-text)]">런클럽 매니저</span>
+              </div>
+              <button
+                onClick={() => setDrawerOpen(false)}
+                className="w-9 h-9 rounded-md inline-flex items-center justify-center text-[var(--color-text-muted)] active:bg-[var(--color-bg-hover)]"
+                aria-label="메뉴 닫기"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto py-2 px-2">
+              {navGroups.map(group => (
+                <div key={group.label} className="mb-3">
+                  <p className="text-[10.5px] text-[var(--color-text-muted)] font-semibold uppercase tracking-wider px-3 mb-1">
+                    {group.label}
+                  </p>
+                  {group.items.map(item => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => selectTab(item.id)}
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-3 h-11 rounded text-[14px] transition-colors",
+                          isActive
+                            ? "bg-[var(--color-primary-bg)] text-[var(--color-primary)] font-semibold"
+                            : "text-[var(--color-text-secondary)] active:bg-[var(--color-bg-hover)]"
+                        )}
+                      >
+                        <Icon size={16} strokeWidth={isActive ? 2 : 1.6} />
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </nav>
+
+            <div className="border-t border-[var(--color-border)] p-3">
+              <div className="flex items-center gap-2.5 mb-2">
+                <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center shrink-0">
+                  <span className="text-white text-[13px] font-medium">{user?.name.charAt(0)}</span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13.5px] font-medium text-[var(--color-text)] truncate">{user?.name}</p>
+                  <p className="text-[11.5px] text-[var(--color-text-muted)]">관리자</p>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full h-10 rounded-md border border-[var(--color-border)] text-[13px] text-[var(--color-text-secondary)] active:bg-[var(--color-bg-hover)] active:text-[var(--color-danger)] inline-flex items-center justify-center gap-1.5"
+              >
+                <LogOut size={13} />
+                로그아웃
+              </button>
+            </div>
+          </aside>
+        </>
+      )}
     </div>
   );
 }
