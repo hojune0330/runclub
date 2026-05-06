@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, Calendar, Users, Ticket, Megaphone, BarChart3, QrCode, LogOut, ChevronDown, HelpCircle, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, Ticket, Megaphone, BarChart3, QrCode, LogOut, ChevronDown, HelpCircle, Menu, X, Shield } from 'lucide-react';
 import { useAuth } from '@/store/AuthContext';
 import Dashboard from './Dashboard';
 import SessionManagement from './SessionManagement';
@@ -10,10 +10,11 @@ import PassManagement from './PassManagement';
 import NoticeManagement from './NoticeManagement';
 import Statistics from './Statistics';
 import AdminQR from './AdminQR';
+import AuditLog from './AuditLog';
 import Help from './Help';
 import { cn } from '@/lib/utils';
 
-type AdminTab = 'dashboard' | 'sessions' | 'members' | 'passes' | 'notices' | 'stats' | 'qr' | 'help';
+type AdminTab = 'dashboard' | 'sessions' | 'members' | 'passes' | 'notices' | 'stats' | 'qr' | 'audit' | 'help';
 
 const navGroups: { label: string; items: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] }[] = [
   {
@@ -36,6 +37,12 @@ const navGroups: { label: string; items: { id: AdminTab; label: string; icon: ty
     items: [
       { id: 'members', label: '회원 관리', icon: Users },
       { id: 'passes', label: '수강권 관리', icon: Ticket },
+    ],
+  },
+  {
+    label: '보안',
+    items: [
+      { id: 'audit', label: '감사 로그', icon: Shield },
     ],
   },
   {
@@ -94,6 +101,7 @@ export default function AdminApp() {
       case 'notices': return <NoticeManagement />;
       case 'stats': return <Statistics />;
       case 'qr': return <AdminQR />;
+      case 'audit': return <AuditLog />;
       case 'help': return <Help />;
     }
   };

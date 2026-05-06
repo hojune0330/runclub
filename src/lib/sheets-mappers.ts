@@ -160,3 +160,34 @@ export function mapSessionRow(s: SessionLike): SheetRow {
     nowIso(),
   ];
 }
+
+// ─── AdminLog (A..I, 9 columns, append-only) ─────────────────────────────
+//
+// A 시각 | B 관리자ID | C 관리자이름 | D 행동 | E 대상유형
+// F 대상ID | G 대상이름 | H 변경요약 | I IP
+
+export interface AdminAuditLike {
+  createdAt: string;
+  adminId: string;
+  adminName?: string | null;
+  action: string;
+  targetType?: string | null;
+  targetId?: string | null;
+  targetName?: string | null;
+  summary?: string | null;
+  ipAddress?: string | null;
+}
+
+export function mapAdminAuditRow(a: AdminAuditLike): SheetRow {
+  return [
+    a.createdAt,
+    a.adminId,
+    a.adminName ?? '',
+    a.action,
+    a.targetType ?? '',
+    a.targetId ?? '',
+    a.targetName ?? '',
+    a.summary ?? '',
+    a.ipAddress ?? '',
+  ];
+}

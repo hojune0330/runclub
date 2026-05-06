@@ -3,6 +3,7 @@ import { dbAll, dbGet, dbRun, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { safeSync } from '@/lib/sheets';
 import { mapPassRow } from '@/lib/sheets-mappers';
+import { logAdminAction } from '@/lib/audit';
 
 // GET /api/passes?memberId=xxx (admin) or own passes (member)
 export async function GET(req: NextRequest) {
@@ -116,8 +117,9 @@ export async function POST(req: NextRequest) {
     `, [id, memberId, productId, product.total_count, product.total_count, startDate, expiryDate, startDate, product.price]);
 
     // Sheets mirror — fetch the just-issued pass with joined member/product names
+    let issuedRow: any = null;
     try {
-      const issued = await dbGet<any>(`
+      issuedRow = await dbGet<any>(`
         SELECT mp.id, mp.member_id, mp.product_id,
                mp.total_count, mp.remaining_count,
                mp.start_date, mp.expiry_date, mp.issued_date,
@@ -129,10 +131,23 @@ export async function POST(req: NextRequest) {
         JOIN pass_products pp ON mp.product_id = pp.id
         WHERE mp.id = $1
       `, [id]);
-      if (issued) {
-        void safeSync('passes', 'upsert', mapPassRow(issued));
+      if (issuedRow) {
+        void safeSync('passes', 'upsert', mapPassRow(issuedRow));
       }
     } catch { /* swallow */ }
+
+    void logAdminAction(req, auth.memberId, {
+      action: 'pass.issue',
+      targetType: 'pass',
+      targetId: id,
+      targetName: issuedRow?.product_name ?? null,
+      summary: `수강권 발급 (회원: ${issuedRow?.member_name ?? memberId})`,
+      afterValue: {
+        id, memberId, productId,
+        totalCount: product.total_count,
+        startDate, expiryDate,
+      },
+    });
 
     return NextResponse.json({ id, success: true }, { status: 201 });
   } catch (error: any) {
@@ -176,8 +191,9 @@ export async function PUT(req: NextRequest) {
     }
 
     // Sheets mirror — re-read post-update so the row reflects final state
+    let updatedRow: any = null;
     try {
-      const updated = await dbGet<any>(`
+      updatedRow = await dbGet<any>(`
         SELECT mp.id, mp.member_id, mp.product_id,
                mp.total_count, mp.remaining_count,
                mp.start_date, mp.expiry_date, mp.issued_date,
@@ -189,10 +205,22 @@ export async function PUT(req: NextRequest) {
         JOIN pass_products pp ON mp.product_id = pp.id
         WHERE mp.id = $1
       `, [passId]);
-      if (updated) {
-        void safeSync('passes', 'upsert', mapPassRow(updated));
+      if (updatedRow) {
+        void safeSync('passes', 'upsert', mapPassRow(updatedRow));
       }
     } catch { /* swallow */ }
+
+    const auditAction =
+      action === 'pause' ? 'pass.pause' :
+      action === 'refund' ? 'pass.refund' : 'pass.resume';
+    void logAdminAction(req, auth.memberId, {
+      action: auditAction,
+      targetType: 'pass',
+      targetId: passId,
+      targetName: updatedRow?.product_name ?? null,
+      summary: `수강권 ${action === 'pause' ? '일시정지' : action === 'refund' ? '환불' : '재개'} (회원: ${updatedRow?.member_name ?? '?'})`,
+      afterValue: { status: updatedRow?.status ?? null },
+    });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

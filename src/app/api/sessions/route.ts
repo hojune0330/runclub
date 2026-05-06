@@ -4,6 +4,7 @@ import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/l
 import { rateLimit } from '@/lib/rate-limit';
 import { safeSync } from '@/lib/sheets';
 import { mapSessionRow } from '@/lib/sheets-mappers';
+import { logAdminAction } from '@/lib/audit';
 
 // EXT-I7: Bound the date window a logged-in client may request from
 // /api/sessions. Without this, a member could pull the entire historical
@@ -158,6 +159,19 @@ export async function POST(req: NextRequest) {
       status: 'open', is_indoor: !!body.isIndoor,
     }));
 
+    void logAdminAction(req, auth.memberId, {
+      action: 'session.create',
+      targetType: 'session',
+      targetId: id,
+      targetName: body.name,
+      summary: `세션 생성 (${body.date} ${body.startTime})`,
+      afterValue: {
+        id, name: body.name, type: body.type, date: body.date,
+        startTime: body.startTime, endTime: body.endTime,
+        maxCapacity: body.maxCapacity,
+      },
+    });
+
     return NextResponse.json({ id, success: true }, { status: 201 });
   } catch (error: any) {
     console.error('[sessions POST] error:', error);
@@ -181,6 +195,12 @@ export async function DELETE(req: NextRequest) {
     [id]
   );
 
+  // Read existing session for audit context.
+  const existingSession = await dbGet<any>(
+    `SELECT id, name, type, date, start_time FROM sessions WHERE id = $1`,
+    [id]
+  );
+
   if (reservationCount && Number(reservationCount.count) > 0) {
     await dbRun("UPDATE sessions SET status = 'cancelled', updated_at = NOW() WHERE id = $1", [id]);
 
@@ -196,6 +216,16 @@ export async function DELETE(req: NextRequest) {
       }
     } catch { /* swallow */ }
 
+    void logAdminAction(req, auth.memberId, {
+      action: 'session.delete',
+      targetType: 'session',
+      targetId: id,
+      targetName: existingSession?.name ?? null,
+      summary: '예약 이력이 있어 세션을 취소 상태로 전환',
+      beforeValue: existingSession ?? undefined,
+      afterValue: { status: 'cancelled' },
+    });
+
     return NextResponse.json({ success: true, softDeleted: true, message: '예약 이력이 있어 세션을 취소 상태로 전환했습니다' });
   }
 
@@ -203,5 +233,15 @@ export async function DELETE(req: NextRequest) {
   // Hard-deleted sessions: leave the sheet row as-is (manager comment is
   // preserved). The row simply becomes orphaned history. We don't try to
   // delete sheet rows because that would also wipe the manager's memo.
+
+  void logAdminAction(req, auth.memberId, {
+    action: 'session.delete',
+    targetType: 'session',
+    targetId: id,
+    targetName: existingSession?.name ?? null,
+    summary: '세션 영구 삭제 (예약 이력 없음)',
+    beforeValue: existingSession ?? undefined,
+  });
+
   return NextResponse.json({ success: true });
 }

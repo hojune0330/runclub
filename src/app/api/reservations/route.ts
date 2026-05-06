@@ -4,6 +4,7 @@ import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/l
 import { rateLimit } from '@/lib/rate-limit';
 import { safeSync } from '@/lib/sheets';
 import { mapPassRow, mapAttendanceRow } from '@/lib/sheets-mappers';
+import { logAdminAction } from '@/lib/audit';
 
 // GET /api/reservations?memberId=xxx or ?sessionId=xxx
 export async function GET(req: NextRequest) {
@@ -270,8 +271,9 @@ export async function PUT(req: NextRequest) {
 
     // Sheets mirror — log this status change as an Attendance event (append-only).
     // Captures cancellations + admin-driven attendance/no-show updates.
+    let enrichedRow: any = null;
     try {
-      const enriched = await dbGet<any>(`
+      enrichedRow = await dbGet<any>(`
         SELECT r.id, r.member_id, r.session_id, r.status, r.checked_in_at,
                r.pass_id,
                m.name AS member_name,
@@ -282,10 +284,24 @@ export async function PUT(req: NextRequest) {
         JOIN sessions s ON r.session_id = s.id
         WHERE r.id = $1
       `, [reservationId]);
-      if (enriched) {
-        void safeSync('attendance', 'append', mapAttendanceRow(enriched));
+      if (enrichedRow) {
+        void safeSync('attendance', 'append', mapAttendanceRow(enrichedRow));
       }
     } catch { /* swallow */ }
+
+    // Audit log only for admin-driven status changes. Member self-cancellations
+    // are routine actions and would just clutter the audit ledger.
+    if (auth.role === 'admin') {
+      void logAdminAction(req, auth.memberId, {
+        action: 'reservation.update_status',
+        targetType: 'reservation',
+        targetId: reservationId,
+        targetName: enrichedRow?.session_name ?? null,
+        summary: `예약 상태 변경 → ${status} (회원: ${enrichedRow?.member_name ?? '?'})`,
+        beforeValue: { status: reservation.status },
+        afterValue: { status },
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

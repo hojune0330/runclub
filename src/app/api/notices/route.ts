@@ -4,6 +4,7 @@ import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/l
 import { validateText } from '@/lib/validation';
 import { readJsonBody } from '@/lib/http';
 import { rateLimit } from '@/lib/rate-limit';
+import { logAdminAction } from '@/lib/audit';
 
 // EXT-I6: Hard cap on notices a single GET can return. The previous version
 // dumped the entire `notices` table — fine when there are 5 rows, dangerous
@@ -141,6 +142,14 @@ export async function POST(req: NextRequest) {
       VALUES ($1, $2, $3, $4, NOW())
     `, [id, titleCheck.value!, contentCheck.value!, serializedTargets]);
 
+    void logAdminAction(req, auth.memberId, {
+      action: 'notice.create',
+      targetType: 'notice',
+      targetId: id,
+      targetName: titleCheck.value!,
+      summary: `공지 등록: ${titleCheck.value!.slice(0, 60)}`,
+    });
+
     return NextResponse.json({ id, success: true }, { status: 201 });
   } catch (error: any) {
     console.error('[notices POST] error:', error);
@@ -232,7 +241,21 @@ export async function DELETE(req: NextRequest) {
   const id = req.nextUrl.searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'id 필요' }, { status: 400 });
 
+  // Capture title for audit before deletion (lightweight read).
+  const existing = await (await import('@/lib/db')).dbGet<{ title: string }>(
+    'SELECT title FROM notices WHERE id = $1',
+    [id]
+  );
+
   await dbRun('DELETE FROM notices WHERE id = $1', [id]);
+
+  void logAdminAction(req, auth.memberId, {
+    action: 'notice.delete',
+    targetType: 'notice',
+    targetId: id,
+    targetName: existing?.title ?? null,
+    summary: '공지 삭제',
+  });
 
   return NextResponse.json({ success: true });
 }

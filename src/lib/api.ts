@@ -113,6 +113,47 @@ export const api = {
       request<any>('/members', { method: 'POST', body: JSON.stringify(data) }),
     update: (data: any) =>
       request<any>('/members', { method: 'PUT', body: JSON.stringify(data) }),
+    // PR-5: per-member admin actions
+    resetPassword: (id: string) =>
+      request<{ success: boolean; tempPassword: string; message: string; memberName: string }>(
+        `/members/${encodeURIComponent(id)}/reset-password`,
+        { method: 'POST' }
+      ),
+    delete: (id: string) =>
+      request<any>(`/members/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    setActive: (id: string, active: boolean) =>
+      request<any>(`/members/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action: active ? 'activate' : 'deactivate' }),
+      }),
+    setRole: (id: string, role: 'admin' | 'member') =>
+      request<{ success: boolean; id: string; role: string; message?: string }>(
+        `/members/${encodeURIComponent(id)}/role`,
+        { method: 'PATCH', body: JSON.stringify({ role }) }
+      ),
+  },
+
+  audit: {
+    list: (params?: {
+      limit?: number;
+      before?: string;
+      adminId?: string;
+      targetType?: string;
+      targetId?: string;
+      action?: string;
+    }) => {
+      const q = new URLSearchParams();
+      if (params?.limit) q.set('limit', String(params.limit));
+      if (params?.before) q.set('before', params.before);
+      if (params?.adminId) q.set('adminId', params.adminId);
+      if (params?.targetType) q.set('targetType', params.targetType);
+      if (params?.targetId) q.set('targetId', params.targetId);
+      if (params?.action) q.set('action', params.action);
+      const qs = q.toString() ? `?${q.toString()}` : '';
+      return request<{ entries: any[]; nextBefore: string | null; limit: number }>(
+        `/admin/audit-log${qs}`
+      );
+    },
   },
 
   passes: {

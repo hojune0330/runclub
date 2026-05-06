@@ -1,19 +1,31 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Search, Plus, X, Phone, Mail, Calendar as CalIcon } from 'lucide-react';
+import {
+  Search, Plus, X, Phone, Mail, Calendar as CalIcon,
+  KeyRound, UserX, UserCheck, ShieldCheck, ShieldOff, Trash2, Copy,
+} from 'lucide-react';
 import { useApp } from '@/store/AppContext';
+import { useAuth } from '@/store/AuthContext';
 import { sessionTypeConfig, reservationStatusConfig, passStatusConfig } from '@/lib/config';
 import { formatKoreanDate, cn, getDaysUntilExpiry } from '@/lib/utils';
 import { Modal, FormField, Badge } from '@/components/ui';
 import type { Member } from '@/types';
 
 export default function MemberManagement() {
-  const { members, memberPasses, reservations, sessions, addMember } = useApp();
+  const {
+    members, memberPasses, reservations, sessions, addMember,
+    resetMemberPassword, deleteMember, setMemberActive, setMemberRole,
+  } = useApp();
+  const { user: currentUser } = useAuth();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+
+  // Admin action busy/result state
+  const [actionBusy, setActionBusy] = useState(false);
+  const [tempPwInfo, setTempPwInfo] = useState<{ memberName: string; tempPassword: string } | null>(null);
 
   // Add form
   const [formName, setFormName] = useState('');
@@ -56,8 +68,106 @@ export default function MemberManagement() {
       setFormPhone('');
       setFormEmail('');
       if (result.defaultPassword) {
-        alert(`회원이 등록되었습니다.\n초기 비밀번호: ${result.defaultPassword}\n\n첫 로그인 시 비밀번호를 변경해야 합니다. 회원에게 안전하게 전달해 주세요.`);
+        // Show in the same modal flow as the password reset for consistency.
+        setTempPwInfo({
+          memberName: result.name ?? formName.trim(),
+          tempPassword: result.defaultPassword,
+        });
       }
+    }
+  };
+
+  // ─── Admin actions on the selected member ───
+  const isSelf = !!(selectedMember && currentUser && selectedMember.id === currentUser.id);
+
+  const handleResetPassword = async () => {
+    if (!selectedMember || actionBusy) return;
+    if (isSelf) {
+      alert('본인 계정은 마이페이지의 비밀번호 변경 메뉴를 사용해 주세요.');
+      return;
+    }
+    if (!confirm(`'${selectedMember.name}' 회원의 비밀번호를 임시 비밀번호로 재발급할까요?\n\n기존 세션은 모두 즉시 로그아웃되며, 첫 로그인 시 비밀번호 변경이 강제됩니다.`)) return;
+    setActionBusy(true);
+    try {
+      const r = await resetMemberPassword(selectedMember.id);
+      if (r) setTempPwInfo({ memberName: r.memberName, tempPassword: r.tempPassword });
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleToggleActive = async () => {
+    if (!selectedMember || actionBusy) return;
+    if (isSelf) {
+      alert('본인 계정은 비활성화할 수 없습니다.');
+      return;
+    }
+    const willDeactivate = selectedMember.isActive;
+    const msg = willDeactivate
+      ? `'${selectedMember.name}' 회원을 비활성화할까요?\n\n진행 중인 모든 로그인 세션이 즉시 만료되고 로그인 자체가 차단됩니다.`
+      : `'${selectedMember.name}' 회원을 다시 활성화할까요?`;
+    if (!confirm(msg)) return;
+    setActionBusy(true);
+    try {
+      const ok = await setMemberActive(selectedMember.id, !willDeactivate);
+      if (ok) {
+        // Reflect the new state locally so the buttons swap immediately.
+        setSelectedMember({ ...selectedMember, isActive: !willDeactivate });
+      }
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleToggleRole = async () => {
+    if (!selectedMember || actionBusy) return;
+    const isAdmin = selectedMember.role === 'admin';
+    if (isSelf && isAdmin) {
+      alert('본인 권한은 스스로 변경할 수 없습니다. 다른 관리자에게 요청하세요.');
+      return;
+    }
+    const next: 'admin' | 'member' = isAdmin ? 'member' : 'admin';
+    const msg = isAdmin
+      ? `'${selectedMember.name}' 회원의 권한을 관리자에서 일반 회원으로 변경할까요?\n변경 즉시 모든 세션이 무효화됩니다.`
+      : `'${selectedMember.name}' 회원에게 관리자 권한을 부여할까요?\n다음 새로고침부터 관리자 메뉴를 사용할 수 있습니다.`;
+    if (!confirm(msg)) return;
+    setActionBusy(true);
+    try {
+      const ok = await setMemberRole(selectedMember.id, next);
+      if (ok) setSelectedMember({ ...selectedMember, role: next });
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!selectedMember || actionBusy) return;
+    if (isSelf) {
+      alert('본인 계정은 삭제할 수 없습니다.');
+      return;
+    }
+    if (selectedMember.role === 'admin') {
+      alert('관리자 권한 회원은 삭제할 수 없습니다. 먼저 권한을 일반 회원으로 변경하세요.');
+      return;
+    }
+    if (!confirm(`'${selectedMember.name}' 회원을 영구 삭제할까요?\n\n예약/수강권 이력이 있으면 거부됩니다(이 경우 비활성화로 처리하세요). 이 작업은 되돌릴 수 없습니다.`)) return;
+    setActionBusy(true);
+    try {
+      const ok = await deleteMember(selectedMember.id);
+      if (ok) setSelectedMember(null);
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const copyTempPassword = async () => {
+    if (!tempPwInfo) return;
+    try {
+      await navigator.clipboard.writeText(tempPwInfo.tempPassword);
+      alert('임시 비밀번호를 클립보드에 복사했습니다.');
+    } catch {
+      // Clipboard may be blocked (e.g. http) — fall back to a manual hint.
+      alert('자동 복사에 실패했습니다. 화면에 표시된 비밀번호를 직접 복사해 주세요.');
     }
   };
 
@@ -230,6 +340,83 @@ export default function MemberManagement() {
             </button>
           </div>
 
+          {/* Admin actions toolbar */}
+          <div className="px-4 py-2.5 border-b border-[var(--color-border)] bg-white flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleResetPassword}
+              disabled={actionBusy || isSelf}
+              className={cn(
+                "inline-flex items-center gap-1.5 h-9 md:h-8 px-3 text-[12.5px] rounded border transition-colors",
+                isSelf
+                  ? "bg-[var(--color-bg-subtle)] text-[var(--color-text-disabled)] border-[var(--color-border)] cursor-not-allowed"
+                  : "bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+              )}
+              title={isSelf ? '본인 계정은 마이페이지에서 변경하세요' : '임시 비밀번호 재발급'}
+            >
+              <KeyRound size={13} />
+              비밀번호 초기화
+            </button>
+
+            <button
+              onClick={handleToggleActive}
+              disabled={actionBusy || isSelf}
+              className={cn(
+                "inline-flex items-center gap-1.5 h-9 md:h-8 px-3 text-[12.5px] rounded border transition-colors",
+                isSelf
+                  ? "bg-[var(--color-bg-subtle)] text-[var(--color-text-disabled)] border-[var(--color-border)] cursor-not-allowed"
+                  : selectedMember.isActive
+                    ? "bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-danger)]"
+                    : "bg-white text-[var(--color-success)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
+              )}
+              title={selectedMember.isActive ? '비활성화 (즉시 세션 만료)' : '다시 활성화'}
+            >
+              {selectedMember.isActive ? <UserX size={13} /> : <UserCheck size={13} />}
+              {selectedMember.isActive ? '비활성화' : '활성화'}
+            </button>
+
+            <button
+              onClick={handleToggleRole}
+              disabled={actionBusy || (isSelf && selectedMember.role === 'admin')}
+              className={cn(
+                "inline-flex items-center gap-1.5 h-9 md:h-8 px-3 text-[12.5px] rounded border transition-colors",
+                isSelf && selectedMember.role === 'admin'
+                  ? "bg-[var(--color-bg-subtle)] text-[var(--color-text-disabled)] border-[var(--color-border)] cursor-not-allowed"
+                  : "bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+              )}
+              title={
+                selectedMember.role === 'admin'
+                  ? '관리자 권한 회수 (일반 회원으로 변경)'
+                  : '관리자 권한 부여'
+              }
+            >
+              {selectedMember.role === 'admin' ? <ShieldOff size={13} /> : <ShieldCheck size={13} />}
+              {selectedMember.role === 'admin' ? '관리자 해제' : '관리자 지정'}
+            </button>
+
+            <div className="flex-1" />
+
+            <button
+              onClick={handleDelete}
+              disabled={actionBusy || isSelf || selectedMember.role === 'admin'}
+              className={cn(
+                "inline-flex items-center gap-1.5 h-9 md:h-8 px-3 text-[12.5px] rounded border transition-colors",
+                isSelf || selectedMember.role === 'admin'
+                  ? "bg-[var(--color-bg-subtle)] text-[var(--color-text-disabled)] border-[var(--color-border)] cursor-not-allowed"
+                  : "bg-white text-[var(--color-danger)] border-[var(--color-border)] hover:border-[var(--color-danger)] hover:bg-[var(--color-danger)] hover:text-white"
+              )}
+              title={
+                isSelf
+                  ? '본인 계정은 삭제할 수 없습니다'
+                  : selectedMember.role === 'admin'
+                    ? '관리자 권한 회수 후 삭제할 수 있습니다'
+                    : '영구 삭제 (이력 없을 때만 가능)'
+              }
+            >
+              <Trash2 size={13} />
+              삭제
+            </button>
+          </div>
+
           <div className="grid grid-cols-3 divide-x divide-[var(--color-border)]">
             {/* Profile */}
             <div className="p-5">
@@ -238,9 +425,10 @@ export default function MemberManagement() {
                   <span className="text-[16px] text-white font-medium">{selectedMember.name.charAt(0)}</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-[16px] font-semibold text-[var(--color-text)]">{selectedMember.name}</h3>
                     {selectedMember.isActive ? <Badge tone="success">활성</Badge> : <Badge tone="muted">비활성</Badge>}
+                    {selectedMember.role === 'admin' && <Badge tone="primary">관리자</Badge>}
                   </div>
                 </div>
               </div>
@@ -376,6 +564,52 @@ export default function MemberManagement() {
                 )}
               >
                 등록
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Temporary password modal — shown right after registration / reset.
+          The plaintext password lives only in this dialog; once the admin
+          closes it the value is gone forever (DB stores only the bcrypt hash). */}
+      {tempPwInfo && (
+        <Modal title="임시 비밀번호" onClose={() => setTempPwInfo(null)} size="sm">
+          <div className="space-y-4">
+            <div className="text-[13px] text-[var(--color-text-secondary)] leading-relaxed">
+              <span className="font-semibold text-[var(--color-text)]">{tempPwInfo.memberName}</span>
+              {' '}회원에게 아래 임시 비밀번호를 안전한 경로(카카오톡/문자 등)로 전달하세요.
+              <br />
+              <span className="text-[12px] text-[var(--color-danger)]">
+                이 창을 닫은 뒤에는 다시 확인할 수 없습니다. 잃어버린 경우 다시 [비밀번호 초기화]를 눌러야 합니다.
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 p-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] rounded">
+              <code className="flex-1 text-[15px] font-mono tabular-nums text-[var(--color-text)] tracking-wider select-all break-all">
+                {tempPwInfo.tempPassword}
+              </code>
+              <button
+                onClick={copyTempPassword}
+                className="shrink-0 inline-flex items-center gap-1 h-8 px-2.5 text-[12px] rounded border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)] hover:text-[var(--color-text)]"
+              >
+                <Copy size={12} />
+                복사
+              </button>
+            </div>
+
+            <div className="text-[11.5px] text-[var(--color-text-muted)] leading-relaxed">
+              · 첫 로그인 시 비밀번호 변경이 강제됩니다.<br />
+              · 회원의 기존 로그인 세션은 모두 즉시 무효화됩니다.<br />
+              · 비밀번호는 단방향 해시로만 저장되어 관리자도 평문을 볼 수 없습니다.
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                onClick={() => setTempPwInfo(null)}
+                className="h-9 px-4 text-[13px] rounded bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)]"
+              >
+                확인
               </button>
             </div>
           </div>

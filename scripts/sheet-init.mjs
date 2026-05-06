@@ -37,6 +37,7 @@ const TABS = {
   passes:     process.env.GOOGLE_SHEET_TAB_PASSES     ?? 'Passes',
   attendance: process.env.GOOGLE_SHEET_TAB_ATTENDANCE ?? 'Attendance',
   sessions:   process.env.GOOGLE_SHEET_TAB_SESSIONS   ?? 'Sessions',
+  adminLog:   process.env.GOOGLE_SHEET_TAB_ADMIN_LOG  ?? 'AdminLog',
 };
 
 const HEADERS = {
@@ -61,6 +62,10 @@ const HEADERS = {
     '장소', '정원', '예약수', '대기수', '상태', '실내여부', '최종동기화',
     '매니저코멘트',
   ],
+  adminLog: [
+    '시각', '관리자ID', '관리자이름', '행동', '대상유형',
+    '대상ID', '대상이름', '변경요약', 'IP',
+  ],
 };
 
 // DB-owned column count (1-based last column index that the server overwrites)
@@ -69,6 +74,7 @@ const DB_COL_COUNT = {
   passes:     14,  // A..N
   attendance: 11,  // A..K  (append-only, fully owned)
   sessions:   13,  // A..M
+  adminLog:   9,   // A..I  (append-only audit log)
 };
 
 const DROPDOWNS = {
@@ -123,7 +129,7 @@ async function ensureTabs(sheets) {
       requestBody: { requests },
     });
   } else {
-    console.log('[init] all 4 tabs already exist');
+    console.log(`[init] all ${Object.keys(TABS).length} tabs already exist`);
   }
   // Re-fetch with new sheetIds
   return await getMeta(sheets);
@@ -287,6 +293,20 @@ async function applyProtections(sheets, meta, creds) {
       },
     },
   });
+  // AdminLog: protect entire data area (append-only audit log)
+  requests.push({
+    addProtectedRange: {
+      protectedRange: {
+        range: {
+          sheetId: findSheetId(meta, TABS.adminLog),
+          startRowIndex: 1, startColumnIndex: 0, endColumnIndex: DB_COL_COUNT.adminLog,
+        },
+        description: 'Append-only admin audit log. Do not edit by hand.',
+        warningOnly: false,
+        editors,
+      },
+    },
+  });
 
   // Idempotency: if protections already exist on these ranges, skip silently.
   // The Sheets API returns 400 'duplicate' — we tolerate it.
@@ -295,7 +315,7 @@ async function applyProtections(sheets, meta, creds) {
       spreadsheetId: SHEET_ID,
       requestBody: { requests },
     });
-    console.log('[init] protections applied (4 ranges)');
+    console.log('[init] protections applied (5 ranges)');
   } catch (err) {
     const msg = err?.message ?? String(err);
     if (/already|duplicate/i.test(msg)) {

@@ -5,6 +5,7 @@ import { normalizePhone, validateName, validateEmail, validateText } from '@/lib
 import { readJsonBody } from '@/lib/http';
 import { safeSync } from '@/lib/sheets';
 import { mapMemberRow } from '@/lib/sheets-mappers';
+import { logAdminAction } from '@/lib/audit';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
@@ -106,6 +107,18 @@ export async function POST(req: NextRequest) {
       join_date: joinDate, is_active: true, memo: memoCheck.value ?? null,
     }));
 
+    void logAdminAction(req, auth.memberId, {
+      action: 'member.create',
+      targetType: 'member',
+      targetId: id,
+      targetName: nameCheck.value!,
+      summary: `관리자가 신규 회원 등록 (${normalizedPhone})`,
+      afterValue: {
+        id, name: nameCheck.value!, phone: normalizedPhone,
+        email: emailCheck.value ?? null, memo: memoCheck.value ?? null,
+      },
+    });
+
     return NextResponse.json({
       id, name: nameCheck.value!, phone: normalizedPhone, email: emailCheck.value ?? null,
       joinDate, isActive: true, memo: memoCheck.value ?? null,
@@ -179,6 +192,16 @@ export async function PUT(req: NextRequest) {
       }
     }
 
+    // PR-5: read the existing row before update so we can capture before/after.
+    const beforeRow = await dbGet<any>(
+      `SELECT id, name, phone, email, is_active, memo
+         FROM members WHERE id = $1`,
+      [id]
+    );
+    if (!beforeRow) {
+      return NextResponse.json({ error: '회원을 찾을 수 없습니다' }, { status: 404 });
+    }
+
     // EXT-H7 (full): If admin deactivates a member, bump token_version so any
     // outstanding JWTs for that user are immediately invalidated server-side.
     const willDeactivate = isActive === false;
@@ -198,15 +221,26 @@ export async function PUT(req: NextRequest) {
     }
 
     // Sheets mirror — re-read post-update so the row reflects final state
+    let afterRow: any = null;
     try {
-      const updated = await dbGet<any>(
+      afterRow = await dbGet<any>(
         `SELECT id, name, phone, email, role, join_date, is_active, memo
          FROM members WHERE id = $1`, [id]
       );
-      if (updated) {
-        void safeSync('members', 'upsert', mapMemberRow(updated));
+      if (afterRow) {
+        void safeSync('members', 'upsert', mapMemberRow(afterRow));
       }
     } catch { /* swallow — never break the response */ }
+
+    void logAdminAction(req, auth.memberId, {
+      action: 'member.update',
+      targetType: 'member',
+      targetId: id,
+      targetName: afterRow?.name ?? beforeRow.name,
+      summary: '관리자가 회원 정보 수정',
+      beforeValue: beforeRow,
+      afterValue: afterRow ?? undefined,
+    });
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

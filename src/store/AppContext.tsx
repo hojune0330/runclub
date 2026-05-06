@@ -40,6 +40,11 @@ interface AppActions {
   markNoticeRead: (noticeId: string) => Promise<void>;
 
   addMember: (data: Omit<Member, 'id'>) => Promise<any>;
+  // PR-5: per-member admin actions
+  resetMemberPassword: (memberId: string) => Promise<{ tempPassword: string; memberName: string } | null>;
+  deleteMember: (memberId: string) => Promise<boolean>;
+  setMemberActive: (memberId: string, active: boolean) => Promise<boolean>;
+  setMemberRole: (memberId: string, role: 'admin' | 'member') => Promise<boolean>;
 
   issueMemberPass: (memberId: string, productId: string) => Promise<void>;
   pauseMemberPass: (passId: string) => Promise<void>;
@@ -297,6 +302,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshMembers, handleAuthError]);
 
+  // PR-5: Reset a member's password. Returns the temp password to display
+  // once to the admin (it is never persisted in plaintext).
+  const resetMemberPassword = useCallback(async (memberId: string) => {
+    try {
+      const result = await api.members.resetPassword(memberId);
+      return { tempPassword: result.tempPassword, memberName: result.memberName };
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return null;
+    }
+  }, [handleAuthError]);
+
+  // PR-5: Hard-delete a member. Server refuses if any history exists, in
+  // which case the admin should call setMemberActive(false) instead.
+  const deleteMember = useCallback(async (memberId: string) => {
+    try {
+      await api.members.delete(memberId);
+      await refreshMembers();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshMembers, handleAuthError]);
+
+  // PR-5: Toggle a member's active flag. Deactivation revokes all sessions.
+  const setMemberActive = useCallback(async (memberId: string, active: boolean) => {
+    try {
+      await api.members.setActive(memberId, active);
+      await refreshMembers();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshMembers, handleAuthError]);
+
+  // PR-5: Promote/demote between admin and member.
+  const setMemberRole = useCallback(async (memberId: string, role: 'admin' | 'member') => {
+    try {
+      await api.members.setRole(memberId, role);
+      await refreshMembers();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshMembers, handleAuthError]);
+
   // ─── Passes ───
   const issueMemberPass = useCallback(async (memberId: string, productId: string) => {
     try {
@@ -333,6 +387,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     createSession, deleteSession,
     createNotice, deleteNotice, markNoticeRead,
     addMember,
+    resetMemberPassword, deleteMember, setMemberActive, setMemberRole,
     issueMemberPass, pauseMemberPass, refundMemberPass,
   };
 

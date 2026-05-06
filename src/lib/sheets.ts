@@ -29,6 +29,8 @@ export const TAB = {
   passes: process.env.GOOGLE_SHEET_TAB_PASSES ?? 'Passes',
   attendance: process.env.GOOGLE_SHEET_TAB_ATTENDANCE ?? 'Attendance',
   sessions: process.env.GOOGLE_SHEET_TAB_SESSIONS ?? 'Sessions',
+  // PR-5: append-only admin audit log
+  adminLog: process.env.GOOGLE_SHEET_TAB_ADMIN_LOG ?? 'AdminLog',
 } as const;
 
 export type TabName = keyof typeof TAB;
@@ -40,11 +42,13 @@ export type TabName = keyof typeof TAB;
 //   Passes:     A..N locked, O manager-editable        → upsert writes A..N
 //   Attendance: A..K locked (append-only)              → append writes A..K
 //   Sessions:   A..M locked, N manager-editable        → upsert writes A..M
+//   AdminLog:   A..I locked (append-only)              → append writes A..I
 export const DB_RANGE: Record<TabName, { firstCol: string; lastCol: string }> = {
   members:    { firstCol: 'A', lastCol: 'I' },
   passes:     { firstCol: 'A', lastCol: 'N' },
   attendance: { firstCol: 'A', lastCol: 'K' },
   sessions:   { firstCol: 'A', lastCol: 'M' },
+  adminLog:   { firstCol: 'A', lastCol: 'I' },
 };
 
 // ─── Header definitions (exposed for sheet-init.mjs) ──────────────────────
@@ -73,6 +77,10 @@ export const HEADERS: Record<TabName, string[]> = {
     '장소', '정원', '예약수', '대기수', '상태', '실내여부', '최종동기화',
     // ↓ 매니저 편집 영역 (N)
     '매니저코멘트',
+  ],
+  adminLog: [
+    '시각', '관리자ID', '관리자이름', '행동', '대상유형',
+    '대상ID', '대상이름', '변경요약', 'IP',
   ],
 };
 

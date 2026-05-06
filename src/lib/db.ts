@@ -319,6 +319,32 @@ async function initSchema(): Promise<void> {
   `);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_sheet_sync_queue_attempts ON sheet_sync_queue(attempts)`);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_sheet_sync_log_created    ON sheet_sync_log(created_at DESC)`);
+
+  // ─── Admin audit log (PR-5) ───
+  // Append-only ledger of every admin-initiated state change. The cached
+  // admin_name lets the log remain readable even after the admin record is
+  // renamed or deleted. before_value/after_value are JSONB so different
+  // entity shapes (member, session, pass, …) can share a single table.
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id            BIGSERIAL PRIMARY KEY,
+      admin_id      TEXT NOT NULL,
+      admin_name    TEXT,
+      action        TEXT NOT NULL,
+      target_type   TEXT,
+      target_id     TEXT,
+      target_name   TEXT,
+      summary       TEXT,
+      before_value  JSONB,
+      after_value   JSONB,
+      ip_address    TEXT,
+      user_agent    TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_audit_admin   ON admin_audit_log(admin_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_audit_target  ON admin_audit_log(target_type, target_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_audit_created ON admin_audit_log(created_at DESC)`);
 }
 
 /**
