@@ -12,7 +12,8 @@
     "db:seed": "node scripts/db-seed.mjs",
     "db:reset": "node scripts/db-reset.mjs",
     "verify:prod-seed": "node scripts/verify-prod-seed.mjs",
-    "sheet:init": "node scripts/sheet-init.mjs"
+    "sheet:init": "node scripts/sheet-init.mjs",
+    "sheet:backfill": "node scripts/sheet-sync-backfill.mjs"
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",

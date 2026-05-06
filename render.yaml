@@ -57,3 +57,47 @@ services:
         sync: false             # e.g. "장호준 코치"
       - key: SEED_ADMIN_EMAIL
         sync: false             # optional
+      # ── Google Sheets sync (manager-friendly mirror) ───────────────
+      # When false (default), every sync call is a no-op. Flip to 'true'
+      # after running scripts/sheet-init.mjs and inviting the service
+      # account as an Editor on the spreadsheet.
+      - key: SHEET_SYNC_ENABLED
+        value: 'false'
+      - key: GOOGLE_SHEET_ID
+        sync: false             # set manually after creating the sheet
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false             # paste JSON or base64-encoded JSON
+      - key: GOOGLE_SHEET_TAB_MEMBERS
+        value: Members
+      - key: GOOGLE_SHEET_TAB_PASSES
+        value: Passes
+      - key: GOOGLE_SHEET_TAB_ATTENDANCE
+        value: Attendance
+      - key: GOOGLE_SHEET_TAB_SESSIONS
+        value: Sessions
+      # Shared secret used by the sheet-sync-retry cron job. Generate once
+      # (≥ 32 chars). The cron uses Authorization: Bearer <CRON_SECRET>.
+      - key: CRON_SECRET
+        generateValue: true
+
+  # ── Cron: drain sheet_sync_queue every minute ────────────────────────
+  # Replays any sheet writes that failed during the original API request
+  # (e.g. transient Sheets API outage, quota). No-op when SHEET_SYNC_ENABLED
+  # is false. Endpoint is auth-gated by CRON_SECRET.
+  - type: cron
+    name: runclub-sheet-sync-retry
+    runtime: node
+    plan: starter
+    region: singapore
+    branch: main
+    schedule: '*/1 * * * *'      # every 1 minute
+    buildCommand: npm ci
+    startCommand: |
+      curl -fsS -X POST \
+        -H "Authorization: Bearer $CRON_SECRET" \
+        "$APP_URL/api/cron/sheet-sync-retry"
+    envVars:
+      - key: APP_URL
+        sync: false               # e.g. https://runclub-manager.onrender.com
+      - key: CRON_SECRET
+        sync: false               # paste the SAME value as the web service
