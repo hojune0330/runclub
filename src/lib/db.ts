@@ -287,6 +287,38 @@ async function initSchema(): Promise<void> {
     ALTER TABLE members
       ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ
   `);
+
+  // ─── Google Sheets sync infrastructure (PR-1) ───
+  // sheet_sync_queue : retry buffer. A row is inserted whenever a sync call
+  //   fails (e.g. transient Sheets API outage, quota). The worker (PR-3)
+  //   pops rows in FIFO order, replays them, and deletes on success.
+  // sheet_sync_log   : append-only audit trail for ops + errors. Useful for
+  //   "did X member update reach the sheet?" investigations.
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS sheet_sync_queue (
+      id              BIGSERIAL PRIMARY KEY,
+      tab             TEXT    NOT NULL,
+      op              TEXT    NOT NULL CHECK (op IN ('upsert','append')),
+      payload         JSONB   NOT NULL,
+      attempts        INTEGER NOT NULL DEFAULT 0,
+      error_message   TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_attempt_at TIMESTAMPTZ
+    )
+  `);
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS sheet_sync_log (
+      id            BIGSERIAL PRIMARY KEY,
+      tab           TEXT NOT NULL,
+      op            TEXT NOT NULL,
+      row_key       TEXT,
+      status        TEXT NOT NULL CHECK (status IN ('ok','queued','retry-ok','retry-failed')),
+      error_message TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_sheet_sync_queue_attempts ON sheet_sync_queue(attempts)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_sheet_sync_log_created    ON sheet_sync_log(created_at DESC)`);
 }
 
 /**
