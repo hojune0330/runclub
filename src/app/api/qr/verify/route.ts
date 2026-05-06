@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dbGet, dbRun } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
+import { safeSync } from '@/lib/sheets';
+import { mapAttendanceRow } from '@/lib/sheets-mappers';
 
 // POST /api/qr/verify - Member scans QR to check in
 export async function POST(req: NextRequest) {
@@ -102,6 +104,23 @@ export async function POST(req: NextRequest) {
       `UPDATE reservations SET status = 'attended', checked_in_at = NOW() WHERE id = $1`,
       [reservation.id]
     );
+
+    // Sheets mirror — append the attendance event (member_name + session details)
+    try {
+      const enriched = await dbGet<any>(`
+        SELECT r.id, r.member_id, r.session_id, r.status, r.checked_in_at, r.pass_id,
+               m.name AS member_name,
+               s.name AS session_name, s.date AS session_date,
+               s.start_time AS session_start_time
+        FROM reservations r
+        JOIN members m  ON r.member_id  = m.id
+        JOIN sessions s ON r.session_id = s.id
+        WHERE r.id = $1
+      `, [reservation.id]);
+      if (enriched) {
+        void safeSync('attendance', 'append', mapAttendanceRow(enriched));
+      }
+    } catch { /* swallow */ }
 
     return NextResponse.json({
       success: true,

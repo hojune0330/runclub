@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dbAll, dbGet, dbRun, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
+import { safeSync } from '@/lib/sheets';
+import { mapPassRow } from '@/lib/sheets-mappers';
 
 // GET /api/passes?memberId=xxx (admin) or own passes (member)
 export async function GET(req: NextRequest) {
@@ -113,6 +115,25 @@ export async function POST(req: NextRequest) {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')
     `, [id, memberId, productId, product.total_count, product.total_count, startDate, expiryDate, startDate, product.price]);
 
+    // Sheets mirror — fetch the just-issued pass with joined member/product names
+    try {
+      const issued = await dbGet<any>(`
+        SELECT mp.id, mp.member_id, mp.product_id,
+               mp.total_count, mp.remaining_count,
+               mp.start_date, mp.expiry_date, mp.issued_date,
+               mp.price, mp.status, mp.paused_at,
+               m.name AS member_name,
+               pp.name AS product_name, pp.category
+        FROM member_passes mp
+        JOIN members m       ON mp.member_id = m.id
+        JOIN pass_products pp ON mp.product_id = pp.id
+        WHERE mp.id = $1
+      `, [id]);
+      if (issued) {
+        void safeSync('passes', 'upsert', mapPassRow(issued));
+      }
+    } catch { /* swallow */ }
+
     return NextResponse.json({ id, success: true }, { status: 201 });
   } catch (error: any) {
     console.error('[passes POST] error:', error);
@@ -153,6 +174,25 @@ export async function PUT(req: NextRequest) {
     } else if (action === 'resume') {
       await dbRun("UPDATE member_passes SET status = 'active', paused_at = NULL WHERE id = $1", [passId]);
     }
+
+    // Sheets mirror — re-read post-update so the row reflects final state
+    try {
+      const updated = await dbGet<any>(`
+        SELECT mp.id, mp.member_id, mp.product_id,
+               mp.total_count, mp.remaining_count,
+               mp.start_date, mp.expiry_date, mp.issued_date,
+               mp.price, mp.status, mp.paused_at,
+               m.name AS member_name,
+               pp.name AS product_name, pp.category
+        FROM member_passes mp
+        JOIN members m       ON mp.member_id = m.id
+        JOIN pass_products pp ON mp.product_id = pp.id
+        WHERE mp.id = $1
+      `, [passId]);
+      if (updated) {
+        void safeSync('passes', 'upsert', mapPassRow(updated));
+      }
+    } catch { /* swallow */ }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

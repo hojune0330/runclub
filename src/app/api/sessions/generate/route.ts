@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateRecurringSessions, dbGet } from '@/lib/db';
+import { generateRecurringSessions, dbAll, dbGet } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
+import { safeSync, SHEET_SYNC_ENABLED } from '@/lib/sheets';
+import { mapSessionRow } from '@/lib/sheets-mappers';
 
 // POST /api/sessions/generate
 // Body: { from?: 'YYYY-MM-DD', to?: 'YYYY-MM-DD' }
@@ -46,6 +48,32 @@ export async function POST(req: NextRequest) {
   }
 
   const created = await generateRecurringSessions({ from, to });
+
+  // Sheets mirror — batch upsert any session that falls inside the requested
+  // window. `generateRecurringSessions` only returns a count, so we re-read
+  // the affected window and let safeSync upsert each row idempotently.
+  // Cap at 500 rows per call to respect Sheets API quotas; the cron retry
+  // worker (PR-3) will mop up anything that fails.
+  if (SHEET_SYNC_ENABLED && created > 0) {
+    try {
+      const fromIso = (from ?? new Date()).toISOString().slice(0, 10);
+      const toIso = (to ?? new Date(Date.now() + 90 * 86_400_000)).toISOString().slice(0, 10);
+      const rows = await dbAll<any>(
+        `SELECT s.id, s.name, s.type, s.date, s.start_time, s.end_time,
+                s.location, s.max_capacity, s.status, s.is_indoor,
+                (SELECT COUNT(*) FROM reservations r WHERE r.session_id = s.id AND r.status IN ('reserved','attended'))::int AS current_reservations,
+                (SELECT COUNT(*) FROM waitlist w     WHERE w.session_id = s.id AND w.status = 'waiting')::int AS waitlist_count
+         FROM sessions s
+         WHERE s.date >= $1 AND s.date <= $2
+         ORDER BY s.date, s.start_time
+         LIMIT 500`,
+        [fromIso, toIso]
+      );
+      for (const r of rows) {
+        void safeSync('sessions', 'upsert', mapSessionRow(r));
+      }
+    } catch { /* swallow — never break the response */ }
+  }
 
   // 생성 후 전체 활성 스케줄 통계
   const countRow = await dbGet<{ cnt: number }>(

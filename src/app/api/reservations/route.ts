@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dbAll, dbGet, dbRun, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
+import { safeSync } from '@/lib/sheets';
+import { mapPassRow, mapAttendanceRow } from '@/lib/sheets-mappers';
 
 // GET /api/reservations?memberId=xxx or ?sessionId=xxx
 export async function GET(req: NextRequest) {
@@ -161,6 +163,25 @@ export async function POST(req: NextRequest) {
     // Deduct pass count if count-based
     if (pass && pass.category === 'count') {
       await dbRun('UPDATE member_passes SET remaining_count = remaining_count - 1 WHERE id = $1', [pass.id]);
+
+      // Sheets mirror — re-read the pass row so 잔여횟수(G) reflects deduction.
+      try {
+        const updatedPass = await dbGet<any>(`
+          SELECT mp.id, mp.member_id, mp.product_id,
+                 mp.total_count, mp.remaining_count,
+                 mp.start_date, mp.expiry_date, mp.issued_date,
+                 mp.price, mp.status, mp.paused_at,
+                 m.name AS member_name,
+                 pp.name AS product_name, pp.category
+          FROM member_passes mp
+          JOIN members m       ON mp.member_id = m.id
+          JOIN pass_products pp ON mp.product_id = pp.id
+          WHERE mp.id = $1
+        `, [pass.id]);
+        if (updatedPass) {
+          void safeSync('passes', 'upsert', mapPassRow(updatedPass));
+        }
+      } catch { /* swallow */ }
     }
 
     // Auto-close session if full
@@ -219,6 +240,25 @@ export async function PUT(req: NextRequest) {
         const product = await dbGet('SELECT category FROM pass_products WHERE id = $1', [pass.product_id]);
         if (product?.category === 'count') {
           await dbRun('UPDATE member_passes SET remaining_count = remaining_count + 1 WHERE id = $1', [reservation.pass_id]);
+
+          // Sheets mirror — pass restored
+          try {
+            const restored = await dbGet<any>(`
+              SELECT mp.id, mp.member_id, mp.product_id,
+                     mp.total_count, mp.remaining_count,
+                     mp.start_date, mp.expiry_date, mp.issued_date,
+                     mp.price, mp.status, mp.paused_at,
+                     m.name AS member_name,
+                     pp.name AS product_name, pp.category
+              FROM member_passes mp
+              JOIN members m       ON mp.member_id = m.id
+              JOIN pass_products pp ON mp.product_id = pp.id
+              WHERE mp.id = $1
+            `, [reservation.pass_id]);
+            if (restored) {
+              void safeSync('passes', 'upsert', mapPassRow(restored));
+            }
+          } catch { /* swallow */ }
         }
       }
     }
@@ -227,6 +267,25 @@ export async function PUT(req: NextRequest) {
     if (status === 'cancelled') {
       await dbRun("UPDATE sessions SET status = 'open' WHERE id = $1 AND status = 'closed'", [reservation.session_id]);
     }
+
+    // Sheets mirror — log this status change as an Attendance event (append-only).
+    // Captures cancellations + admin-driven attendance/no-show updates.
+    try {
+      const enriched = await dbGet<any>(`
+        SELECT r.id, r.member_id, r.session_id, r.status, r.checked_in_at,
+               r.pass_id,
+               m.name AS member_name,
+               s.name AS session_name, s.date AS session_date,
+               s.start_time AS session_start_time
+        FROM reservations r
+        JOIN members m  ON r.member_id  = m.id
+        JOIN sessions s ON r.session_id = s.id
+        WHERE r.id = $1
+      `, [reservationId]);
+      if (enriched) {
+        void safeSync('attendance', 'append', mapAttendanceRow(enriched));
+      }
+    } catch { /* swallow */ }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

@@ -4,6 +4,8 @@ import { createToken, setAuthCookie } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { validatePassword, normalizePhone, validateName, validateEmail } from '@/lib/validation';
 import { readJsonBody } from '@/lib/http';
+import { safeSync } from '@/lib/sheets';
+import { mapMemberRow } from '@/lib/sheets-mappers';
 import bcrypt from 'bcryptjs';
 
 export async function POST(req: NextRequest) {
@@ -112,6 +114,12 @@ export async function POST(req: NextRequest) {
       INSERT INTO members (id, name, phone, email, password_hash, role, join_date, is_active, must_change_password, token_version)
       VALUES ($1, $2, $3, $4, $5, 'member', $6, TRUE, FALSE, 0)
     `, [id, safeName, phone, safeEmail, hash, joinDate]);
+
+    // Sheets mirror (fire-and-forget; queues on failure)
+    void safeSync('members', 'upsert', mapMemberRow({
+      id, name: safeName, phone, email: safeEmail, role: 'member',
+      join_date: joinDate, is_active: true, memo: null,
+    }));
 
     const token = await createToken({ memberId: id, role: 'member', name: safeName, tokenVersion: 0 });
 

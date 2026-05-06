@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { dbAll, dbRun, genId } from '@/lib/db';
+import { dbAll, dbGet, dbRun, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
+import { safeSync } from '@/lib/sheets';
+import { mapSessionRow } from '@/lib/sheets-mappers';
 
 // EXT-I7: Bound the date window a logged-in client may request from
 // /api/sessions. Without this, a member could pull the entire historical
@@ -146,6 +148,16 @@ export async function POST(req: NextRequest) {
       !!body.isIndoor, body.memo || null, !!body.memoPublic,
       body.cancelDeadlineMinutes || 120, body.recurringGroupId || null]);
 
+    // Sheets mirror — Sessions tab upsert
+    void safeSync('sessions', 'upsert', mapSessionRow({
+      id, name: body.name, type: body.type, date: body.date,
+      start_time: body.startTime, end_time: body.endTime || null,
+      location: body.location || '',
+      max_capacity: body.maxCapacity,
+      current_reservations: 0, waitlist_count: 0,
+      status: 'open', is_indoor: !!body.isIndoor,
+    }));
+
     return NextResponse.json({ id, success: true }, { status: 201 });
   } catch (error: any) {
     console.error('[sessions POST] error:', error);
@@ -164,16 +176,32 @@ export async function DELETE(req: NextRequest) {
 
   // M5: If reservations exist, mark as cancelled instead of hard delete to
   // preserve history and avoid cascading data loss.
-  const reservationCount = await (await import('@/lib/db')).dbGet<{ count: number }>(
+  const reservationCount = await dbGet<{ count: number }>(
     `SELECT COUNT(*)::int AS count FROM reservations WHERE session_id = $1`,
     [id]
   );
 
   if (reservationCount && Number(reservationCount.count) > 0) {
     await dbRun("UPDATE sessions SET status = 'cancelled', updated_at = NOW() WHERE id = $1", [id]);
+
+    // Sheets mirror — flip K(상태) to cancelled
+    try {
+      const updated = await dbGet<any>(
+        `SELECT id, name, type, date, start_time, end_time, location, max_capacity,
+                status, is_indoor
+         FROM sessions WHERE id = $1`, [id]
+      );
+      if (updated) {
+        void safeSync('sessions', 'upsert', mapSessionRow(updated));
+      }
+    } catch { /* swallow */ }
+
     return NextResponse.json({ success: true, softDeleted: true, message: '예약 이력이 있어 세션을 취소 상태로 전환했습니다' });
   }
 
   await dbRun('DELETE FROM sessions WHERE id = $1', [id]);
+  // Hard-deleted sessions: leave the sheet row as-is (manager comment is
+  // preserved). The row simply becomes orphaned history. We don't try to
+  // delete sheet rows because that would also wipe the manager's memo.
   return NextResponse.json({ success: true });
 }

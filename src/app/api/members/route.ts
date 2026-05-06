@@ -3,6 +3,8 @@ import { dbAll, dbGet, dbRun, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { normalizePhone, validateName, validateEmail, validateText } from '@/lib/validation';
 import { readJsonBody } from '@/lib/http';
+import { safeSync } from '@/lib/sheets';
+import { mapMemberRow } from '@/lib/sheets-mappers';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
@@ -97,6 +99,13 @@ export async function POST(req: NextRequest) {
       VALUES ($1, $2, $3, $4, $5, 'member', $6, TRUE, $7, TRUE, 0)
     `, [id, nameCheck.value!, normalizedPhone, emailCheck.value ?? null, hash, joinDate, memoCheck.value ?? null]);
 
+    // Sheets mirror (fire-and-forget)
+    void safeSync('members', 'upsert', mapMemberRow({
+      id, name: nameCheck.value!, phone: normalizedPhone,
+      email: emailCheck.value ?? null, role: 'member',
+      join_date: joinDate, is_active: true, memo: memoCheck.value ?? null,
+    }));
+
     return NextResponse.json({
       id, name: nameCheck.value!, phone: normalizedPhone, email: emailCheck.value ?? null,
       joinDate, isActive: true, memo: memoCheck.value ?? null,
@@ -187,6 +196,17 @@ export async function PUT(req: NextRequest) {
         WHERE id = $6
       `, [safeName, normalizedPhone, safeEmail, isActive !== undefined ? !!isActive : null, safeMemo, id]);
     }
+
+    // Sheets mirror — re-read post-update so the row reflects final state
+    try {
+      const updated = await dbGet<any>(
+        `SELECT id, name, phone, email, role, join_date, is_active, memo
+         FROM members WHERE id = $1`, [id]
+      );
+      if (updated) {
+        void safeSync('members', 'upsert', mapMemberRow(updated));
+      }
+    } catch { /* swallow — never break the response */ }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

@@ -4,6 +4,8 @@ import { createToken, getAuthFromRequest, setAuthCookie, unauthorizedResponse } 
 import { rateLimit } from '@/lib/rate-limit';
 import { validatePassword } from '@/lib/validation';
 import { readJsonBody } from '@/lib/http';
+import { safeSync } from '@/lib/sheets';
+import { mapMemberRow } from '@/lib/sheets-mappers';
 import bcrypt from 'bcryptjs';
 
 // PUT /api/auth/password - Change password (current user only)
@@ -84,6 +86,18 @@ export async function PUT(req: NextRequest) {
       name: member.name,
       tokenVersion: updated?.token_version ?? (member.token_version ?? 0) + 1,
     });
+
+    // Sheets mirror — touch only the 최종동기화 column by re-reading the row.
+    try {
+      const row = await dbGet<any>(
+        `SELECT id, name, phone, email, role, join_date, is_active, memo
+         FROM members WHERE id = $1`, [auth.memberId]
+      );
+      if (row) {
+        void safeSync('members', 'upsert', mapMemberRow(row));
+      }
+    } catch { /* swallow — never break the response */ }
+
     const response = NextResponse.json({ success: true, message: '비밀번호가 변경되었습니다' });
     setAuthCookie(response, newToken);
     return response;

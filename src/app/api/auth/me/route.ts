@@ -4,6 +4,8 @@ import { getAuthFromRequest, unauthorizedResponse } from '@/lib/auth';
 import { validateName, validateEmail, validateText, validatePassword } from '@/lib/validation';
 import { readJsonBody } from '@/lib/http';
 import { rateLimit } from '@/lib/rate-limit';
+import { safeSync } from '@/lib/sheets';
+import { mapMemberRow } from '@/lib/sheets-mappers';
 import bcrypt from 'bcryptjs';
 
 export async function GET(req: NextRequest) {
@@ -167,6 +169,17 @@ export async function PUT(req: NextRequest) {
     params.push(auth.memberId);
     const sql = `UPDATE members SET ${sets.join(', ')} WHERE id = $${params.length}`;
     await dbRun(sql, params);
+
+    // Sheets mirror — re-read post-update so the row reflects final state
+    try {
+      const updated = await dbGet<any>(
+        `SELECT id, name, phone, email, role, join_date, is_active, memo
+         FROM members WHERE id = $1`, [auth.memberId]
+      );
+      if (updated) {
+        void safeSync('members', 'upsert', mapMemberRow(updated));
+      }
+    } catch { /* swallow — never break the response */ }
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
