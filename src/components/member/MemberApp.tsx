@@ -17,6 +17,7 @@ import ClubHome from './ClubHome';
 import { useAuth } from '@/store/AuthContext';
 import { useApp } from '@/store/AppContext';
 import { cn } from '@/lib/utils';
+import BusinessFooter from '@/components/public/BusinessFooter';
 import type { SessionType } from '@/types';
 
 type Tab = 'home' | 'overview' | 'calendar' | 'reservations' | 'passes' | 'catalog' | 'attendance' | 'qr' | 'notices' | 'profile' | 'help';
@@ -269,6 +270,15 @@ export default function MemberApp() {
         <main className="flex-1 px-3 md:px-8 py-4 md:py-6 pb-[80px] md:pb-6 animate-fade-in">
           {renderContent()}
         </main>
+
+        {/* 전자상거래법 제13조·시행령 제10조 — 사업자 정보 의무 표기 (회원 앱 공통 푸터) */}
+        <div className="hidden md:block">
+          <BusinessFooter variant="compact" />
+        </div>
+        {/* 모바일은 하단 탭바와 겹치지 않도록 안전 여백 + 별도 출력 */}
+        <div className="md:hidden pb-[64px]">
+          <BusinessFooter variant="compact" />
+        </div>
 
         {/* ─── Mobile Bottom Nav ─── */}
         <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white border-t border-[var(--color-border)] grid grid-cols-5 h-[64px] pb-[env(safe-area-inset-bottom)]">

@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { TestModeBanner } from '@/components/member/PassCatalog';
+import BusinessFooter from '@/components/public/BusinessFooter';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-6: Toss redirects here on successful checkout with three params:
@@ -56,10 +57,11 @@ function PaymentSuccessContent() {
   }, [params]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 bg-[var(--color-bg-subtle)]">
-      <div className="w-full max-w-[440px] space-y-3">
-        <TestModeBanner compact />
-        <div className="bg-white border border-[var(--color-border)] rounded-md p-6 text-center">
+    <div className="min-h-screen flex flex-col bg-[var(--color-bg-subtle)]">
+      <div className="flex-1 flex items-center justify-center px-4 py-8">
+        <div className="w-full max-w-[440px] space-y-3">
+          <TestModeBanner compact />
+          <div className="bg-white border border-[var(--color-border)] rounded-md p-6 text-center">
           {state === 'pending' && (
             <>
               <Loader2 size={36} className="text-[var(--color-primary)] mx-auto mb-3 animate-spin" />
@@ -98,8 +100,11 @@ function PaymentSuccessContent() {
               </div>
             </>
           )}
+          </div>
         </div>
       </div>
+      {/* 전자상거래법 제13조·시행령 제10조 — 사업자 정보 의무 표기 */}
+      <BusinessFooter variant="compact" />
     </div>
   );
 }
