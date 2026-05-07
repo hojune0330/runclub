@@ -1,15 +1,41 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { Plus, X, Search, Calendar, Clock, MapPin, Users, Trash2, CalendarRange } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import {
+  Plus, X, Search, Calendar, Clock, MapPin, Users, Trash2, CalendarRange,
+  Pencil, Link as LinkIcon, Camera, MessageCircle, Image as ImageIcon, Sparkles, Info,
+} from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig, reservationStatusConfig } from '@/lib/config';
 import { formatKoreanDate, cn, format, isSessionFull } from '@/lib/utils';
 import { Modal, FormField } from '@/components/ui';
-import type { Session, SessionType } from '@/types';
+import type { Session, SessionType, SessionRibbon } from '@/types';
+
+// ─── Ribbon presets shared between admin editor and member view ──────────
+// Keeping these in one place ensures the badges members see are exactly the
+// ones the admin can pick from. New ribbons should be added to the
+// SessionRibbon union in types/index.ts as well as here.
+export const RIBBON_PRESETS: { id: SessionRibbon; label: string; emoji: string }[] = [
+  { id: 'none',       label: '표시 안 함',     emoji: '—' },
+  { id: 'new',        label: '신규',           emoji: '🆕' },
+  { id: 'hot',        label: '인기',           emoji: '🔥' },
+  { id: 'few_seats',  label: '마감 임박',      emoji: '⏰' },
+  { id: 'beginner',   label: '입문 환영',      emoji: '🌱' },
+  { id: 'special',    label: '스페셜',         emoji: '⭐' },
+  { id: 'event',      label: '이벤트',         emoji: '🎉' },
+  { id: 'rain_check', label: '우천 시 안내',   emoji: '☔' },
+];
+const ribbonLabel = (id?: SessionRibbon | null) =>
+  RIBBON_PRESETS.find(p => p.id === id)?.label ?? '표시 안 함';
+const ribbonEmoji = (id?: SessionRibbon | null) =>
+  RIBBON_PRESETS.find(p => p.id === id)?.emoji ?? '';
 
 export default function SessionManagement() {
-  const { sessions, reservations, createSession, deleteSession, updateReservationStatus, cancelReservation, refreshSessions } = useApp();
+  const {
+    sessions, reservations,
+    createSession, updateSession, deleteSession,
+    updateReservationStatus, cancelReservation, refreshSessions,
+  } = useApp();
 
   // Filters
   const [search, setSearch] = useState('');
@@ -18,6 +44,7 @@ export default function SessionManagement() {
 
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
   const [showBulkForm, setShowBulkForm] = useState(false);
   const [bulkFrom, setBulkFrom] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [bulkTo, setBulkTo] = useState(format(new Date(Date.now() + 60 * 86400000), 'yyyy-MM-dd'));
@@ -308,6 +335,13 @@ export default function SessionManagement() {
             <h2 className="text-[14px] font-semibold text-[var(--color-text)]">세션 상세</h2>
             <div className="flex items-center gap-2">
               <button
+                onClick={() => setShowEditForm(true)}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-[12px] text-[var(--color-primary)] border border-[var(--color-primary)]/30 rounded hover:bg-[var(--color-primary)]/10 transition-colors"
+              >
+                <Pencil size={12} />
+                수정
+              </button>
+              <button
                 onClick={handleDelete}
                 className="inline-flex items-center gap-1 px-2.5 py-1 text-[12px] text-[var(--color-danger)] border border-[var(--color-danger-border)] rounded hover:bg-[var(--color-danger-bg)] transition-colors"
               >
@@ -350,10 +384,43 @@ export default function SessionManagement() {
 
               {liveSession.memo && (
                 <div className="mt-4 p-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border-subtle)] rounded text-[12.5px] text-[var(--color-text-secondary)] leading-relaxed">
-                  <p className="text-[11px] text-[var(--color-text-muted)] mb-1">메모</p>
+                  <p className="text-[11px] text-[var(--color-text-muted)] mb-1">관리자 메모</p>
                   {liveSession.memo}
                 </div>
               )}
+
+              {/* PR-7: pre-registration info preview — shows admins exactly
+                  what members will see on the session detail page before
+                  they register. Empty fields render a subtle "미설정" hint
+                  so the admin can spot what's still missing. */}
+              <div className="mt-4 p-3 bg-white border border-dashed border-[var(--color-border)] rounded">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[11px] font-medium text-[var(--color-text-muted)] uppercase tracking-wide">
+                    회원에게 보여지는 정보
+                  </p>
+                  <button
+                    onClick={() => setShowEditForm(true)}
+                    className="text-[11px] text-[var(--color-primary)] hover:underline inline-flex items-center gap-1"
+                  >
+                    <Pencil size={10} /> 편집
+                  </button>
+                </div>
+                <ul className="space-y-1.5 text-[12px]">
+                  <PreviewLine
+                    icon={Sparkles}
+                    label="리본"
+                    value={liveSession.ribbon && liveSession.ribbon !== 'none'
+                      ? `${ribbonEmoji(liveSession.ribbon)} ${ribbonLabel(liveSession.ribbon)}`
+                      : null}
+                  />
+                  <PreviewLine icon={Info} label="설명" value={liveSession.description || null} clamp />
+                  <PreviewLine icon={LinkIcon} label="이벤트 페이지" value={liveSession.eventUrl || null} link />
+                  <PreviewLine icon={Camera} label="인스타 후기" value={liveSession.instagramUrl || null} link />
+                  <PreviewLine icon={MessageCircle} label="오픈채팅" value={liveSession.kakaoOpenChatUrl || null} link />
+                  <PreviewLine icon={MapPin} label="지도 링크" value={liveSession.locationMapUrl || null} link />
+                  <PreviewLine icon={ImageIcon} label="커버 이미지" value={liveSession.coverImageUrl || null} link />
+                </ul>
+              </div>
             </div>
 
             {/* Reservations */}
@@ -428,6 +495,22 @@ export default function SessionManagement() {
             </div>
           </div>
         </section>
+      )}
+
+      {/* Edit Modal — PR-7: full session edit incl. pre-registration info */}
+      {showEditForm && liveSession && (
+        <EditSessionModal
+          key={liveSession.id /* re-mount on session swap so stale state never leaks */}
+          session={liveSession}
+          onClose={() => setShowEditForm(false)}
+          onSave={async (patch) => {
+            const ok = await updateSession(liveSession.id, patch);
+            if (ok) {
+              setShowEditForm(false);
+            }
+            return ok;
+          }}
+        />
       )}
 
       {/* Create Modal */}
@@ -590,6 +673,413 @@ function InfoRow({ icon: Icon, label, value }: { icon: typeof Calendar; label: s
       <div className="flex-1 min-w-0">
         <p className="text-[11.5px] text-[var(--color-text-muted)] mb-0.5">{label}</p>
         <p className="text-[13px] text-[var(--color-text)]">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Preview line for admin's "what members see" snapshot ────────────────
+function PreviewLine({
+  icon: Icon,
+  label,
+  value,
+  link,
+  clamp,
+}: {
+  icon: typeof Calendar;
+  label: string;
+  value: string | null;
+  link?: boolean;
+  clamp?: boolean;
+}) {
+  return (
+    <li className="flex items-start gap-2">
+      <Icon size={12} className="text-[var(--color-text-muted)] mt-1 shrink-0" />
+      <span className="text-[var(--color-text-muted)] w-[80px] shrink-0">{label}</span>
+      <span className={cn('flex-1 min-w-0', clamp && 'line-clamp-2')}>
+        {value ? (
+          link ? (
+            <a
+              href={value}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[var(--color-primary)] hover:underline break-all"
+            >
+              {value.length > 60 ? value.slice(0, 60) + '…' : value}
+            </a>
+          ) : (
+            <span className="text-[var(--color-text)] break-words">{value}</span>
+          )
+        ) : (
+          <span className="text-[var(--color-text-muted)]">미설정</span>
+        )}
+      </span>
+    </li>
+  );
+}
+
+// ─── Edit Session Modal (PR-7) ───────────────────────────────────────────
+//
+// Edits both the "core schedule" fields (name/type/date/time/capacity/etc.)
+// and the new "pre-registration info" fields (description, eventUrl,
+// instagramUrl, kakaoOpenChatUrl, locationMapUrl, coverImageUrl, ribbon).
+//
+// Why a single modal instead of two tabs:
+// - Coaches typically tweak multiple fields at once when prepping a
+//   session (e.g. update memo + post the Instagram review at the same
+//   time as flipping `memoPublic`).
+// - The modal stays scrollable; we group fields into "기본 / 일정·정원 /
+//   회원 안내" sections so users still find the right field quickly.
+//
+// We send a *partial* PATCH-like payload back to PUT /api/sessions: only
+// fields that changed are forwarded so the server can audit-log a clean
+// diff and the row's other columns stay untouched. The server already
+// validates / sanitises every field, so the client only has to do the
+// bare minimum (URL hint, length cap on description).
+function EditSessionModal({
+  session,
+  onClose,
+  onSave,
+}: {
+  session: Session;
+  onClose: () => void;
+  onSave: (patch: Partial<Session>) => Promise<boolean>;
+}) {
+  const [name, setName] = useState(session.name);
+  const [type, setType] = useState<SessionType>(session.type);
+  const [date, setDate] = useState(session.date);
+  const [startTime, setStartTime] = useState(session.startTime);
+  const [endTime, setEndTime] = useState(session.endTime ?? '');
+  const [location, setLocation] = useState(session.location ?? '');
+  const [locationAddress, setLocationAddress] = useState(session.locationAddress ?? '');
+  const [locationMapUrl, setLocationMapUrl] = useState(session.locationMapUrl ?? '');
+  const [maxCapacity, setMaxCapacity] = useState(session.maxCapacity);
+  const [isIndoor, setIsIndoor] = useState(!!session.isIndoor);
+  const [cancelDeadline, setCancelDeadline] = useState(session.cancelDeadlineMinutes);
+  const [status, setStatus] = useState<Session['status']>(session.status);
+  const [memo, setMemo] = useState(session.memo ?? '');
+  const [memoPublic, setMemoPublic] = useState(!!session.memoPublic);
+
+  // PR-7 info card fields
+  const [description, setDescription] = useState(session.description ?? '');
+  const [eventUrl, setEventUrl] = useState(session.eventUrl ?? '');
+  const [instagramUrl, setInstagramUrl] = useState(session.instagramUrl ?? '');
+  const [kakaoOpenChatUrl, setKakaoOpenChatUrl] = useState(session.kakaoOpenChatUrl ?? '');
+  const [coverImageUrl, setCoverImageUrl] = useState(session.coverImageUrl ?? '');
+  const [ribbon, setRibbon] = useState<SessionRibbon>(session.ribbon ?? 'none');
+
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Lightweight URL hint: not a hard block (the server is the source of
+  // truth) — just helps the admin spot a typo before they hit save.
+  const urlLooksOk = (v: string) => !v || /^https?:\/\//i.test(v.trim());
+  const urlHint = (v: string) => (urlLooksOk(v) ? undefined : 'http(s):// 로 시작해야 합니다');
+
+  // Build the partial diff at submit time. Only non-equal fields go into the
+  // payload so the audit log shows exactly what the admin changed.
+  const buildPatch = (): Partial<Session> => {
+    const patch: Partial<Session> = {};
+    const trim = (s: string) => s.trim();
+
+    if (trim(name) !== session.name) patch.name = trim(name);
+    if (type !== session.type) patch.type = type;
+    if (date !== session.date) patch.date = date;
+    if (startTime !== session.startTime) patch.startTime = startTime;
+    if ((endTime || '') !== (session.endTime ?? '')) patch.endTime = endTime || undefined;
+    if (location !== (session.location ?? '')) patch.location = location;
+    if (locationAddress !== (session.locationAddress ?? '')) patch.locationAddress = locationAddress;
+    if (trim(locationMapUrl) !== (session.locationMapUrl ?? '')) patch.locationMapUrl = trim(locationMapUrl) || undefined;
+    if (Number(maxCapacity) !== session.maxCapacity) patch.maxCapacity = Number(maxCapacity);
+    if (isIndoor !== !!session.isIndoor) patch.isIndoor = isIndoor;
+    if (Number(cancelDeadline) !== session.cancelDeadlineMinutes) patch.cancelDeadlineMinutes = Number(cancelDeadline);
+    if (status !== session.status) patch.status = status;
+    if (memo !== (session.memo ?? '')) patch.memo = memo;
+    if (memoPublic !== !!session.memoPublic) patch.memoPublic = memoPublic;
+
+    if (description !== (session.description ?? '')) patch.description = description;
+    if (trim(eventUrl) !== (session.eventUrl ?? '')) patch.eventUrl = trim(eventUrl) || undefined;
+    if (trim(instagramUrl) !== (session.instagramUrl ?? '')) patch.instagramUrl = trim(instagramUrl) || undefined;
+    if (trim(kakaoOpenChatUrl) !== (session.kakaoOpenChatUrl ?? '')) patch.kakaoOpenChatUrl = trim(kakaoOpenChatUrl) || undefined;
+    if (trim(coverImageUrl) !== (session.coverImageUrl ?? '')) patch.coverImageUrl = trim(coverImageUrl) || undefined;
+    if (ribbon !== (session.ribbon ?? 'none')) patch.ribbon = ribbon;
+
+    return patch;
+  };
+
+  const handleSubmit = async () => {
+    setError(null);
+    if (!name.trim()) { setError('세션명을 입력하세요'); return; }
+    if (!date || !startTime) { setError('날짜와 시작 시간을 입력하세요'); return; }
+    if (!Number.isFinite(Number(maxCapacity)) || Number(maxCapacity) < 1) {
+      setError('정원은 1명 이상이어야 합니다');
+      return;
+    }
+    const urls = [locationMapUrl, eventUrl, instagramUrl, kakaoOpenChatUrl, coverImageUrl];
+    if (urls.some(u => !urlLooksOk(u))) {
+      setError('URL은 http(s):// 로 시작해야 합니다');
+      return;
+    }
+
+    const patch = buildPatch();
+    if (Object.keys(patch).length === 0) {
+      setError('변경된 항목이 없습니다');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(patch);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Esc to close — minor nicety so admins can hammer through edits.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/30 z-50 flex items-start md:items-center justify-center px-4 py-6 overflow-y-auto animate-fade-in"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white border border-[var(--color-border)] rounded-md shadow-lg w-full max-w-[720px] animate-slide-up"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)] sticky top-0 bg-white rounded-t-md">
+          <div>
+            <h3 className="text-[15px] font-semibold text-[var(--color-text)]">세션 수정</h3>
+            <p className="text-[11.5px] text-[var(--color-text-muted)] mt-0.5">
+              {formatKoreanDate(session.date, 'yyyy.M.d (EEE)')} · {session.startTime} · {sessionTypeConfig[session.type].label}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-6 max-h-[70vh] overflow-y-auto">
+          {/* ── Section: 기본 ── */}
+          <section className="space-y-3">
+            <h4 className="text-[12px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">기본 정보</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="세션명" required>
+                <input className="form-input" value={name} onChange={e => setName(e.target.value)} maxLength={200} />
+              </FormField>
+              <FormField label="유형" required>
+                <select className="form-input" value={type} onChange={e => setType(e.target.value as SessionType)}>
+                  <option value="ebw">EBW 실내 러닝</option>
+                  <option value="slowrun">슬로우 롱런</option>
+                  <option value="marathon">마라톤 클래스</option>
+                </select>
+              </FormField>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <FormField label="날짜" required>
+                <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} />
+              </FormField>
+              <FormField label="시작" required>
+                <input type="time" className="form-input" value={startTime} onChange={e => setStartTime(e.target.value)} />
+              </FormField>
+              <FormField label="종료">
+                <input type="time" className="form-input" value={endTime} onChange={e => setEndTime(e.target.value)} />
+              </FormField>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <FormField label="정원" required>
+                <input
+                  type="number" min={1} className="form-input"
+                  value={maxCapacity}
+                  onChange={e => setMaxCapacity(parseInt(e.target.value) || 1)}
+                />
+              </FormField>
+              <FormField label="취소 마감(분)" hint="시작 전 N분">
+                <input
+                  type="number" min={0} className="form-input"
+                  value={cancelDeadline}
+                  onChange={e => setCancelDeadline(parseInt(e.target.value) || 0)}
+                />
+              </FormField>
+              <FormField label="상태">
+                <select className="form-input" value={status} onChange={e => setStatus(e.target.value as Session['status'])}>
+                  <option value="open">모집중</option>
+                  <option value="closed">종료</option>
+                  <option value="cancelled">취소</option>
+                </select>
+              </FormField>
+            </div>
+            <label className="inline-flex items-center gap-2 text-[12.5px] text-[var(--color-text-secondary)]">
+              <input type="checkbox" checked={isIndoor} onChange={e => setIsIndoor(e.target.checked)} />
+              실내 세션 (우천 무관)
+            </label>
+          </section>
+
+          {/* ── Section: 장소 ── */}
+          <section className="space-y-3">
+            <h4 className="text-[12px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">장소</h4>
+            <FormField label="장소명">
+              <input
+                className="form-input"
+                placeholder="예: 뚝섬한강공원 M지점"
+                value={location}
+                onChange={e => setLocation(e.target.value)}
+              />
+            </FormField>
+            <FormField label="주소">
+              <input
+                className="form-input"
+                placeholder="예: 서울 광진구 자양동 노룬산로 18-1"
+                value={locationAddress}
+                onChange={e => setLocationAddress(e.target.value)}
+              />
+            </FormField>
+            <FormField label="지도 링크 (네이버지도/카카오맵/Google Maps)" hint={urlHint(locationMapUrl)}>
+              <input
+                className="form-input"
+                placeholder="https://map.naver.com/..."
+                value={locationMapUrl}
+                onChange={e => setLocationMapUrl(e.target.value)}
+              />
+            </FormField>
+          </section>
+
+          {/* ── Section: 회원 안내 (PR-7) ── */}
+          <section className="space-y-3">
+            <div>
+              <h4 className="text-[12px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">
+                회원 안내 (등록 전 노출)
+              </h4>
+              <p className="text-[11.5px] text-[var(--color-text-muted)] mt-1 leading-relaxed">
+                회원이 세션 상세 페이지에서 예약 전에 보는 정보입니다. 이벤트 페이지·인스타 후기·오픈채팅 링크는
+                새 탭에서 열리며, 리본은 일정 옆에 작은 배지로 표시됩니다.
+              </p>
+            </div>
+
+            <FormField label="리본/배지">
+              <div className="flex flex-wrap gap-1.5">
+                {RIBBON_PRESETS.map(p => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setRibbon(p.id)}
+                    className={cn(
+                      'inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[12px] transition-colors',
+                      ribbon === p.id
+                        ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+                        : 'bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-primary)]/40'
+                    )}
+                  >
+                    <span>{p.emoji}</span>
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </FormField>
+
+            <FormField label="설명 (말풍선/타이틀 아래 노출)" hint={`${description.length} / 2000`}>
+              <textarea
+                className="form-input min-h-[80px] resize-y"
+                rows={3}
+                maxLength={2000}
+                placeholder="예: 입문자도 환영! 페이스 6분/㎞ 그룹과 함께 5km를 천천히 달립니다."
+                value={description}
+                onChange={e => setDescription(e.target.value)}
+              />
+            </FormField>
+
+            <div className="grid grid-cols-1 gap-3">
+              <FormField label="이벤트 페이지 URL" hint={urlHint(eventUrl)}>
+                <div className="relative">
+                  <LinkIcon size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                  <input
+                    className="form-input pl-8"
+                    placeholder="https://www.notion.so/event-page"
+                    value={eventUrl}
+                    onChange={e => setEventUrl(e.target.value)}
+                  />
+                </div>
+              </FormField>
+              <FormField label="인스타 후기 게시물 URL" hint={urlHint(instagramUrl)}>
+                <div className="relative">
+                  <Camera size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                  <input
+                    className="form-input pl-8"
+                    placeholder="https://www.instagram.com/p/..."
+                    value={instagramUrl}
+                    onChange={e => setInstagramUrl(e.target.value)}
+                  />
+                </div>
+              </FormField>
+              <FormField label="오픈카톡방 링크" hint={urlHint(kakaoOpenChatUrl)}>
+                <div className="relative">
+                  <MessageCircle size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                  <input
+                    className="form-input pl-8"
+                    placeholder="https://open.kakao.com/o/..."
+                    value={kakaoOpenChatUrl}
+                    onChange={e => setKakaoOpenChatUrl(e.target.value)}
+                  />
+                </div>
+              </FormField>
+              <FormField label="커버 이미지 URL (선택)" hint={urlHint(coverImageUrl)}>
+                <div className="relative">
+                  <ImageIcon size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+                  <input
+                    className="form-input pl-8"
+                    placeholder="https://..."
+                    value={coverImageUrl}
+                    onChange={e => setCoverImageUrl(e.target.value)}
+                  />
+                </div>
+              </FormField>
+            </div>
+          </section>
+
+          {/* ── Section: 관리자 메모 ── */}
+          <section className="space-y-3">
+            <h4 className="text-[12px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">관리자 메모</h4>
+            <FormField label="메모">
+              <textarea
+                className="form-input min-h-[64px] resize-y"
+                rows={2}
+                value={memo}
+                onChange={e => setMemo(e.target.value)}
+                maxLength={2000}
+              />
+            </FormField>
+            <label className="inline-flex items-center gap-2 text-[12.5px] text-[var(--color-text-secondary)]">
+              <input type="checkbox" checked={memoPublic} onChange={e => setMemoPublic(e.target.checked)} />
+              메모를 회원에게도 공개 (안내사항으로 표시)
+            </label>
+          </section>
+
+          {error && (
+            <div className="text-[12.5px] text-[var(--color-danger)] bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] rounded px-3 py-2">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[var(--color-border)] bg-white rounded-b-md sticky bottom-0">
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="px-4 py-2 text-[13px] text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-hover)] transition-colors disabled:opacity-50"
+          >
+            취소
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={saving}
+            className="px-4 py-2 text-[13px] text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-60"
+          >
+            {saving ? '저장 중…' : '변경사항 저장'}
+          </button>
+        </div>
       </div>
     </div>
   );

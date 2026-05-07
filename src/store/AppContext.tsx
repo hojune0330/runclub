@@ -33,6 +33,7 @@ interface AppActions {
   leaveWaitlist: (entryId: string) => Promise<void>;
 
   createSession: (data: Omit<Session, 'id' | 'currentReservations' | 'waitlistCount' | 'status'>) => Promise<void>;
+  updateSession: (sessionId: string, data: Partial<Session>) => Promise<boolean>;
   deleteSession: (sessionId: string) => Promise<void>;
 
   createNotice: (data: { title: string; content: string; targetSessions?: string[] }) => Promise<void>;
@@ -46,9 +47,33 @@ interface AppActions {
   setMemberActive: (memberId: string, active: boolean) => Promise<boolean>;
   setMemberRole: (memberId: string, role: 'admin' | 'member') => Promise<boolean>;
 
-  issueMemberPass: (memberId: string, productId: string) => Promise<void>;
+  issueMemberPass: (memberId: string, productId: string, opts?: {
+    paymentStatus?: 'unpaid' | 'paid' | 'refunded' | 'partial_refund';
+    paymentMethod?: string;
+    paymentAmount?: number;
+    discountAmount?: number;
+    discountReason?: string;
+    adminMemo?: string;
+    startDate?: string;
+  }) => Promise<{ id: string } | null>;
   pauseMemberPass: (passId: string) => Promise<void>;
+  resumeMemberPass: (passId: string) => Promise<void>;
   refundMemberPass: (passId: string) => Promise<void>;
+  extendMemberPass: (passId: string, params: { days?: number; expiryDate?: string }) => Promise<boolean>;
+  adjustMemberPass: (passId: string, params: { totalCount?: number; remainingCount?: number }) => Promise<boolean>;
+  setMemberPassPayment: (passId: string, params: {
+    paymentStatus: 'unpaid' | 'paid' | 'refunded' | 'partial_refund';
+    paymentMethod?: string;
+    paymentAmount?: number;
+    transactionId?: string;
+  }) => Promise<boolean>;
+  setMemberPassMemo: (passId: string, adminMemo: string) => Promise<boolean>;
+
+  // PR-6: pass product (catalog) admin actions
+  createPassProduct: (data: any) => Promise<{ id: string } | null>;
+  updatePassProduct: (id: string, data: any) => Promise<boolean>;
+  deactivatePassProduct: (id: string) => Promise<boolean>;
+  deletePassProduct: (id: string, hard?: boolean) => Promise<boolean>;
 }
 
 const AppContext = createContext<(AppState & AppActions) | null>(null);
@@ -248,6 +273,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshSessions, handleAuthError]);
 
+  const updateSession = useCallback(async (sessionId: string, data: Partial<Session>) => {
+    try {
+      await api.sessions.update(sessionId, data);
+      await refreshSessions();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshSessions, handleAuthError]);
+
   const deleteSession = useCallback(async (sessionId: string) => {
     try {
       await api.sessions.delete(sessionId);
@@ -352,18 +388,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [refreshMembers, handleAuthError]);
 
   // ─── Passes ───
-  const issueMemberPass = useCallback(async (memberId: string, productId: string) => {
+  const issueMemberPass = useCallback(async (memberId: string, productId: string, opts?: any) => {
     try {
-      await api.passes.issue(memberId, productId);
+      const result = await api.passes.issue({ memberId, productId, ...(opts || {}) });
       await refreshPasses();
+      return result;
     } catch (e: any) {
       if (!handleAuthError(e)) alert(e.message);
+      return null;
     }
   }, [refreshPasses, handleAuthError]);
 
   const pauseMemberPass = useCallback(async (passId: string) => {
     try {
       await api.passes.updateStatus(passId, 'pause');
+      await refreshPasses();
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+    }
+  }, [refreshPasses, handleAuthError]);
+
+  const resumeMemberPass = useCallback(async (passId: string) => {
+    try {
+      await api.passes.updateStatus(passId, 'resume');
       await refreshPasses();
     } catch (e: any) {
       if (!handleAuthError(e)) alert(e.message);
@@ -379,16 +426,107 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshPasses, handleAuthError]);
 
+  const extendMemberPass = useCallback(async (passId: string, params: { days?: number; expiryDate?: string }) => {
+    try {
+      await api.passes.extend(passId, params);
+      await refreshPasses();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshPasses, handleAuthError]);
+
+  const adjustMemberPass = useCallback(async (passId: string, params: { totalCount?: number; remainingCount?: number }) => {
+    try {
+      await api.passes.adjust(passId, params);
+      await refreshPasses();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshPasses, handleAuthError]);
+
+  const setMemberPassPayment = useCallback(async (passId: string, params: any) => {
+    try {
+      await api.passes.setPayment(passId, params);
+      await refreshPasses();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshPasses, handleAuthError]);
+
+  const setMemberPassMemo = useCallback(async (passId: string, adminMemo: string) => {
+    try {
+      await api.passes.setMemo(passId, adminMemo);
+      await refreshPasses();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshPasses, handleAuthError]);
+
+  // ─── Pass products (catalog admin) ───
+  const createPassProduct = useCallback(async (data: any) => {
+    try {
+      const result = await api.passProducts.create(data);
+      await refreshPasses();
+      return result;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return null;
+    }
+  }, [refreshPasses, handleAuthError]);
+
+  const updatePassProduct = useCallback(async (id: string, data: any) => {
+    try {
+      await api.passProducts.update(id, data);
+      await refreshPasses();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshPasses, handleAuthError]);
+
+  const deactivatePassProduct = useCallback(async (id: string) => {
+    try {
+      await api.passProducts.delete(id, false);
+      await refreshPasses();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshPasses, handleAuthError]);
+
+  const deletePassProduct = useCallback(async (id: string, hard = false) => {
+    try {
+      await api.passProducts.delete(id, hard);
+      await refreshPasses();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshPasses, handleAuthError]);
+
   const value = {
     sessions, members, memberPasses, reservations, waitlistEntries, notices, passProducts, currentMember, loading,
     refreshSessions, refreshReservations, refreshPasses, refreshNotices, refreshMembers, refreshAll,
     makeReservation, cancelReservation, updateReservationStatus,
     joinWaitlist, leaveWaitlist,
-    createSession, deleteSession,
+    createSession, updateSession, deleteSession,
     createNotice, deleteNotice, markNoticeRead,
     addMember,
     resetMemberPassword, deleteMember, setMemberActive, setMemberRole,
-    issueMemberPass, pauseMemberPass, refundMemberPass,
+    issueMemberPass, pauseMemberPass, resumeMemberPass, refundMemberPass,
+    extendMemberPass, adjustMemberPass, setMemberPassPayment, setMemberPassMemo,
+    createPassProduct, updatePassProduct, deactivatePassProduct, deletePassProduct,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

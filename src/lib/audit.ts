@@ -40,6 +40,14 @@ export type AuditAction =
   | 'pass.pause'
   | 'pass.resume'
   | 'pass.refund'
+  | 'pass.extend'
+  | 'pass.adjust'
+  | 'pass.payment'
+  | 'pass.memo'
+  | 'pass_product.create'
+  | 'pass_product.update'
+  | 'pass_product.delete'
+  | 'pass_product.deactivate'
   | 'notice.create'
   | 'notice.delete'
   | 'reservation.update_status'
@@ -47,7 +55,7 @@ export type AuditAction =
 
 export interface AuditEntry {
   action: AuditAction;
-  targetType?: 'member' | 'session' | 'pass' | 'notice' | 'reservation' | 'qr';
+  targetType?: 'member' | 'session' | 'pass' | 'pass_product' | 'notice' | 'reservation' | 'qr';
   targetId?: string | null;
   targetName?: string | null;
   summary?: string | null;

@@ -31,6 +31,8 @@ export const TAB = {
   sessions: process.env.GOOGLE_SHEET_TAB_SESSIONS ?? 'Sessions',
   // PR-5: append-only admin audit log
   adminLog: process.env.GOOGLE_SHEET_TAB_ADMIN_LOG ?? 'AdminLog',
+  // PR-6: pass product catalog
+  passProducts: process.env.GOOGLE_SHEET_TAB_PASS_PRODUCTS ?? 'PassProducts',
 } as const;
 
 export type TabName = keyof typeof TAB;
@@ -38,17 +40,19 @@ export type TabName = keyof typeof TAB;
 // ─── Column ranges owned by the DB (manager memo columns are excluded) ───
 //
 // Sheet layout (locked vs editable) — see docs/sheet-management.md
-//   Members:    A..I locked, J..O manager-editable     → upsert writes A..I
-//   Passes:     A..N locked, O manager-editable        → upsert writes A..N
-//   Attendance: A..K locked (append-only)              → append writes A..K
-//   Sessions:   A..M locked, N manager-editable        → upsert writes A..M
-//   AdminLog:   A..I locked (append-only)              → append writes A..I
+//   Members:      A..I locked, J..O manager-editable     → upsert writes A..I
+//   Passes:       A..U locked, V manager-editable        → upsert writes A..U
+//   Attendance:   A..K locked (append-only)              → append writes A..K
+//   Sessions:     A..M locked, N manager-editable        → upsert writes A..M
+//   AdminLog:     A..I locked (append-only)              → append writes A..I
+//   PassProducts: A..L locked, M..P manager-editable     → upsert writes A..L
 export const DB_RANGE: Record<TabName, { firstCol: string; lastCol: string }> = {
-  members:    { firstCol: 'A', lastCol: 'I' },
-  passes:     { firstCol: 'A', lastCol: 'N' },
-  attendance: { firstCol: 'A', lastCol: 'K' },
-  sessions:   { firstCol: 'A', lastCol: 'M' },
-  adminLog:   { firstCol: 'A', lastCol: 'I' },
+  members:      { firstCol: 'A', lastCol: 'I' },
+  passes:       { firstCol: 'A', lastCol: 'U' },
+  attendance:   { firstCol: 'A', lastCol: 'K' },
+  sessions:     { firstCol: 'A', lastCol: 'M' },
+  adminLog:     { firstCol: 'A', lastCol: 'I' },
+  passProducts: { firstCol: 'A', lastCol: 'L' },
 };
 
 // ─── Header definitions (exposed for sheet-init.mjs) ──────────────────────
@@ -63,8 +67,12 @@ export const HEADERS: Record<TabName, string[]> = {
   passes: [
     '수강권ID', '회원ID', '회원이름', '상품명', '카테고리',
     '총횟수', '잔여횟수', '시작일', '만료일', '발급일',
-    '상태', '일시정지시각', '가격', '최종동기화',
-    // ↓ 매니저 편집 영역 (O)
+    '상태', '일시정지시각', '가격',
+    // PR-6: payment envelope (N~T)
+    '결제상태', '결제수단', '실수령액', '결제시각', '거래번호',
+    '할인금액', '할인사유',
+    '최종동기화',
+    // ↓ 매니저 편집 영역 (V)
     '매니저메모',
   ],
   attendance: [
@@ -81,6 +89,12 @@ export const HEADERS: Record<TabName, string[]> = {
   adminLog: [
     '시각', '관리자ID', '관리자이름', '행동', '대상유형',
     '대상ID', '대상이름', '변경요약', 'IP',
+  ],
+  passProducts: [
+    '상품ID', '상품명', '분류', '적용세션', '총횟수', '기간(일)',
+    '정가', '판매가', '추천', '판매중', '정렬', '최종동기화',
+    // ↓ 매니저 편집 영역 (M~P)
+    '매니저메모', '태그', '할인코드', '내부분류',
   ],
 };
 

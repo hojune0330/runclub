@@ -127,8 +127,41 @@ export async function GET(req: NextRequest) {
       memoPublic: !!s.memo_public,
       cancelDeadlineMinutes: s.cancel_deadline_minutes,
       recurringGroupId: s.recurring_group_id,
+      // PR-7: pre-registration info card fields
+      description: s.description ?? null,
+      eventUrl: s.event_url ?? null,
+      instagramUrl: s.instagram_url ?? null,
+      kakaoOpenChatUrl: s.kakao_openchat_url ?? null,
+      ribbon: s.ribbon ?? null,
+      coverImageUrl: s.cover_image_url ?? null,
     };
   }));
+}
+
+// ─── PR-7 helpers ────────────────────────────────────────────────────────
+// We accept only http(s) URLs to avoid javascript:/data: XSS vectors when
+// the value is later rendered as <a href="..."> on the member detail page.
+const SAFE_URL_RE = /^https?:\/\/[^\s<>"']{1,500}$/i;
+const ALLOWED_RIBBONS = new Set([
+  'none','new','hot','few_seats','beginner','special','event','rain_check',
+]);
+
+function sanitizeUrl(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  if (!t) return null;
+  if (!SAFE_URL_RE.test(t)) return null;
+  return t;
+}
+function sanitizeRibbon(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  return ALLOWED_RIBBONS.has(v) ? v : null;
+}
+function sanitizeText(v: unknown, max: number): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.trim();
+  if (!t) return null;
+  return t.slice(0, max);
 }
 
 // POST /api/sessions - Admin only
@@ -141,13 +174,30 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const id = genId('s');
 
+    // PR-7: optional info-card fields. Sanitize so we never store unsafe
+    // URLs or oversized blobs on the row.
+    const description = sanitizeText(body.description, 2000);
+    const eventUrl = sanitizeUrl(body.eventUrl);
+    const instagramUrl = sanitizeUrl(body.instagramUrl);
+    const kakaoOpenChatUrl = sanitizeUrl(body.kakaoOpenChatUrl);
+    const locationMapUrl = sanitizeUrl(body.locationMapUrl);
+    const coverImageUrl = sanitizeUrl(body.coverImageUrl);
+    const ribbon = sanitizeRibbon(body.ribbon);
+
     await dbRun(`
-      INSERT INTO sessions (id, name, type, date, start_time, end_time, location, location_address, max_capacity, status, is_indoor, memo, memo_public, cancel_deadline_minutes, recurring_group_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open', $10, $11, $12, $13, $14)
+      INSERT INTO sessions (
+        id, name, type, date, start_time, end_time, location, location_address,
+        location_map_url, max_capacity, status, is_indoor, memo, memo_public,
+        cancel_deadline_minutes, recurring_group_id,
+        description, event_url, instagram_url, kakao_openchat_url, ribbon, cover_image_url
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'open',$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
     `, [id, body.name, body.type, body.date, body.startTime, body.endTime || null,
-      body.location || '', body.locationAddress || '', body.maxCapacity,
-      !!body.isIndoor, body.memo || null, !!body.memoPublic,
-      body.cancelDeadlineMinutes || 120, body.recurringGroupId || null]);
+      body.location || '', body.locationAddress || '', locationMapUrl,
+      body.maxCapacity, !!body.isIndoor, body.memo || null, !!body.memoPublic,
+      body.cancelDeadlineMinutes || 120, body.recurringGroupId || null,
+      description, eventUrl, instagramUrl, kakaoOpenChatUrl, ribbon, coverImageUrl,
+    ]);
 
     // Sheets mirror — Sessions tab upsert
     void safeSync('sessions', 'upsert', mapSessionRow({
@@ -177,6 +227,174 @@ export async function POST(req: NextRequest) {
     console.error('[sessions POST] error:', error);
     return NextResponse.json({ error: '세션 생성 중 오류가 발생했습니다' }, { status: 500 });
   }
+}
+
+// PUT /api/sessions?id=xxx - Admin only. Edit an existing session.
+//
+// Accepts a partial body — only fields present in the body are updated, so
+// the admin can tweak just the description without re-sending the whole row.
+// Required fields (name/type/date/startTime/maxCapacity) cannot be set to an
+// empty value: if they appear in the body they must be valid.
+export async function PUT(req: NextRequest) {
+  const auth = await getAuthFromRequest(req);
+  if (!auth) return unauthorizedResponse();
+  if (auth.role !== 'admin') return forbiddenResponse();
+
+  const id = req.nextUrl.searchParams.get('id');
+  if (!id) return NextResponse.json({ error: 'id 필요' }, { status: 400 });
+
+  const existing = await dbGet<any>(
+    `SELECT * FROM sessions WHERE id = $1`, [id]
+  );
+  if (!existing) {
+    return NextResponse.json({ error: '세션을 찾을 수 없습니다' }, { status: 404 });
+  }
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: '요청 형식이 올바르지 않습니다' }, { status: 400 });
+  }
+
+  // Build dynamic SET clause. Each entry maps an incoming JSON key to its
+  // SQL column name + the value to write (after validation/normalisation).
+  const sets: { col: string; val: any }[] = [];
+
+  // Required-but-optional-to-include fields. If present, must be non-empty.
+  if (body.name !== undefined) {
+    const v = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!v) return NextResponse.json({ error: '세션명을 입력하세요' }, { status: 400 });
+    sets.push({ col: 'name', val: v.slice(0, 200) });
+  }
+  if (body.type !== undefined) {
+    if (!['ebw', 'slowrun', 'marathon'].includes(body.type)) {
+      return NextResponse.json({ error: '유형이 올바르지 않습니다' }, { status: 400 });
+    }
+    sets.push({ col: 'type', val: body.type });
+  }
+  if (body.date !== undefined) {
+    if (typeof body.date !== 'string' || !ISO_DATE_RE.test(body.date)) {
+      return NextResponse.json({ error: '날짜 형식이 올바르지 않습니다' }, { status: 400 });
+    }
+    sets.push({ col: 'date', val: body.date });
+  }
+  if (body.startTime !== undefined) {
+    if (typeof body.startTime !== 'string' || !/^\d{2}:\d{2}$/.test(body.startTime)) {
+      return NextResponse.json({ error: '시작 시간이 올바르지 않습니다' }, { status: 400 });
+    }
+    sets.push({ col: 'start_time', val: body.startTime });
+  }
+  if (body.endTime !== undefined) {
+    const v = body.endTime;
+    if (v !== null && v !== '' && !(typeof v === 'string' && /^\d{2}:\d{2}$/.test(v))) {
+      return NextResponse.json({ error: '종료 시간이 올바르지 않습니다' }, { status: 400 });
+    }
+    sets.push({ col: 'end_time', val: v || null });
+  }
+  if (body.location !== undefined) {
+    sets.push({ col: 'location', val: typeof body.location === 'string' ? body.location.slice(0, 200) : '' });
+  }
+  if (body.locationAddress !== undefined) {
+    sets.push({ col: 'location_address', val: typeof body.locationAddress === 'string' ? body.locationAddress.slice(0, 300) : '' });
+  }
+  if (body.locationMapUrl !== undefined) {
+    sets.push({ col: 'location_map_url', val: sanitizeUrl(body.locationMapUrl) });
+  }
+  if (body.maxCapacity !== undefined) {
+    const n = Number(body.maxCapacity);
+    if (!Number.isFinite(n) || n < 1 || n > 10000) {
+      return NextResponse.json({ error: '정원이 올바르지 않습니다' }, { status: 400 });
+    }
+    sets.push({ col: 'max_capacity', val: Math.floor(n) });
+  }
+  if (body.isIndoor !== undefined) {
+    sets.push({ col: 'is_indoor', val: !!body.isIndoor });
+  }
+  if (body.memo !== undefined) {
+    sets.push({ col: 'memo', val: typeof body.memo === 'string' ? body.memo.slice(0, 2000) : null });
+  }
+  if (body.memoPublic !== undefined) {
+    sets.push({ col: 'memo_public', val: !!body.memoPublic });
+  }
+  if (body.cancelDeadlineMinutes !== undefined) {
+    const n = Number(body.cancelDeadlineMinutes);
+    if (!Number.isFinite(n) || n < 0 || n > 100000) {
+      return NextResponse.json({ error: '취소 마감(분)이 올바르지 않습니다' }, { status: 400 });
+    }
+    sets.push({ col: 'cancel_deadline_minutes', val: Math.floor(n) });
+  }
+  if (body.status !== undefined) {
+    if (!['open', 'closed', 'cancelled'].includes(body.status)) {
+      return NextResponse.json({ error: '상태가 올바르지 않습니다' }, { status: 400 });
+    }
+    sets.push({ col: 'status', val: body.status });
+  }
+
+  // PR-7 info-card fields
+  if (body.description !== undefined) {
+    sets.push({ col: 'description', val: sanitizeText(body.description, 2000) });
+  }
+  if (body.eventUrl !== undefined) {
+    sets.push({ col: 'event_url', val: sanitizeUrl(body.eventUrl) });
+  }
+  if (body.instagramUrl !== undefined) {
+    sets.push({ col: 'instagram_url', val: sanitizeUrl(body.instagramUrl) });
+  }
+  if (body.kakaoOpenChatUrl !== undefined) {
+    sets.push({ col: 'kakao_openchat_url', val: sanitizeUrl(body.kakaoOpenChatUrl) });
+  }
+  if (body.ribbon !== undefined) {
+    sets.push({ col: 'ribbon', val: sanitizeRibbon(body.ribbon) });
+  }
+  if (body.coverImageUrl !== undefined) {
+    sets.push({ col: 'cover_image_url', val: sanitizeUrl(body.coverImageUrl) });
+  }
+
+  if (sets.length === 0) {
+    return NextResponse.json({ error: '수정할 항목이 없습니다' }, { status: 400 });
+  }
+
+  // Always touch updated_at so the sheet sync / cache invalidation can rely on it.
+  const setSql = sets.map((s, i) => `${s.col} = $${i + 1}`).join(', ');
+  const params = sets.map(s => s.val);
+  params.push(id);
+
+  await dbRun(
+    `UPDATE sessions SET ${setSql}, updated_at = NOW() WHERE id = $${params.length}`,
+    params
+  );
+
+  // Sheets mirror — re-upsert the row with the latest values.
+  try {
+    const updated = await dbGet<any>(
+      `SELECT id, name, type, date, start_time, end_time, location, max_capacity,
+              status, is_indoor,
+              (SELECT COUNT(*) FROM reservations r
+                 WHERE r.session_id = s.id AND r.status IN ('reserved','attended'))::int AS current_reservations,
+              (SELECT COUNT(*) FROM waitlist w
+                 WHERE w.session_id = s.id AND w.status = 'waiting')::int AS waitlist_count
+       FROM sessions s WHERE s.id = $1`, [id]
+    );
+    if (updated) {
+      void safeSync('sessions', 'upsert', mapSessionRow(updated));
+    }
+  } catch { /* swallow */ }
+
+  // Build a "diff summary" for the audit log so reviewers can see at a
+  // glance which fields were touched without diffing JSON manually.
+  const changedKeys = sets.map(s => s.col);
+  void logAdminAction(req, auth.memberId, {
+    action: 'session.update',
+    targetType: 'session',
+    targetId: id,
+    targetName: existing.name ?? null,
+    summary: `세션 수정: ${changedKeys.join(', ')}`,
+    beforeValue: existing,
+    afterValue: Object.fromEntries(sets.map(s => [s.col, s.val])),
+  });
+
+  return NextResponse.json({ success: true });
 }
 
 // DELETE /api/sessions?id=xxx - Admin only

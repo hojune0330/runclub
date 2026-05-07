@@ -1,12 +1,27 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowLeft, MapPin, Clock, Users, ExternalLink, AlertCircle, Check, Ticket, Calendar, Share2 } from 'lucide-react';
-import { Session } from '@/types';
+import {
+  ArrowLeft, MapPin, Clock, Users, ExternalLink, AlertCircle, Check, Ticket,
+  Calendar, Share2, Camera, MessageCircle, Link as LinkIcon,
+} from 'lucide-react';
+import { Session, SessionRibbon } from '@/types';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig } from '@/lib/config';
 import { getSessionStatusLabel, isSessionFull, formatKoreanDate, cn, canUsePassForSession } from '@/lib/utils';
 import InviteModal from './InviteModal';
+
+// Mirrors RIBBON_PRESETS in admin/SessionManagement.tsx; kept here as a tiny
+// lookup so the member bundle doesn't have to import the admin module.
+const RIBBON_DISPLAY: Record<Exclude<SessionRibbon, 'none'>, { emoji: string; label: string; tone: string }> = {
+  new:        { emoji: '🆕', label: '신규',         tone: 'bg-[var(--color-primary-bg)] text-[var(--color-primary)] border-[var(--color-primary-border)]' },
+  hot:        { emoji: '🔥', label: '인기',         tone: 'bg-[var(--color-danger-bg)] text-[var(--color-danger)] border-[var(--color-danger-border)]' },
+  few_seats:  { emoji: '⏰', label: '마감 임박',    tone: 'bg-[var(--color-warning-bg)] text-[var(--color-warning)] border-[var(--color-warning-border)]' },
+  beginner:   { emoji: '🌱', label: '입문 환영',    tone: 'bg-[var(--color-success-bg)] text-[var(--color-success)] border-[var(--color-success-border)]' },
+  special:    { emoji: '⭐', label: '스페셜',       tone: 'bg-[var(--color-warning-bg)] text-[var(--color-warning)] border-[var(--color-warning-border)]' },
+  event:      { emoji: '🎉', label: '이벤트',       tone: 'bg-[var(--color-primary-bg)] text-[var(--color-primary)] border-[var(--color-primary-border)]' },
+  rain_check: { emoji: '☔', label: '우천 시 안내', tone: 'bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)] border-[var(--color-border)]' },
+};
 
 interface Props {
   session: Session;
@@ -117,9 +132,24 @@ export default function SessionDetail({ session, onBack }: Props) {
         </button>
       </div>
 
+      {/* Optional cover image — shown only when admin set one. Lazy-loaded
+          and capped at a comfortable 220px so it doesn't push reservation
+          actions below the fold on mobile. */}
+      {session.coverImageUrl && (
+        <div className="rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={session.coverImageUrl}
+            alt=""
+            loading="lazy"
+            className="w-full max-h-[220px] object-cover block"
+          />
+        </div>
+      )}
+
       {/* Header */}
       <div>
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-2 flex-wrap">
           <span
             className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[12px] font-medium"
             style={{ backgroundColor: config.bgColor, color: config.textColor }}
@@ -130,6 +160,18 @@ export default function SessionDetail({ session, onBack }: Props) {
           {session.isIndoor && (
             <span className="text-[12px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded px-1.5 py-0.5">
               실내
+            </span>
+          )}
+          {/* PR-7: Optional ribbon/badge curated by the admin */}
+          {session.ribbon && session.ribbon !== 'none' && RIBBON_DISPLAY[session.ribbon as Exclude<SessionRibbon, 'none'>] && (
+            <span
+              className={cn(
+                'text-[12px] font-medium px-2 py-0.5 rounded border inline-flex items-center gap-1',
+                RIBBON_DISPLAY[session.ribbon as Exclude<SessionRibbon, 'none'>].tone
+              )}
+            >
+              <span aria-hidden>{RIBBON_DISPLAY[session.ribbon as Exclude<SessionRibbon, 'none'>].emoji}</span>
+              {RIBBON_DISPLAY[session.ribbon as Exclude<SessionRibbon, 'none'>].label}
             </span>
           )}
           {state === 'reserved' && (
@@ -148,6 +190,15 @@ export default function SessionDetail({ session, onBack }: Props) {
           {formatKoreanDate(session.date, 'yyyy년 M월 d일 EEEE')} · {session.startTime}
           {session.endTime ? ` — ${session.endTime}` : ''}
         </p>
+        {/* PR-7: Short description shown right under the title — like a
+            speech-bubble subtitle so members get the gist before scrolling. */}
+        {session.description && (
+          <div className="mt-3 px-3 py-2.5 bg-[var(--color-primary-bg)] border border-[var(--color-primary-border)] rounded-md">
+            <p className="text-[13px] text-[var(--color-text)] leading-relaxed whitespace-pre-line">
+              {session.description}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Info grid */}
@@ -238,6 +289,70 @@ export default function SessionDetail({ session, onBack }: Props) {
           )}
         </dl>
       </section>
+
+      {/* PR-7: Extra info links curated by the admin — event page, Instagram
+          review, OpenChat. Renders only when at least one link is set so the
+          section doesn't take screen space when there's nothing to show. */}
+      {(session.eventUrl || session.instagramUrl || session.kakaoOpenChatUrl) && (
+        <section className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-[var(--color-border)]">
+            <h2 className="text-[14px] font-semibold text-[var(--color-text)]">추가 안내</h2>
+          </div>
+          <div className="p-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {session.eventUrl && (
+              <a
+                href={session.eventUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-3 py-2.5 rounded border border-[var(--color-border)] hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-bg-hover)] transition-colors group"
+              >
+                <span className="w-8 h-8 rounded bg-[var(--color-primary-bg)] text-[var(--color-primary)] flex items-center justify-center shrink-0">
+                  <LinkIcon size={14} />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <p className="text-[12.5px] font-medium text-[var(--color-text)]">이벤트 페이지</p>
+                  <p className="text-[11px] text-[var(--color-text-muted)] truncate">자세히 보기</p>
+                </span>
+                <ExternalLink size={12} className="text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)]" />
+              </a>
+            )}
+            {session.instagramUrl && (
+              <a
+                href={session.instagramUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-3 py-2.5 rounded border border-[var(--color-border)] hover:border-[#E1306C]/40 hover:bg-[var(--color-bg-hover)] transition-colors group"
+              >
+                <span className="w-8 h-8 rounded bg-[#FDE8EE] text-[#E1306C] flex items-center justify-center shrink-0">
+                  <Camera size={14} />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <p className="text-[12.5px] font-medium text-[var(--color-text)]">인스타 후기</p>
+                  <p className="text-[11px] text-[var(--color-text-muted)] truncate">참여 후기 보기</p>
+                </span>
+                <ExternalLink size={12} className="text-[var(--color-text-muted)] group-hover:text-[#E1306C]" />
+              </a>
+            )}
+            {session.kakaoOpenChatUrl && (
+              <a
+                href={session.kakaoOpenChatUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-3 py-2.5 rounded border border-[var(--color-border)] hover:border-[#FAE100]/60 hover:bg-[var(--color-bg-hover)] transition-colors group"
+              >
+                <span className="w-8 h-8 rounded bg-[#FFF7C2] text-[#3C1E1E] flex items-center justify-center shrink-0">
+                  <MessageCircle size={14} />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <p className="text-[12.5px] font-medium text-[var(--color-text)]">오픈채팅</p>
+                  <p className="text-[11px] text-[var(--color-text-muted)] truncate">참가자와 소통</p>
+                </span>
+                <ExternalLink size={12} className="text-[var(--color-text-muted)] group-hover:text-[#3C1E1E]" />
+              </a>
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Pass info */}
       <section className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">

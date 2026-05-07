@@ -47,11 +47,15 @@ export function mapMemberRow(m: MemberLike): SheetRow {
   ];
 }
 
-// ─── Passes (A..N, 14 columns) ────────────────────────────────────────────
+// ─── Passes (A..U, 21 columns) ────────────────────────────────────────────
 //
-// A 수강권ID | B 회원ID | C 회원이름 | D 상품명 | E 카테고리
-// F 총횟수 | G 잔여횟수 | H 시작일 | I 만료일 | J 발급일
-// K 상태 | L 일시정지시각 | M 가격 | N 최종동기화
+// A 수강권ID  | B 회원ID    | C 회원이름  | D 상품명    | E 카테고리
+// F 총횟수    | G 잔여횟수   | H 시작일    | I 만료일    | J 발급일
+// K 상태      | L 일시정지시각 | M 가격      | N 결제상태   | O 결제수단
+// P 실수령액   | Q 결제시각    | R 거래번호   | S 할인금액   | T 할인사유
+// U 최종동기화
+//
+// Manager-editable column V is left untouched by upserts (운영자 메모/태그 등).
 
 export interface PassLike {
   id: string;
@@ -67,6 +71,14 @@ export interface PassLike {
   status?: string | null;
   paused_at?: string | null;
   price?: number | null;
+  // PR-6: payment envelope mirrored to the sheet
+  payment_status?: string | null;
+  payment_method?: string | null;
+  payment_amount?: number | null;
+  paid_at?: string | null;
+  transaction_id?: string | null;
+  discount_amount?: number | null;
+  discount_reason?: string | null;
 }
 
 export function mapPassRow(p: PassLike): SheetRow {
@@ -84,6 +96,52 @@ export function mapPassRow(p: PassLike): SheetRow {
     p.status ?? 'active',
     p.paused_at ?? '',
     p.price ?? '',
+    p.payment_status ?? 'unpaid',
+    p.payment_method ?? '',
+    p.payment_amount ?? '',
+    p.paid_at ?? '',
+    p.transaction_id ?? '',
+    p.discount_amount ?? 0,
+    p.discount_reason ?? '',
+    nowIso(),
+  ];
+}
+
+// ─── PassProducts (A..L, 12 columns) ──────────────────────────────────────
+//
+// A 상품ID  | B 상품명     | C 분류     | D 적용세션  | E 총횟수
+// F 기간(일) | G 정가       | H 판매가   | I 추천      | J 판매중
+// K 정렬    | L 최종동기화
+//
+// Manager-editable columns M~P (메모/태그/할인코드/내부분류) are not touched.
+
+export interface PassProductLike {
+  id: string;
+  name: string;
+  category?: string | null;
+  applicable_sessions?: string | null;
+  total_count?: number | null;
+  duration_days?: number | null;
+  original_price?: number | null;
+  price?: number | null;
+  is_featured?: boolean | null;
+  is_active?: boolean | null;
+  display_order?: number | null;
+}
+
+export function mapPassProductRow(p: PassProductLike): SheetRow {
+  return [
+    p.id,
+    p.name ?? '',
+    p.category ?? '',
+    p.applicable_sessions ?? 'all',
+    p.total_count ?? '',
+    p.duration_days ?? '',
+    p.original_price ?? '',
+    p.price ?? 0,
+    p.is_featured ?? false,
+    p.is_active ?? true,
+    p.display_order ?? 0,
     nowIso(),
   ];
 }

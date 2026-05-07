@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, ClipboardList, Ticket, QrCode, User, LogOut, Bell, Megaphone, History, ChevronDown, HelpCircle, LayoutDashboard, Menu, X, Home } from 'lucide-react';
+import { Calendar, ClipboardList, Ticket, QrCode, User, LogOut, Bell, Megaphone, History, ChevronDown, HelpCircle, LayoutDashboard, Menu, X, Home, ShoppingBag } from 'lucide-react';
 import Overview from './Overview';
 import CalendarView from './CalendarView';
 import MyReservations from './MyReservations';
 import MyPasses from './MyPasses';
+import PassCatalog from './PassCatalog';
 import QRCheckin from './QRCheckin';
 import Notices from './Notices';
 import AttendanceHistory from './AttendanceHistory';
@@ -18,7 +19,7 @@ import { useApp } from '@/store/AppContext';
 import { cn } from '@/lib/utils';
 import type { SessionType } from '@/types';
 
-type Tab = 'home' | 'overview' | 'calendar' | 'reservations' | 'passes' | 'attendance' | 'qr' | 'notices' | 'profile' | 'help';
+type Tab = 'home' | 'overview' | 'calendar' | 'reservations' | 'passes' | 'catalog' | 'attendance' | 'qr' | 'notices' | 'profile' | 'help';
 
 const navGroups: { label: string; items: { id: Tab; label: string; icon: typeof Calendar }[] }[] = [
   {
@@ -39,6 +40,7 @@ const navGroups: { label: string; items: { id: Tab; label: string; icon: typeof 
     label: '이용',
     items: [
       { id: 'passes', label: '내 수강권', icon: Ticket },
+      { id: 'catalog', label: '수강권 구매', icon: ShoppingBag },
       { id: 'attendance', label: '출석 이력', icon: History },
       { id: 'qr', label: 'QR 체크인', icon: QrCode },
     ],
@@ -128,6 +130,7 @@ export default function MemberApp() {
       case 'calendar': return <CalendarView />;
       case 'reservations': return <MyReservations />;
       case 'passes': return <MyPasses />;
+      case 'catalog': return <PassCatalog />;
       case 'attendance': return <AttendanceHistory />;
       case 'qr': return <QRCheckin />;
       case 'notices': return <Notices />;

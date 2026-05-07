@@ -3,7 +3,7 @@
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig, passStatusConfig } from '@/lib/config';
 import { getDaysUntilExpiry, isPassExpiringSoon, formatKoreanDate, cn } from '@/lib/utils';
-import { Ticket, HelpCircle } from 'lucide-react';
+import { Ticket, HelpCircle, ShoppingBag } from 'lucide-react';
 
 export default function MyPasses() {
   const { memberPasses, currentMember } = useApp();
@@ -35,15 +35,24 @@ export default function MyPasses() {
             </div>
             <p className="text-[13.5px] text-[var(--color-text)] font-medium mb-1">보유 중인 수강권이 없습니다</p>
             <p className="text-[12.5px] text-[var(--color-text-muted)] mb-4 max-w-[400px] mx-auto leading-relaxed">
-              세션을 예약하려면 수강권이 필요합니다. 현장에서 코치에게 문의하거나 프로필의 "문의하기"를 이용해주세요.
+              세션을 예약하려면 수강권이 필요합니다. 아래에서 바로 구매하거나 현장에서 코치에게 문의해주세요.
             </p>
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('member:navigate', { detail: 'help' }))}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium text-[var(--color-text-secondary)] bg-white border border-[var(--color-border)] hover:bg-[var(--color-bg-hover)] rounded transition-colors"
-            >
-              <HelpCircle size={13} />
-              도움말 보기
-            </button>
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('member:navigate', { detail: 'catalog' }))}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded transition-colors"
+              >
+                <ShoppingBag size={13} />
+                수강권 구매
+              </button>
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('member:navigate', { detail: 'help' }))}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium text-[var(--color-text-secondary)] bg-white border border-[var(--color-border)] hover:bg-[var(--color-bg-hover)] rounded transition-colors"
+              >
+                <HelpCircle size={13} />
+                도움말
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-0">

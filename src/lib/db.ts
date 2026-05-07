@@ -288,6 +288,69 @@ async function initSchema(): Promise<void> {
       ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ
   `);
 
+  // ─── PR-6: Pass catalog & checkout columns ───
+  //
+  // pass_products gets richer "merchant catalog" fields so the future
+  // checkout page can render a real menu (description_long for full
+  // marketing copy + refund_policy, original_price for strikethrough
+  // pricing, image_url for hero image, display_order for manual sort,
+  // is_featured for the "추천" badge).
+  //
+  // member_passes gets the payment-state envelope. Today the admin fills
+  // these manually at issue-time (cash / transfer / external card / unpaid);
+  // when the Toss Payments SDK lands, the webhook handler will UPDATE the
+  // exact same row by transaction_id. Keeping a single row per pass (not
+  // a separate payments table) is enough for v1 because we don't yet
+  // support partial payments or installment plans — when we do, we can
+  // graduate to a child `payments` table without touching this column set.
+  await dbRun(`
+    ALTER TABLE pass_products
+      ADD COLUMN IF NOT EXISTS description_long TEXT,
+      ADD COLUMN IF NOT EXISTS refund_policy    TEXT,
+      ADD COLUMN IF NOT EXISTS original_price   INTEGER,
+      ADD COLUMN IF NOT EXISTS image_url        TEXT,
+      ADD COLUMN IF NOT EXISTS display_order    INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS is_featured      BOOLEAN NOT NULL DEFAULT FALSE,
+      ADD COLUMN IF NOT EXISTS updated_at       TIMESTAMPTZ
+  `);
+  await dbRun(`
+    ALTER TABLE member_passes
+      ADD COLUMN IF NOT EXISTS payment_status  TEXT NOT NULL DEFAULT 'unpaid'
+        CHECK (payment_status IN ('unpaid','paid','refunded','partial_refund')),
+      ADD COLUMN IF NOT EXISTS payment_method  TEXT,
+      ADD COLUMN IF NOT EXISTS payment_amount  INTEGER,
+      ADD COLUMN IF NOT EXISTS paid_at         TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS transaction_id  TEXT,
+      ADD COLUMN IF NOT EXISTS discount_amount INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS discount_reason TEXT,
+      ADD COLUMN IF NOT EXISTS admin_memo      TEXT,
+      ADD COLUMN IF NOT EXISTS updated_at      TIMESTAMPTZ
+  `);
+  await dbRun(`
+    CREATE INDEX IF NOT EXISTS idx_pass_products_active_order
+      ON pass_products(is_active DESC, display_order ASC, price ASC)
+  `);
+  await dbRun(`
+    CREATE INDEX IF NOT EXISTS idx_member_passes_payment_status
+      ON member_passes(payment_status)
+  `);
+
+  // ─── PR-7: Session "pre-registration info" columns ─────────────────────
+  // Adds optional rich-info fields the admin can edit per session so members
+  // see context (description, event link, Instagram review, OpenChat link,
+  // ribbon badge, cover image) BEFORE they decide to register. All columns
+  // are nullable / safe-default so existing rows keep working unchanged.
+  await dbRun(`
+    ALTER TABLE sessions
+      ADD COLUMN IF NOT EXISTS description          TEXT,
+      ADD COLUMN IF NOT EXISTS event_url            TEXT,
+      ADD COLUMN IF NOT EXISTS instagram_url        TEXT,
+      ADD COLUMN IF NOT EXISTS kakao_openchat_url   TEXT,
+      ADD COLUMN IF NOT EXISTS ribbon               TEXT,
+      ADD COLUMN IF NOT EXISTS cover_image_url      TEXT,
+      ADD COLUMN IF NOT EXISTS updated_at           TIMESTAMPTZ
+  `);
+
   // ─── Google Sheets sync infrastructure (PR-1) ───
   // sheet_sync_queue : retry buffer. A row is inserted whenever a sync call
   //   fails (e.g. transient Sheets API outage, quota). The worker (PR-3)

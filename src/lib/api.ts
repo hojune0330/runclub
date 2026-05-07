@@ -84,6 +84,11 @@ export const api = {
     },
     create: (data: any) =>
       request<{ id: string }>('/sessions', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: string, data: any) =>
+      request<{ success: true }>(`/sessions?id=${encodeURIComponent(id)}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
     delete: (id: string) =>
       request<any>(`/sessions?id=${id}`, { method: 'DELETE' }),
   },
@@ -161,16 +166,98 @@ export const api = {
       const qs = memberId ? `?memberId=${memberId}` : '';
       return request<any[]>(`/passes${qs}`);
     },
-    issue: (memberId: string, productId: string) =>
-      request<any>('/passes', { method: 'POST', body: JSON.stringify({ memberId, productId }) }),
+    // PR-6: rich issue payload — payment envelope is optional.
+    issue: (data: {
+      memberId: string;
+      productId: string;
+      paymentStatus?: 'unpaid' | 'paid' | 'refunded' | 'partial_refund';
+      paymentMethod?: string;
+      paymentAmount?: number;
+      discountAmount?: number;
+      discountReason?: string;
+      adminMemo?: string;
+      startDate?: string;
+      transactionId?: string;
+    }) =>
+      request<{ id: string; success: boolean }>('/passes', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
     updateStatus: (passId: string, action: 'pause' | 'refund' | 'resume') =>
       request<any>('/passes', { method: 'PUT', body: JSON.stringify({ passId, action }) }),
+    // PR-6: extend expiry by relative days OR absolute YYYY-MM-DD.
+    extend: (passId: string, params: { days?: number; expiryDate?: string }) =>
+      request<any>('/passes', {
+        method: 'PUT',
+        body: JSON.stringify({ passId, action: 'extend', ...params }),
+      }),
+    // PR-6: adjust count totals on a 횟수권.
+    adjust: (passId: string, params: { totalCount?: number; remainingCount?: number }) =>
+      request<any>('/passes', {
+        method: 'PUT',
+        body: JSON.stringify({ passId, action: 'adjust', ...params }),
+      }),
+    // PR-6: change payment fields on an issued pass.
+    setPayment: (passId: string, params: {
+      paymentStatus: 'unpaid' | 'paid' | 'refunded' | 'partial_refund';
+      paymentMethod?: string;
+      paymentAmount?: number;
+      transactionId?: string;
+    }) =>
+      request<any>('/passes', {
+        method: 'PUT',
+        body: JSON.stringify({ passId, action: 'payment', ...params }),
+      }),
+    setMemo: (passId: string, adminMemo: string) =>
+      request<any>('/passes', {
+        method: 'PUT',
+        body: JSON.stringify({ passId, action: 'memo', adminMemo }),
+      }),
   },
 
   passProducts: {
-    list: () => request<any[]>('/pass-products'),
+    list: (params?: { includeInactive?: boolean }) => {
+      const qs = params?.includeInactive === false ? '?includeInactive=false' : '';
+      return request<any[]>(`/pass-products${qs}`);
+    },
     create: (data: any) =>
-      request<any>('/pass-products', { method: 'POST', body: JSON.stringify(data) }),
+      request<{ id: string; success: boolean }>('/pass-products', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (id: string, data: any) =>
+      request<any>('/pass-products', {
+        method: 'PUT',
+        body: JSON.stringify({ id, ...data }),
+      }),
+    delete: (id: string, hard = false) =>
+      request<any>(`/pass-products?id=${encodeURIComponent(id)}${hard ? '&hard=true' : ''}`, {
+        method: 'DELETE',
+      }),
+  },
+
+  payments: {
+    // PR-6: member-initiated checkout (Toss).
+    checkout: (productId: string) =>
+      request<{
+        orderId: string;
+        orderName: string;
+        amount: number;
+        customerName: string;
+        customerEmail?: string;
+        customerMobilePhone?: string;
+        tossClientKey: string | null;
+        successUrl: string;
+        failUrl: string;
+      }>('/payments/checkout', {
+        method: 'POST',
+        body: JSON.stringify({ productId }),
+      }),
+    confirm: (params: { paymentKey: string; orderId: string; amount: number }) =>
+      request<{ success: boolean; passId: string; orderId: string; amount: number; method: string; alreadyConfirmed?: boolean }>(
+        '/payments/confirm',
+        { method: 'POST', body: JSON.stringify(params) }
+      ),
   },
 
   notices: {
