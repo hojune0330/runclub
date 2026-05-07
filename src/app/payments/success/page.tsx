@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { TestModeBanner } from '@/components/member/PassCatalog';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-6: Toss redirects here on successful checkout with three params:
@@ -56,45 +57,48 @@ function PaymentSuccessContent() {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 bg-[var(--color-bg-subtle)]">
-      <div className="w-full max-w-[440px] bg-white border border-[var(--color-border)] rounded-md p-6 text-center">
-        {state === 'pending' && (
-          <>
-            <Loader2 size={36} className="text-[var(--color-primary)] mx-auto mb-3 animate-spin" />
-            <p className="text-[15px] font-semibold text-[var(--color-text)]">{message}</p>
-            <p className="text-[12.5px] text-[var(--color-text-muted)] mt-1">잠시만 기다려주세요.</p>
-          </>
-        )}
-        {state === 'ok' && (
-          <>
-            <CheckCircle2 size={40} className="text-[var(--color-success)] mx-auto mb-3" />
-            <p className="text-[16px] font-semibold text-[var(--color-text)]">결제가 완료되었습니다</p>
-            <p className="text-[13px] text-[var(--color-text-muted)] mt-1">{message}</p>
-            {passId && <p className="text-[11.5px] text-[var(--color-text-muted)] mt-2 tabular-nums">발급 ID: {passId}</p>}
-            <div className="mt-5 flex flex-col gap-2">
-              <button
-                onClick={() => router.replace('/app')}
-                className="h-11 inline-flex items-center justify-center text-[13.5px] font-semibold text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)]"
-              >
-                내 수강권으로 돌아가기
-              </button>
-            </div>
-          </>
-        )}
-        {state === 'fail' && (
-          <>
-            <AlertCircle size={40} className="text-[var(--color-danger)] mx-auto mb-3" />
-            <p className="text-[16px] font-semibold text-[var(--color-text)]">결제를 완료하지 못했습니다</p>
-            <p className="text-[13px] text-[var(--color-text-muted)] mt-1 whitespace-pre-wrap">{message}</p>
-            <div className="mt-5 flex flex-col gap-2">
-              <button
-                onClick={() => router.replace('/app')}
-                className="h-11 inline-flex items-center justify-center text-[13.5px] font-semibold text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)]"
-              >
-                다시 시도하기
-              </button>
-            </div>
-          </>
-        )}
+      <div className="w-full max-w-[440px] space-y-3">
+        <TestModeBanner compact />
+        <div className="bg-white border border-[var(--color-border)] rounded-md p-6 text-center">
+          {state === 'pending' && (
+            <>
+              <Loader2 size={36} className="text-[var(--color-primary)] mx-auto mb-3 animate-spin" />
+              <p className="text-[15px] font-semibold text-[var(--color-text)]">{message}</p>
+              <p className="text-[12.5px] text-[var(--color-text-muted)] mt-1">잠시만 기다려주세요.</p>
+            </>
+          )}
+          {state === 'ok' && (
+            <>
+              <CheckCircle2 size={40} className="text-[var(--color-success)] mx-auto mb-3" />
+              <p className="text-[16px] font-semibold text-[var(--color-text)]">결제가 완료되었습니다</p>
+              <p className="text-[13px] text-[var(--color-text-muted)] mt-1">{message}</p>
+              {passId && <p className="text-[11.5px] text-[var(--color-text-muted)] mt-2 tabular-nums">발급 ID: {passId}</p>}
+              <div className="mt-5 flex flex-col gap-2">
+                <button
+                  onClick={() => router.replace('/app')}
+                  className="h-11 inline-flex items-center justify-center text-[13.5px] font-semibold text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)]"
+                >
+                  내 수강권으로 돌아가기
+                </button>
+              </div>
+            </>
+          )}
+          {state === 'fail' && (
+            <>
+              <AlertCircle size={40} className="text-[var(--color-danger)] mx-auto mb-3" />
+              <p className="text-[16px] font-semibold text-[var(--color-text)]">결제를 완료하지 못했습니다</p>
+              <p className="text-[13px] text-[var(--color-text-muted)] mt-1 whitespace-pre-wrap">{message}</p>
+              <div className="mt-5 flex flex-col gap-2">
+                <button
+                  onClick={() => router.replace('/app')}
+                  className="h-11 inline-flex items-center justify-center text-[13.5px] font-semibold text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)]"
+                >
+                  다시 시도하기
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

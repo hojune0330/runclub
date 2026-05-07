@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { Star, Check, X, ShoppingBag, AlertCircle, Loader2, Tag } from 'lucide-react';
+import { Star, Check, X, ShoppingBag, AlertCircle, Loader2, Tag, FlaskConical } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig } from '@/lib/config';
 import { formatPrice, cn } from '@/lib/utils';
@@ -52,6 +52,8 @@ export default function PassCatalog() {
           판매중인 상품 {total}건 — 카드를 눌러 상세 정보를 확인하고 결제할 수 있습니다.
         </p>
       </div>
+
+      <TestModeBanner />
 
       {total === 0 && (
         <div className="bg-white border border-[var(--color-border)] rounded-md py-16 text-center">
@@ -307,3 +309,36 @@ function Field({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// PR-6 STEP 6: TestModeBanner
+//
+// `NEXT_PUBLIC_TOSS_CLIENT_KEY`가 `test_ck_` 또는 `test_gck_`로 시작하면
+// 테스트 모드로 간주하고 회원에게 노란색 배너를 노출합니다.
+// 운영 키(live_*)로 교체되면 자동으로 사라집니다.
+// ─────────────────────────────────────────────────────────────────────
+export function TestModeBanner({ compact = false }: { compact?: boolean }) {
+  const clientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? '';
+  const isTest = clientKey.startsWith('test_ck_') || clientKey.startsWith('test_gck_');
+  if (!isTest) return null;
+  return (
+    <div className={cn(
+      'flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded',
+      compact && 'text-[12px]'
+    )}>
+      <FlaskConical size={compact ? 13 : 14} className="text-amber-700 mt-0.5 flex-shrink-0" />
+      <div className={compact ? 'text-[12px] text-amber-900' : 'text-[12.5px] text-amber-900'}>
+        <p className="font-semibold">테스트 결제 모드</p>
+        <p className="text-amber-800 mt-0.5">
+          현재 토스 테스트 키로 동작 중입니다. 실제 결제는 일어나지 않습니다.
+          {!compact && (
+            <>
+              {' '}테스트 카드 <span className="font-mono">4330-1234-1234-1234</span>, 유효기간 12/30, CVC 123, 비밀번호 00을 사용하세요.
+            </>
+          )}
+        </p>
+      </div>
+    </div>
+  );
+}
+

@@ -58,7 +58,7 @@ interface AppActions {
   }) => Promise<{ id: string } | null>;
   pauseMemberPass: (passId: string) => Promise<void>;
   resumeMemberPass: (passId: string) => Promise<void>;
-  refundMemberPass: (passId: string) => Promise<void>;
+  refundMemberPass: (passId: string, params: { cancelReason: string; cancelAmount?: number; skipToss?: boolean }) => Promise<boolean>;
   extendMemberPass: (passId: string, params: { days?: number; expiryDate?: string }) => Promise<boolean>;
   adjustMemberPass: (passId: string, params: { totalCount?: number; remainingCount?: number }) => Promise<boolean>;
   setMemberPassPayment: (passId: string, params: {
@@ -417,12 +417,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshPasses, handleAuthError]);
 
-  const refundMemberPass = useCallback(async (passId: string) => {
+  const refundMemberPass = useCallback(async (
+    passId: string,
+    params: { cancelReason: string; cancelAmount?: number; skipToss?: boolean }
+  ): Promise<boolean> => {
     try {
-      await api.passes.updateStatus(passId, 'refund');
+      await api.passes.refund(passId, params);
       await refreshPasses();
+      return true;
     } catch (e: any) {
       if (!handleAuthError(e)) alert(e.message);
+      return false;
     }
   }, [refreshPasses, handleAuthError]);
 

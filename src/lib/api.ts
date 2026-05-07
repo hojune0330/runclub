@@ -183,8 +183,16 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
-    updateStatus: (passId: string, action: 'pause' | 'refund' | 'resume') =>
+    updateStatus: (passId: string, action: 'pause' | 'resume') =>
       request<any>('/passes', { method: 'PUT', body: JSON.stringify({ passId, action }) }),
+    // PR-6 STEP 5: refund with reason + optional partial amount.
+    // Server will call Toss /v1/payments/{paymentKey}/cancel automatically
+    // when the pass was paid via Toss; pass `skipToss: true` for manual passes.
+    refund: (passId: string, params: { cancelReason: string; cancelAmount?: number; skipToss?: boolean }) =>
+      request<any>('/passes', {
+        method: 'PUT',
+        body: JSON.stringify({ passId, action: 'refund', ...params }),
+      }),
     // PR-6: extend expiry by relative days OR absolute YYYY-MM-DD.
     extend: (passId: string, params: { days?: number; expiryDate?: string }) =>
       request<any>('/passes', {
@@ -258,6 +266,31 @@ export const api = {
         '/payments/confirm',
         { method: 'POST', body: JSON.stringify(params) }
       ),
+    // PR-6 STEP 4: admin payment monitoring.
+    list: (params?: { status?: string; from?: string; to?: string; limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.status) q.set('status', params.status);
+      if (params?.from) q.set('from', params.from);
+      if (params?.to) q.set('to', params.to);
+      if (params?.limit) q.set('limit', String(params.limit));
+      return request<{
+        items: Array<{
+          orderId: string; memberId: string; memberName: string; memberPhone: string | null;
+          productId: string; productName: string; amount: number;
+          status: 'pending' | 'confirmed' | 'failed' | 'expired';
+          method: string | null; paymentKey: string | null; passId: string | null;
+          passPaymentStatus: string | null; errorMessage: string | null;
+          confirmedAt: string | null; createdAt: string; updatedAt: string;
+        }>;
+        count: number; limit: number;
+      }>(`/payments/list?${q.toString()}`);
+    },
+    stats: () =>
+      request<{
+        today: { count: number; amount: number };
+        month: { count: number; amount: number };
+        pendingCount: number; failed7d: number; total7d: number; failureRate: number;
+      }>('/payments/list?stats=true'),
   },
 
   notices: {

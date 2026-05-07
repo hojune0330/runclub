@@ -276,14 +276,110 @@ export async function PUT(req: NextRequest) {
       `, [passId]);
       summary = '수강권 재개';
     } else if (action === 'refund') {
+      // PR-6 STEP 5: Toss cancel automation.
+      //   - body.cancelReason (필수): 환불 사유 (3~200자)
+      //   - body.cancelAmount (선택): 부분 환불 금액. 미지정 시 전액 환불.
+      //   - body.skipToss (선택): true면 Toss API 호출 없이 DB 상태만 변경
+      //                           (수기 결제건이거나 이미 외부 처리한 경우)
+      const cancelReason = typeof body.cancelReason === 'string' ? body.cancelReason.trim() : '';
+      if (!cancelReason || cancelReason.length < 2 || cancelReason.length > 200) {
+        return NextResponse.json(
+          { error: '환불 사유는 2~200자 사이로 입력해주세요' },
+          { status: 400 }
+        );
+      }
+      const requestedCancelAmount = typeof body.cancelAmount === 'number' && Number.isFinite(body.cancelAmount)
+        ? Math.max(0, Math.trunc(body.cancelAmount))
+        : null;
+      const skipToss = body.skipToss === true;
+
+      // Toss-issued passes carry transaction_id = paymentKey, payment_method 시작이 'toss' 등.
+      const paymentKey = before.transaction_id;
+      const isTossPaid = !skipToss
+        && before.payment_status === 'paid'
+        && typeof paymentKey === 'string'
+        && paymentKey.length > 0
+        && (before.payment_method === 'toss' || before.payment_method === 'card' || before.payment_method === 'easyPay' || before.payment_method == null);
+
+      // Determine whether this is a partial cancel.
+      const paidAmount = Number(before.payment_amount ?? 0);
+      const cancelAmount = requestedCancelAmount != null && requestedCancelAmount > 0 && requestedCancelAmount < paidAmount
+        ? requestedCancelAmount
+        : null; // null = 전액
+      const isPartial = cancelAmount != null;
+
+      let tossResp: any = null;
+      if (isTossPaid) {
+        const secretKey = process.env.TOSS_SECRET_KEY;
+        if (!secretKey) {
+          return NextResponse.json(
+            { error: 'TOSS_SECRET_KEY 환경변수가 설정되지 않아 자동 환불을 진행할 수 없습니다. 서버 환경변수를 등록한 뒤 다시 시도하거나, "Toss 호출 없이 환불" 옵션을 사용하세요.' },
+            { status: 500 }
+          );
+        }
+        const basicAuth = Buffer.from(`${secretKey}:`).toString('base64');
+        try {
+          const resp = await fetch(`https://api.tosspayments.com/v1/payments/${encodeURIComponent(paymentKey as string)}/cancel`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${basicAuth}`,
+              'Content-Type': 'application/json',
+              'Idempotency-Key': `cancel_${passId}_${Date.now()}`,
+            },
+            body: JSON.stringify({
+              cancelReason,
+              ...(isPartial ? { cancelAmount } : {}),
+            }),
+          });
+          tossResp = await resp.json();
+          if (!resp.ok) {
+            return NextResponse.json(
+              { error: tossResp?.message ?? `Toss 환불 실패 (HTTP ${resp.status})` },
+              { status: 400 }
+            );
+          }
+        } catch (err: any) {
+          return NextResponse.json(
+            { error: `Toss 환불 통신 오류: ${err?.message ?? 'network'}` },
+            { status: 500 }
+          );
+        }
+      }
+
+      // DB 반영
+      const newPaymentStatus = isPartial ? 'partial_refund' : 'refunded';
+      const newPassStatus = isPartial ? before.status : 'refunded';
       await dbRun(`
         UPDATE member_passes
-           SET status='refunded',
-               payment_status = CASE WHEN payment_status='paid' THEN 'refunded' ELSE payment_status END,
-               updated_at=NOW()
-         WHERE id=$1
-      `, [passId]);
-      summary = '수강권 환불';
+           SET status = $1,
+               payment_status = $2,
+               admin_memo = TRIM(BOTH E'\n' FROM COALESCE(admin_memo, '') || E'\n' || $3),
+               updated_at = NOW()
+         WHERE id = $4
+      `, [
+        newPassStatus,
+        newPaymentStatus,
+        `[환불 ${new Date().toISOString().split('T')[0]}] ${isPartial ? `부분환불 ${cancelAmount}원` : '전액환불'} - ${cancelReason}${isTossPaid ? ' (Toss 자동)' : ''}`,
+        passId,
+      ]);
+
+      // pending_payments 미러 업데이트 (있을 경우)
+      if (paymentKey) {
+        try {
+          await dbRun(
+            `UPDATE pending_payments
+                SET status = 'confirmed',
+                    error_message = COALESCE(error_message, '') || $1,
+                    updated_at = NOW()
+              WHERE pass_id = $2`,
+            [`[refund ${isPartial ? 'partial' : 'full'}: ${cancelReason}]`, passId]
+          );
+        } catch { /* swallow */ }
+      }
+
+      summary = isPartial
+        ? `부분환불 ${cancelAmount}원 (${cancelReason})${isTossPaid ? ' [Toss]' : ''}`
+        : `전액환불 (${cancelReason})${isTossPaid ? ' [Toss]' : ''}`;
     } else if (action === 'extend') {
       // Either pass `days` (relative) or `expiryDate` (absolute).
       let newExpiry: string | null = null;

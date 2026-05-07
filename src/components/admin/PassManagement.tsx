@@ -5,11 +5,13 @@ import {
   Plus, Search, X, Check, AlertCircle, Ticket, Calendar, CheckCircle2,
   Edit3, EyeOff, Eye, Trash2, Sparkles, ChevronRight, Wallet, FileText,
   Star, Clock, Pencil, Save, Coins, RotateCcw, ArrowRightCircle, Info,
+  CreditCard, RefreshCw, TrendingUp, AlertTriangle, Loader2, ExternalLink,
 } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig, passStatusConfig } from '@/lib/config';
 import { formatKoreanDate, formatPrice, cn, getDaysUntilExpiry, isPassExpiringSoon } from '@/lib/utils';
 import { Tabs, Badge, Modal, FormField } from '@/components/ui';
+import { api } from '@/lib/api';
 import type { Member, PassProduct, MemberPass, SessionType } from '@/types';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -45,7 +47,7 @@ const paymentMethodLabel: Record<string, string> = {
   toss: '토스페이먼츠', manual: '외부결제', free: '무료',
 };
 
-type Tab = 'products' | 'issued';
+type Tab = 'products' | 'issued' | 'payments';
 
 export default function PassManagement() {
   const {
@@ -63,6 +65,7 @@ export default function PassManagement() {
   const [productCreate, setProductCreate] = useState(false);
   const [productDetail, setProductDetail] = useState<PassProduct | null>(null);
   const [passDetail, setPassDetail] = useState<MemberPass | null>(null);
+  const [refundTarget, setRefundTarget] = useState<MemberPass | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -134,7 +137,9 @@ export default function PassManagement() {
           onChange={setTab}
         />
 
-        {tab === 'products' ? (
+        {tab === 'payments' ? (
+          <PaymentsMonitorPanel />
+        ) : tab === 'products' ? (
           <ProductsTable
             products={passProducts}
             memberPasses={memberPasses}
@@ -212,7 +217,10 @@ export default function PassManagement() {
               onSelect={p => setPassDetail(p)}
               onPause={async (id) => { if (confirm('정지 처리하시겠습니까?')) { await pauseMemberPass(id); setToast('수강권이 일시정지되었습니다.'); } }}
               onResume={async (id) => { await resumeMemberPass(id); setToast('수강권이 재개되었습니다.'); }}
-              onRefund={async (id) => { if (confirm('환불 처리하시겠습니까?\n해당 상태는 되돌릴 수 없습니다.')) { await refundMemberPass(id); setToast('수강권이 환불 처리되었습니다.'); } }}
+              onRefund={(id) => {
+                const target = memberPasses.find(p => p.id === id) ?? null;
+                if (target) setRefundTarget(target);
+              }}
             />
           </>
         )}
@@ -276,7 +284,26 @@ export default function PassManagement() {
           onMemo={async (memo) => { const ok = await setMemberPassMemo(refreshedPass.id, memo); if (ok) setToast('관리자 메모가 저장되었습니다.'); return ok; }}
           onPause={async () => { await pauseMemberPass(refreshedPass.id); setToast('수강권이 일시정지되었습니다.'); }}
           onResume={async () => { await resumeMemberPass(refreshedPass.id); setToast('수강권이 재개되었습니다.'); }}
-          onRefund={async () => { if (confirm('환불 처리하시겠습니까?')) { await refundMemberPass(refreshedPass.id); setToast('수강권이 환불 처리되었습니다.'); } }}
+          onRefund={() => { setRefundTarget(refreshedPass); }}
+        />
+      )}
+
+      {/* PR-6 STEP 5: Refund modal — Toss cancel + partial refund */}
+      {refundTarget && (
+        <RefundModal
+          pass={refundTarget}
+          onClose={() => setRefundTarget(null)}
+          onSubmit={async (params) => {
+            const ok = await refundMemberPass(refundTarget.id, params);
+            if (ok) {
+              const isPartial = params.cancelAmount != null && params.cancelAmount > 0 &&
+                refundTarget.paymentAmount != null && params.cancelAmount < refundTarget.paymentAmount;
+              setToast(isPartial ? '부분 환불이 처리되었습니다.' : '수강권이 환불 처리되었습니다.');
+              setRefundTarget(null);
+              setPassDetail(null);
+            }
+            return ok;
+          }}
         />
       )}
 
@@ -1364,3 +1391,433 @@ function PassDetailModal({
     </Modal>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// PR-6 STEP 5: RefundModal — Toss cancel automation + partial refund
+//
+// 토스로 결제된 수강권은 transaction_id(=paymentKey)와 payment_method가
+// 'toss'/'card'로 기록되며, 이 모달에서 사유와 (선택) 부분환불 금액을
+// 입력하면 서버가 /v1/payments/{paymentKey}/cancel을 호출합니다.
+// 수기 결제(현금/계좌이체 등)는 "Toss 호출 없이 환불" 토글이 자동으로
+// 켜져 DB만 업데이트합니다.
+// ─────────────────────────────────────────────────────────────────────
+function RefundModal({
+  pass, onClose, onSubmit,
+}: {
+  pass: MemberPass;
+  onClose: () => void;
+  onSubmit: (params: { cancelReason: string; cancelAmount?: number; skipToss?: boolean }) => Promise<boolean>;
+}) {
+  const paidAmount = pass.paymentAmount ?? pass.price ?? 0;
+  const canAutoCancel =
+    pass.paymentStatus === 'paid' &&
+    !!pass.transactionId &&
+    (pass.paymentMethod === 'toss' || pass.paymentMethod === 'card' ||
+     pass.paymentMethod === 'easyPay' || !pass.paymentMethod);
+
+  const [reason, setReason] = useState('');
+  const [mode, setMode] = useState<'full' | 'partial'>('full');
+  const [partialAmount, setPartialAmount] = useState<string>('');
+  const [skipToss, setSkipToss] = useState<boolean>(!canAutoCancel);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const partialNum = Number(partialAmount.replace(/[^\d]/g, '')) || 0;
+  const isPartial = mode === 'partial';
+  const valid =
+    reason.trim().length >= 2 &&
+    reason.trim().length <= 200 &&
+    (!isPartial || (partialNum > 0 && partialNum < paidAmount));
+
+  const submit = async () => {
+    if (!valid) return;
+    setError(null);
+    setBusy(true);
+    const ok = await onSubmit({
+      cancelReason: reason.trim(),
+      cancelAmount: isPartial ? partialNum : undefined,
+      skipToss,
+    });
+    setBusy(false);
+    if (!ok) setError('환불 처리에 실패했습니다. 다시 시도해주세요.');
+  };
+
+  return (
+    <Modal title="수강권 환불" onClose={onClose} size="md">
+      <div className="space-y-4">
+        <div className="bg-[var(--color-bg-subtle)] border border-[var(--color-border)] rounded p-3 text-[12.5px] space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-[var(--color-text-muted)]">회원</span>
+            <span className="text-[var(--color-text)] font-medium">{pass.memberName}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[var(--color-text-muted)]">수강권</span>
+            <span className="text-[var(--color-text)]">{pass.productName}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[var(--color-text-muted)]">결제 금액</span>
+            <span className="text-[var(--color-text)] tabular-nums font-semibold">{formatPrice(paidAmount)}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[var(--color-text-muted)]">결제 수단</span>
+            <span className="text-[var(--color-text)]">
+              {pass.paymentMethod ? (paymentMethodLabel[pass.paymentMethod] ?? pass.paymentMethod) : '—'}
+            </span>
+          </div>
+          {pass.transactionId && (
+            <div className="flex items-center justify-between">
+              <span className="text-[var(--color-text-muted)]">거래 ID</span>
+              <span className="text-[var(--color-text)] tabular-nums text-[11px] truncate max-w-[60%]">{pass.transactionId}</span>
+            </div>
+          )}
+        </div>
+
+        {canAutoCancel ? (
+          <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 border border-blue-200 rounded">
+            <CreditCard size={14} className="text-blue-600 mt-0.5 flex-shrink-0" />
+            <div className="text-[12px] text-blue-800">
+              <p className="font-medium">토스 결제 자동 환불 가능</p>
+              <p className="text-blue-700 mt-0.5">서버가 Toss /v1/payments/.../cancel을 호출하여 자동으로 환불을 진행합니다.</p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded">
+            <AlertTriangle size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="text-[12px] text-amber-800">
+              <p className="font-medium">수기 결제 / 외부 결제건</p>
+              <p className="text-amber-700 mt-0.5">Toss API 호출 없이 DB 상태만 환불로 변경합니다. 실제 환불은 외부 채널에서 처리해주세요.</p>
+            </div>
+          </div>
+        )}
+
+        <FormField label="환불 방식" required>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMode('full')}
+              className={cn(
+                'flex-1 h-10 px-3 text-[13px] border rounded transition-colors',
+                mode === 'full'
+                  ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+                  : 'bg-white text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]'
+              )}
+            >
+              전액 환불 ({formatPrice(paidAmount)})
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('partial')}
+              className={cn(
+                'flex-1 h-10 px-3 text-[13px] border rounded transition-colors',
+                mode === 'partial'
+                  ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+                  : 'bg-white text-[var(--color-text)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]'
+              )}
+            >
+              부분 환불
+            </button>
+          </div>
+        </FormField>
+
+        {isPartial && (
+          <FormField label="환불 금액 (원)" required>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={partialAmount}
+              onChange={e => setPartialAmount(e.target.value.replace(/[^\d]/g, ''))}
+              placeholder={`최대 ${(paidAmount - 1).toLocaleString()}원`}
+              className="w-full h-10 px-3 text-[13px] border border-[var(--color-border)] rounded tabular-nums"
+            />
+            <p className="text-[11.5px] text-[var(--color-text-muted)] mt-1">
+              전액보다 작은 금액을 입력하세요. (전액 = {formatPrice(paidAmount)})
+              {partialNum > 0 && partialNum < paidAmount && (
+                <span className="text-[var(--color-text-secondary)]"> · 잔액 {formatPrice(paidAmount - partialNum)}</span>
+              )}
+            </p>
+          </FormField>
+        )}
+
+        <FormField label="환불 사유" required>
+          <textarea
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            rows={3}
+            maxLength={200}
+            placeholder="예: 회원 요청, 일정 변경, 서비스 불만족 등 (2~200자)"
+            className="w-full px-3 py-2 text-[13px] border border-[var(--color-border)] rounded resize-y"
+          />
+          <p className="text-[11.5px] text-[var(--color-text-muted)] mt-1 text-right">{reason.length} / 200</p>
+        </FormField>
+
+        {canAutoCancel && (
+          <label className="flex items-start gap-2 text-[12.5px] text-[var(--color-text-secondary)] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={skipToss}
+              onChange={e => setSkipToss(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              <strong>Toss 호출 없이 DB만 환불 처리</strong>
+              <span className="block text-[11.5px] text-[var(--color-text-muted)] mt-0.5">
+                이미 토스 콘솔에서 직접 취소했거나, 외부 채널로 환불한 경우에 체크하세요.
+              </span>
+            </span>
+          </label>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded">
+            <AlertCircle size={14} className="text-red-600 mt-0.5 flex-shrink-0" />
+            <p className="text-[12.5px] text-red-700">{error}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 mt-5 pt-4 border-t border-[var(--color-border)]">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          className="flex-1 h-10 text-[13px] font-medium text-[var(--color-text)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-subtle)] disabled:opacity-50"
+        >
+          취소
+        </button>
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!valid || busy}
+          className="flex-1 h-10 inline-flex items-center justify-center gap-1.5 text-[13px] font-semibold text-white bg-[var(--color-danger)] rounded hover:opacity-90 disabled:bg-[var(--color-border)]"
+        >
+          {busy ? <><Loader2 size={14} className="animate-spin" /> 처리 중…</> : (
+            <>{isPartial ? `${formatPrice(partialNum || 0)} 부분 환불` : `${formatPrice(paidAmount)} 환불`}{!skipToss && canAutoCancel && ' (Toss)'}</>
+          )}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// PR-6 STEP 4: PaymentsMonitorPanel — admin payment monitoring tab
+//
+// 결제 시도 내역을 한눈에 보여줍니다.
+//   - 상단: 오늘/이번달 결제건수·금액, 대기/실패 건수, 실패율 카드
+//   - 하단: 최근 50건 테이블 (상태 필터: 전체/완료/실패/대기/만료)
+//   - 실패 건은 빨간 배경 + 에러 메시지 표시
+// ─────────────────────────────────────────────────────────────────────
+type PaymentItem = {
+  orderId: string; memberId: string; memberName: string; memberPhone: string | null;
+  productId: string; productName: string; amount: number;
+  status: 'pending' | 'confirmed' | 'failed' | 'expired';
+  method: string | null; paymentKey: string | null; passId: string | null;
+  passPaymentStatus: string | null; errorMessage: string | null;
+  confirmedAt: string | null; createdAt: string; updatedAt: string;
+};
+type PaymentStats = {
+  today: { count: number; amount: number };
+  month: { count: number; amount: number };
+  pendingCount: number; failed7d: number; total7d: number; failureRate: number;
+};
+
+function PaymentsMonitorPanel() {
+  const [items, setItems] = useState<PaymentItem[]>([]);
+  const [stats, setStats] = useState<PaymentStats | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'confirmed' | 'failed' | 'expired'>('all');
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const [listRes, statsRes] = await Promise.all([
+        api.payments.list({ status: statusFilter === 'all' ? undefined : statusFilter, limit: 50 }),
+        api.payments.stats(),
+      ]);
+      setItems(listRes.items);
+      setStats(statsRes);
+    } catch (e: any) {
+      setErr(e?.message ?? '결제 내역을 불러오지 못했습니다');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [statusFilter]);
+
+  const statusBadge = (s: PaymentItem['status']) => {
+    if (s === 'confirmed') return <Badge tone="success">결제완료</Badge>;
+    if (s === 'pending') return <Badge tone="warning">결제 대기</Badge>;
+    if (s === 'failed') return <Badge tone="danger">실패</Badge>;
+    return <Badge tone="muted">만료</Badge>;
+  };
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-4 py-4 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+        <StatCard icon={<TrendingUp size={14} />} label="오늘 결제"
+          value={stats ? `${stats.today.count}건` : '—'}
+          sub={stats ? formatPrice(stats.today.amount) : ''} tone="primary" />
+        <StatCard icon={<Calendar size={14} />} label="이번달 결제"
+          value={stats ? `${stats.month.count}건` : '—'}
+          sub={stats ? formatPrice(stats.month.amount) : ''} tone="success" />
+        <StatCard icon={<Clock size={14} />} label="결제 대기"
+          value={stats ? `${stats.pendingCount}건` : '—'}
+          sub="확인 미완료" tone="warning" />
+        <StatCard icon={<AlertTriangle size={14} />} label="7일 실패율"
+          value={stats ? `${stats.failureRate}%` : '—'}
+          sub={stats ? `${stats.failed7d}/${stats.total7d}` : ''}
+          tone={stats && stats.failureRate > 20 ? 'danger' : 'muted'} />
+      </div>
+
+      <div className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-3 flex-wrap bg-white">
+        <span className="text-[12px] text-[var(--color-text-muted)]">상태</span>
+        {([
+          { id: 'all', label: '전체' },
+          { id: 'confirmed', label: '완료' },
+          { id: 'pending', label: '대기' },
+          { id: 'failed', label: '실패' },
+          { id: 'expired', label: '만료' },
+        ] as const).map(f => (
+          <button
+            key={f.id}
+            onClick={() => setStatusFilter(f.id)}
+            className={cn(
+              'px-2.5 py-1 text-[12px] rounded border transition-colors',
+              statusFilter === f.id
+                ? 'bg-[var(--color-text)] text-white border-[var(--color-text)]'
+                : 'bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-border-strong)]'
+            )}
+          >
+            {f.label}
+          </button>
+        ))}
+        <div className="flex-1" />
+        <button
+          onClick={load}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-subtle)] disabled:opacity-50"
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> 새로고침
+        </button>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
+              <th className="text-left font-medium px-4 py-2.5 w-[150px]">시각</th>
+              <th className="text-left font-medium px-4 py-2.5 w-[110px]">회원</th>
+              <th className="text-left font-medium px-4 py-2.5">상품</th>
+              <th className="text-right font-medium px-4 py-2.5 w-[110px]">금액</th>
+              <th className="text-center font-medium px-4 py-2.5 w-[110px]">상태</th>
+              <th className="text-left font-medium px-4 py-2.5 w-[200px]">주문/거래 ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            {err && (
+              <tr><td colSpan={6} className="py-12 text-center text-[13px] text-[var(--color-danger)]">{err}</td></tr>
+            )}
+            {!err && items.length === 0 && !loading && (
+              <tr><td colSpan={6} className="py-12 text-center text-[13px] text-[var(--color-text-muted)]">결제 시도 내역이 없습니다.</td></tr>
+            )}
+            {!err && loading && items.length === 0 && (
+              <tr><td colSpan={6} className="py-12 text-center text-[13px] text-[var(--color-text-muted)]"><Loader2 size={16} className="inline animate-spin mr-1" /> 불러오는 중…</td></tr>
+            )}
+            {items.map(it => {
+              const isFailed = it.status === 'failed';
+              const isPending = it.status === 'pending';
+              return (
+                <tr
+                  key={it.orderId}
+                  className={cn(
+                    'border-b border-[var(--color-border-subtle)] last:border-0',
+                    isFailed ? 'bg-red-50/40 hover:bg-red-50/70' :
+                    isPending ? 'bg-amber-50/40 hover:bg-amber-50/70' :
+                    'hover:bg-[var(--color-bg-subtle)]'
+                  )}
+                >
+                  <td className="px-4 py-2.5 text-[var(--color-text-secondary)] tabular-nums text-[12px]">
+                    {new Date(it.createdAt).toLocaleString('ko-KR', {
+                      month: '2-digit', day: '2-digit',
+                      hour: '2-digit', minute: '2-digit',
+                    })}
+                  </td>
+                  <td className="px-4 py-2.5 text-[var(--color-text)] font-medium">{it.memberName}</td>
+                  <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">
+                    {it.productName}
+                    {isFailed && it.errorMessage && (
+                      <p className="text-[11px] text-red-700 mt-0.5 truncate max-w-[400px]" title={it.errorMessage}>
+                        실패 사유: {it.errorMessage}
+                      </p>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-right text-[var(--color-text)] tabular-nums">{formatPrice(it.amount)}</td>
+                  <td className="px-4 py-2.5 text-center">
+                    {statusBadge(it.status)}
+                    {it.method && (
+                      <div className="text-[10.5px] text-[var(--color-text-muted)] mt-0.5">
+                        {paymentMethodLabel[it.method] ?? it.method}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 text-[11.5px] text-[var(--color-text-muted)] tabular-nums">
+                    <div className="truncate max-w-[200px]" title={it.orderId}>{it.orderId}</div>
+                    {it.paymentKey && (
+                      <div className="truncate max-w-[200px] text-[10.5px]" title={it.paymentKey}>
+                        {it.paymentKey.slice(0, 16)}…
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="px-4 py-2.5 border-t border-[var(--color-border)] text-[11.5px] text-[var(--color-text-muted)] flex items-center gap-1.5">
+        <Info size={11} />
+        결제 시도 → 완료/실패 모든 단계가 기록됩니다. 실패 건은 회원에게 별도 안내가 필요할 수 있습니다.
+      </div>
+    </div>
+  );
+}
+
+function StatCard({
+  icon, label, value, sub, tone = 'muted',
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  sub?: string;
+  tone?: 'primary' | 'success' | 'warning' | 'danger' | 'muted';
+}) {
+  const toneClasses: Record<string, string> = {
+    primary: 'border-[var(--color-primary)]/30 bg-white',
+    success: 'border-emerald-200 bg-white',
+    warning: 'border-amber-200 bg-white',
+    danger: 'border-red-200 bg-red-50/40',
+    muted: 'border-[var(--color-border)] bg-white',
+  };
+  const iconTone: Record<string, string> = {
+    primary: 'text-[var(--color-primary)]',
+    success: 'text-emerald-600',
+    warning: 'text-amber-600',
+    danger: 'text-red-600',
+    muted: 'text-[var(--color-text-muted)]',
+  };
+  return (
+    <div className={cn('rounded-md border px-3 py-2.5', toneClasses[tone])}>
+      <div className="flex items-center gap-1.5 text-[11.5px] text-[var(--color-text-muted)]">
+        <span className={iconTone[tone]}>{icon}</span>
+        {label}
+      </div>
+      <div className="mt-1 text-[18px] font-semibold text-[var(--color-text)] tabular-nums leading-none">{value}</div>
+      {sub && <div className="mt-1 text-[11.5px] text-[var(--color-text-muted)] tabular-nums">{sub}</div>}
+    </div>
+  );
+}
+
