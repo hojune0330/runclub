@@ -48,6 +48,12 @@ export interface Session {
   currentReservations: number;
   waitlistCount: number;
   status: SessionStatus;
+  // ─── PR-C2: 오버부킹 비율 (0.0 ~ 0.5) ───
+  // 정원의 N% 만큼은 중복 예약을 허용한다. 예: maxCapacity=10,
+  // overbookRatio=0.10 → 11명까지 즉시 예약, 12번째부터 대기.
+  // 클라이언트는 effectiveCapacity = maxCapacity + ceil(maxCapacity * ratio)
+  // 로 계산해 표시. 서버는 동일 공식으로 INSERT 시 검증.
+  overbookRatio?: number;
   isIndoor: boolean;
   memo?: string;
   memoPublic?: boolean;

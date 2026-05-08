@@ -762,6 +762,11 @@ function EditSessionModal({
   const [locationAddress, setLocationAddress] = useState(session.locationAddress ?? '');
   const [locationMapUrl, setLocationMapUrl] = useState(session.locationMapUrl ?? '');
   const [maxCapacity, setMaxCapacity] = useState(session.maxCapacity);
+  // PR-C2: 오버부킹 비율(%). UI 는 사용자 친화적으로 백분율(0~50)을 표시,
+  // 서버에는 소수(0.0 ~ 0.5)로 변환해 보낸다. session.overbookRatio 가
+  // 없으면 기본 10%.
+  const initialOverbookPct = Math.round(((session.overbookRatio ?? 0.10) * 100));
+  const [overbookPct, setOverbookPct] = useState(initialOverbookPct);
   const [isIndoor, setIsIndoor] = useState(!!session.isIndoor);
   const [cancelDeadline, setCancelDeadline] = useState(session.cancelDeadlineMinutes);
   const [status, setStatus] = useState<Session['status']>(session.status);
@@ -799,6 +804,11 @@ function EditSessionModal({
     if (locationAddress !== (session.locationAddress ?? '')) patch.locationAddress = locationAddress;
     if (trim(locationMapUrl) !== (session.locationMapUrl ?? '')) patch.locationMapUrl = trim(locationMapUrl) || undefined;
     if (Number(maxCapacity) !== session.maxCapacity) patch.maxCapacity = Number(maxCapacity);
+
+    // PR-C2: 오버부킹 비율 diff. UI 는 백분율(0..50), 저장은 소수(0..0.5).
+    const newRatio = Number((Math.max(0, Math.min(50, Number(overbookPct))) / 100).toFixed(3));
+    const prevRatio = Number(((session.overbookRatio ?? 0.10)).toFixed(3));
+    if (newRatio !== prevRatio) patch.overbookRatio = newRatio;
 
     // PR-A: 태그 diff. 정렬 후 비교해 순서가 달라지는 noise 를 막는다.
     const prevTags = [...(session.tags ?? [])].sort();
@@ -928,6 +938,28 @@ function EditSessionModal({
                 </select>
               </FormField>
             </div>
+
+            {/* ── PR-C2: 오버부킹(중복 예약 허용) ── */}
+            {/* 정원의 N% 만큼은 노쇼 대비로 추가 수용. 기본 10%. 정원 8명 × 10% */}
+            {/* = ceil(0.8) = 1슬롯 → 9명까지 즉시 예약 가능, 10번째부터 자동 대기. */}
+            <FormField
+              label="오버부킹 비율 (%)"
+              hint={`정원 ${maxCapacity}명 + 추가 ${Math.ceil(maxCapacity * (Math.max(0, Math.min(50, Number(overbookPct))) / 100))}명까지 즉시 예약 (그 이후는 자동 대기)`}
+            >
+              <input
+                type="number"
+                min={0}
+                max={50}
+                step={1}
+                className="form-input"
+                value={overbookPct}
+                onChange={e => {
+                  const n = parseInt(e.target.value);
+                  if (Number.isFinite(n)) setOverbookPct(Math.max(0, Math.min(50, n)));
+                  else setOverbookPct(0);
+                }}
+              />
+            </FormField>
             <label className="inline-flex items-center gap-2 text-[12.5px] text-[var(--color-text-secondary)]">
               <input type="checkbox" checked={isIndoor} onChange={e => setIsIndoor(e.target.checked)} />
               실내 세션 (우천 무관)

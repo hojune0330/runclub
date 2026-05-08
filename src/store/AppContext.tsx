@@ -34,7 +34,16 @@ interface AppActions {
   updateSessionTag: (data: { id: string; label?: string; color?: string | null; icon?: string | null; displayOrder?: number; isActive?: boolean }) => Promise<boolean>;
   deleteSessionTag: (id: string) => Promise<boolean>;
 
-  makeReservation: (sessionId: string, memberId?: string) => Promise<boolean>;
+  // PR-C2: 자동 대기 전환을 알리기 위해 결과 객체로 확장.
+  // 호출 측은 ok 만 봐도 동작하고, autoWaitlisted=true 면 정원 마감으로
+  // 대기열에 자동 등록되었음을 의미한다.
+  makeReservation: (sessionId: string, memberId?: string) => Promise<{
+    ok: boolean;
+    autoWaitlisted?: boolean;
+    usedOverbookSlot?: boolean;
+    position?: number;
+    message?: string;
+  }>;
   cancelReservation: (reservationId: string) => Promise<void>;
   updateReservationStatus: (reservationId: string, status: ReservationStatus) => Promise<void>;
 
@@ -247,14 +256,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Reservation Actions ───
-  const makeReservation = useCallback(async (sessionId: string, memberId?: string): Promise<boolean> => {
+  // PR-C2: 서버가 정원+오버부킹 슬롯이 모두 차면 자동으로 대기열에 등록하고
+  // 202 + { autoWaitlisted: true } 응답을 보낸다. UI 가 그 정보를 알 수
+  // 있도록 단순 boolean 대신 결과 객체를 반환한다. 호출 측은 .ok 만
+  // 봐도 동작하고, 자동 대기 분기를 보고 싶으면 .autoWaitlisted 를 본다.
+  const makeReservation = useCallback(async (sessionId: string, memberId?: string): Promise<{
+    ok: boolean;
+    autoWaitlisted?: boolean;
+    usedOverbookSlot?: boolean;
+    position?: number;
+    message?: string;
+  }> => {
     try {
-      await api.reservations.create(sessionId, memberId);
+      const res = await api.reservations.create(sessionId, memberId);
+      // 대기/예약 둘 다 sessions/reservations 수치가 변하므로 모두 새로고침.
+      // waitlist 카운트는 sessions GET 응답의 waitlist_count 에 포함됨.
       await Promise.all([refreshSessions(), refreshReservations(), refreshPasses()]);
-      return true;
+      return {
+        ok: true,
+        autoWaitlisted: !!res?.autoWaitlisted,
+        usedOverbookSlot: !!res?.usedOverbookSlot,
+        position: res?.position,
+        message: res?.message,
+      };
     } catch (e: any) {
       if (!handleAuthError(e)) alert(e.message);
-      return false;
+      return { ok: false };
     }
   }, [refreshSessions, refreshReservations, refreshPasses, handleAuthError]);
 

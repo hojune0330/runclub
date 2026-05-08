@@ -37,7 +37,6 @@ export default function SessionDetail({ session, onBack }: Props) {
     sessionTags,
     makeReservation,
     cancelReservation,
-    joinWaitlist,
     leaveWaitlist,
   } = useApp();
 
@@ -64,6 +63,14 @@ export default function SessionDetail({ session, onBack }: Props) {
     .map(id => sessionTags.find(t => t.id === id))
     .filter((t): t is NonNullable<typeof t> => !!t && t.isActive);
   const full = isSessionFull(session);
+  // PR-C2: 오버부킹 슬롯 계산. 정원 마감(full)이어도 effective 까지는
+  // 즉시 예약 가능. 그 이후는 서버가 자동 대기로 전환.
+  const overbookRatio = Math.max(0, Math.min(0.5, session.overbookRatio ?? 0.10));
+  const overbookSlots = Math.ceil(session.maxCapacity * overbookRatio);
+  const effectiveCapacity = session.maxCapacity + overbookSlots;
+  const effectiveFull = session.currentReservations >= effectiveCapacity;
+  const overbookRemaining = Math.max(0, effectiveCapacity - session.currentReservations);
+  const inOverbookZone = full && !effectiveFull;
   const isPast = new Date(session.date + 'T' + session.startTime) < new Date();
   const myPasses = memberPasses.filter(p => p.memberId === currentMember.id);
   const validPass = myPasses.find(p => canUsePassForSession(p, session.type));
@@ -86,12 +93,21 @@ export default function SessionDetail({ session, onBack }: Props) {
   const handleReserve = async () => {
     setActionLoading(true);
     try {
-      if (full) {
-        await joinWaitlist(session.id);
-        toast('대기 등록이 완료되었습니다.');
+      // PR-C2: full 판정은 클라이언트에서 정원 기준이지만, 실제 정원+오버부킹
+      // 슬롯 잔여는 서버만 정확히 안다. 따라서 클라이언트에서 full 처럼 보여도
+      // 일단 makeReservation 을 시도하고, 서버가 자동 대기로 전환하면
+      // autoWaitlisted 응답을 받아 토스트만 다르게 노출한다.
+      const res = await makeReservation(session.id);
+      if (!res.ok) {
+        // makeReservation 내부에서 이미 alert 가 떴음 — 별도 토스트 X.
+        return;
+      }
+      if (res.autoWaitlisted) {
+        toast(`정원이 마감되어 대기 ${res.position ?? ''}번째로 등록되었습니다.`);
+      } else if (res.usedOverbookSlot) {
+        toast('정원 초과 추가 슬롯으로 예약되었습니다.');
       } else {
-        const ok = await makeReservation(session.id);
-        if (ok) toast('예약이 완료되었습니다.');
+        toast('예약이 완료되었습니다.');
       }
     } catch {
       toast('요청에 실패했습니다.');
@@ -264,7 +280,7 @@ export default function SessionDetail({ session, onBack }: Props) {
             )}
           </InfoRow>
           <InfoRow icon={Users} label="참여 인원">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <span className="text-[13px] text-[var(--color-text)] tabular-nums font-medium">
                 {session.currentReservations} / {session.maxCapacity}명
               </span>
@@ -273,8 +289,10 @@ export default function SessionDetail({ session, onBack }: Props) {
                   className="h-full rounded"
                   style={{
                     width: `${ratio}%`,
-                    backgroundColor: full
+                    backgroundColor: effectiveFull
                       ? 'var(--color-danger)'
+                      : full
+                      ? 'var(--color-warning)'
                       : ratio >= 80
                       ? 'var(--color-warning)'
                       : config.color,
@@ -284,14 +302,20 @@ export default function SessionDetail({ session, onBack }: Props) {
               <span
                 className={cn(
                   'text-[12px]',
-                  full
+                  effectiveFull
                     ? 'text-[var(--color-danger)]'
+                    : full
+                    ? 'text-[var(--color-warning)]'
                     : ratio >= 80
                     ? 'text-[var(--color-warning)]'
                     : 'text-[var(--color-success)]'
                 )}
               >
-                {getSessionStatusLabel(session)}
+                {effectiveFull
+                  ? '대기 등록 가능'
+                  : full
+                  ? `정원 마감 · 추가 ${overbookRemaining}자리`
+                  : getSessionStatusLabel(session)}
               </span>
               {session.waitlistCount > 0 && (
                 <span className="text-[12px] text-[var(--color-warning)]">
@@ -299,6 +323,14 @@ export default function SessionDetail({ session, onBack }: Props) {
                 </span>
               )}
             </div>
+            {/* PR-C2: 오버부킹 안내 라인. 정원 마감이지만 추가 슬롯이 남아 */}
+            {/* 있으면 회원이 즉시 예약 가능함을 명시. */}
+            {inOverbookZone && (
+              <p className="text-[11.5px] text-[var(--color-text-muted)] mt-1 leading-relaxed">
+                정원 {session.maxCapacity}명은 마감되었지만 노쇼 대비
+                추가 슬롯이 {overbookRemaining}자리 열려 있어 지금 바로 예약하실 수 있어요.
+              </p>
+            )}
           </InfoRow>
           {session.memo && session.memoPublic && (
             <div className="px-4 py-3">
@@ -432,8 +464,10 @@ export default function SessionDetail({ session, onBack }: Props) {
             ? '예약이 확정되었습니다. 세션 당일 QR로 체크인하세요.'
             : state === 'waitlisted'
             ? '현재 대기 상태입니다. 자리가 나면 자동 배정됩니다.'
-            : full
-            ? '정원이 마감되어 대기 신청만 가능합니다.'
+            : effectiveFull
+            ? '정원이 모두 마감되었습니다. 대기 예약하시면 자리가 날 때 자동 배정됩니다.'
+            : inOverbookZone
+            ? `정원은 마감되었지만 추가 슬롯 ${overbookRemaining}자리가 열려 있어 지금 예약 가능합니다.`
             : '예약 가능합니다.'}
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -456,7 +490,13 @@ export default function SessionDetail({ session, onBack }: Props) {
                   : 'bg-[var(--color-bg-hover)] text-[var(--color-text-muted)] cursor-not-allowed'
               )}
             >
-              {actionLoading ? '처리 중...' : full ? '대기 신청' : '예약하기'}
+              {actionLoading
+                ? '처리 중...'
+                : effectiveFull
+                ? '대기 예약'
+                : inOverbookZone
+                ? '추가 슬롯 예약'
+                : '예약하기'}
             </button>
           ) : (
             <button

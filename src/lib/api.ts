@@ -100,8 +100,21 @@ export const api = {
       if (params?.sessionId) qs.set('sessionId', params.sessionId);
       return request<any[]>(`/reservations?${qs}`);
     },
+    // PR-C2: 응답에 autoWaitlisted 필드가 포함될 수 있다.
+    //   - 정상 예약(201): { id, success, usedOverbookSlot?, effectiveCapacity?, maxCapacity? }
+    //   - 자동 대기 전환(202): { autoWaitlisted: true, waitlistId, position, message }
     create: (sessionId: string, memberId?: string) =>
-      request<{ id: string }>('/reservations', {
+      request<{
+        id?: string;
+        success?: boolean;
+        usedOverbookSlot?: boolean;
+        effectiveCapacity?: number;
+        maxCapacity?: number;
+        autoWaitlisted?: boolean;
+        waitlistId?: string;
+        position?: number;
+        message?: string;
+      }>('/reservations', {
         method: 'POST',
         body: JSON.stringify({ sessionId, memberId }),
       }),

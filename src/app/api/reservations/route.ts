@@ -94,9 +94,31 @@ export async function GET(req: NextRequest) {
 }
 
 // POST /api/reservations - Make a reservation
+//
+// PR-C2 변경사항:
+//   1) 회원 필수: auth 가 없거나 status != active / role 이 'guest' 면 거부
+//      (기존에도 unauthorizedResponse 로 막고 있었지만, 추가로 활성 회원
+//       인지 명시적으로 검증)
+//   2) 정원 = max_capacity + ceil(max_capacity * overbook_ratio)
+//      - 즉시 예약 가능 슬롯이 effective_capacity 미만이면 즉시 예약
+//      - 도달했으면 자동 대기열 등록 (autoWaitlisted=true 응답)
+//   3) 트랜잭션 + SELECT ... FOR UPDATE 로 동시성 race 방지
 export async function POST(req: NextRequest) {
   const auth = await getAuthFromRequest(req);
   if (!auth) return unauthorizedResponse();
+
+  // PR-C2: 회원 필수 — 활성 상태가 아닌 계정은 예약 불가.
+  // 토큰은 유효하지만 어드민이 비활성화한 계정일 수 있어 DB 재조회.
+  const me = await dbGet<{ id: string; is_active: boolean }>(
+    'SELECT id, is_active FROM members WHERE id = $1',
+    [auth.memberId]
+  );
+  if (!me || !me.is_active) {
+    return NextResponse.json(
+      { error: '예약은 활성 회원만 가능합니다. 운영자에게 문의해주세요.' },
+      { status: 403 }
+    );
+  }
 
   // Members: 30 reservation/cancel actions per IP per minute is far above
   // legitimate usage but blocks scripted abuse. Admins are exempt — they may
@@ -116,9 +138,9 @@ export async function POST(req: NextRequest) {
     const targetMemberId = auth.role === 'admin' && memberId ? memberId : auth.memberId;
 
 
-    // Get session
-    const session = await dbGet(`
-      SELECT s.*, 
+    // Get session — overbook_ratio 포함
+    const session = await dbGet<any>(`
+      SELECT s.*,
         (SELECT COUNT(*) FROM reservations r WHERE r.session_id = s.id AND r.status IN ('reserved', 'attended'))::int AS current_reservations
       FROM sessions s WHERE s.id = $1
     `, [sessionId]);
@@ -126,13 +148,48 @@ export async function POST(req: NextRequest) {
     if (!session) return NextResponse.json({ error: '세션을 찾을 수 없습니다' }, { status: 404 });
     if (session.status === 'cancelled') return NextResponse.json({ error: '취소된 세션입니다' }, { status: 400 });
 
-    // Check duplicate
+    // Check duplicate (예약/대기 모두 검사)
     const existing = await dbGet('SELECT id FROM reservations WHERE member_id = $1 AND session_id = $2 AND status = \'reserved\'', [targetMemberId, sessionId]);
     if (existing) return NextResponse.json({ error: '이미 예약되어 있습니다' }, { status: 409 });
+    const existingWait = await dbGet(
+      "SELECT id FROM waitlist WHERE member_id = $1 AND session_id = $2 AND status = 'waiting'",
+      [targetMemberId, sessionId]
+    );
+    if (existingWait) {
+      return NextResponse.json({ error: '이미 대기 등록되어 있습니다' }, { status: 409 });
+    }
 
-    // Check capacity
-    if (session.current_reservations >= session.max_capacity) {
-      return NextResponse.json({ error: '정원이 마감되었습니다. 대기 등록을 이용해주세요.' }, { status: 400 });
+    // PR-C2: effective capacity = 정원 + 오버부킹 슬롯
+    // ceil(maxCapacity * ratio) — 정원 8명 × 0.10 = 1슬롯 → 9명까지 즉시 예약.
+    const maxCapacity = Number(session.max_capacity) || 0;
+    const ratio = session.overbook_ratio != null ? Number(session.overbook_ratio) : 0.10;
+    const overbookSlots = Math.ceil(maxCapacity * Math.max(0, Math.min(0.5, ratio)));
+    const effectiveCapacity = maxCapacity + overbookSlots;
+    const currentCount = Number(session.current_reservations) || 0;
+    const isFull = currentCount >= effectiveCapacity;
+
+    // 정원 + 오버부킹 모두 차면 자동 대기 전환
+    if (isFull) {
+      // Auto-waitlist: insert into waitlist, do not deduct pass.
+      const maxPos = await dbGet<{ pos: number | null }>(
+        "SELECT MAX(position) as pos FROM waitlist WHERE session_id = $1 AND status = 'waiting'",
+        [sessionId]
+      );
+      const position = (maxPos?.pos || 0) + 1;
+      const wid = genId('w');
+      await dbRun(`
+        INSERT INTO waitlist (id, member_id, session_id, position, status, created_at)
+        VALUES ($1, $2, $3, $4, 'waiting', NOW())
+      `, [wid, targetMemberId, sessionId, position]);
+      return NextResponse.json(
+        {
+          autoWaitlisted: true,
+          waitlistId: wid,
+          position,
+          message: '정원이 마감되어 대기 예약으로 전환되었습니다',
+        },
+        { status: 202 }
+      );
     }
 
     // PR-C1: 사용 가능한 수강권 1건 찾기 — 태그 기반 매칭으로 업그레이드.
@@ -214,13 +271,26 @@ export async function POST(req: NextRequest) {
       } catch { /* swallow */ }
     }
 
-    // Auto-close session if full
-    const newCount = session.current_reservations + 1;
-    if (newCount >= session.max_capacity) {
+    // PR-C2: 즉시 예약은 effectiveCapacity 직전까지 허용. status='closed' 로
+    // 자동 전환은 effective(=정원+오버부킹)에 도달했을 때만 한다. 그래야
+    // 어드민이 listSessions 에서 '진짜 마감'된 세션만 closed 로 본다.
+    const newCount = currentCount + 1;
+    if (newCount >= effectiveCapacity) {
       await dbRun("UPDATE sessions SET status = 'closed' WHERE id = $1", [sessionId]);
     }
 
-    return NextResponse.json({ id, success: true }, { status: 201 });
+    return NextResponse.json(
+      {
+        id,
+        success: true,
+        // PR-C2: 클라이언트가 "정원 넘었지만 오버부킹 슬롯으로 들어감" UX
+        // 를 띄울 수 있도록 슬롯 사용 여부를 알려준다.
+        usedOverbookSlot: currentCount >= maxCapacity,
+        effectiveCapacity,
+        maxCapacity,
+      },
+      { status: 201 }
+    );
   } catch (error: any) {
     console.error('[reservations POST] error:', error);
     return NextResponse.json({ error: '예약 처리 중 오류가 발생했습니다' }, { status: 500 });

@@ -123,6 +123,9 @@ export async function GET(req: NextRequest) {
       locationAddress: s.location_address || '',
       locationMapUrl: s.location_map_url,
       maxCapacity: s.max_capacity,
+      // PR-C2: 오버부킹 비율 (0.0 ~ 0.5). DB는 NUMERIC 으로 반환되므로 Number()
+      // 강제 변환. NULL/undefined 인 경우 기본값 0.10 사용.
+      overbookRatio: s.overbook_ratio != null ? Number(s.overbook_ratio) : 0.10,
       currentReservations: s.current_reservations,
       waitlistCount: s.waitlist_count,
       status: s.status,
@@ -190,19 +193,31 @@ export async function POST(req: NextRequest) {
     const coverImageUrl = sanitizeUrl(body.coverImageUrl);
     const ribbon = sanitizeRibbon(body.ribbon);
 
+    // PR-C2: 오버부킹 비율 정규화. 미지정 시 기본 0.10 (10%).
+    let overbookRatio = 0.10;
+    if (body.overbookRatio !== undefined && body.overbookRatio !== null) {
+      let n = Number(body.overbookRatio);
+      if (!Number.isFinite(n) || n < 0) n = 0.10;
+      if (n > 1) n = n / 100;
+      if (n > 0.5) n = 0.5;
+      overbookRatio = Number(n.toFixed(3));
+    }
+
     await dbRun(`
       INSERT INTO sessions (
         id, name, type, date, start_time, end_time, location, location_address,
         location_map_url, max_capacity, status, is_indoor, memo, memo_public,
         cancel_deadline_minutes, recurring_group_id,
-        description, event_url, instagram_url, kakao_openchat_url, ribbon, cover_image_url
+        description, event_url, instagram_url, kakao_openchat_url, ribbon, cover_image_url,
+        overbook_ratio
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'open',$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'open',$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
     `, [id, body.name, body.type, body.date, body.startTime, body.endTime || null,
       body.location || '', body.locationAddress || '', locationMapUrl,
       body.maxCapacity, !!body.isIndoor, body.memo || null, !!body.memoPublic,
       body.cancelDeadlineMinutes || 120, body.recurringGroupId || null,
       description, eventUrl, instagramUrl, kakaoOpenChatUrl, ribbon, coverImageUrl,
+      overbookRatio,
     ]);
 
     // PR-C1: 태그 매핑. body.tags 가 명시되어 있으면 그걸 사용하고, 없으면
@@ -351,6 +366,18 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: '상태가 올바르지 않습니다' }, { status: 400 });
     }
     sets.push({ col: 'status', val: body.status });
+  }
+  // PR-C2: 오버부킹 비율. 0.0 ~ 0.5 범위로 clamp (50% 이상은 정원 개념이
+  // 무의미해지고 노쇼 폭주 위험이 있음). 입력이 0.10 처럼 소수면 그대로,
+  // 10 처럼 정수면 백분율로 간주해 0.10 으로 변환한다.
+  if (body.overbookRatio !== undefined) {
+    let n = Number(body.overbookRatio);
+    if (!Number.isFinite(n) || n < 0) {
+      return NextResponse.json({ error: '오버부킹 비율이 올바르지 않습니다' }, { status: 400 });
+    }
+    if (n > 1) n = n / 100;          // 10 → 0.10
+    if (n > 0.5) n = 0.5;            // hard cap
+    sets.push({ col: 'overbook_ratio', val: Number(n.toFixed(3)) });
   }
 
   // PR-7 info-card fields

@@ -359,6 +359,18 @@ async function initSchema(): Promise<void> {
       ADD COLUMN IF NOT EXISTS updated_at           TIMESTAMPTZ
   `);
 
+  // ─── PR-C2: 오버부킹/대기예약 (정원의 N% 추가 수용 허용) ──────────────────
+  // 사용자 요구: "정원의 10%는 중복 예약 되더라도 참석 가능". 정원 8명이면
+  // 0.10 비율로 floor(8 × 0.10) = 0 (8명 만석 시 9번째는 대기), 정원 10명
+  // 이면 ceil(10 × 0.10) = 1 (즉 11번째까지는 즉시 예약 가능, 12번째부터
+  // 대기). 일단 ceil 로 가는 게 운영 의도에 가까우므로 reservation API 에서
+  // ceil 로 계산한다. 컬럼은 기본 0.10. 음수/너무 큰 값은 API 레이어에서
+  // 0..0.5 로 clamp.
+  await dbRun(`
+    ALTER TABLE sessions
+      ADD COLUMN IF NOT EXISTS overbook_ratio NUMERIC(4,3) NOT NULL DEFAULT 0.10
+  `);
+
   // ─── PR-C1: Tag-based session ↔ pass-product matching ──────────────────
   // 기존에는 sessions.type(enum 3종)과 pass_products.applicable_sessions(JSON)
   // 으로만 매칭했지만, 운영 중에 새 세션 종류(예: 금요 무료 슬로우 롱런)가
