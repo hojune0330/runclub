@@ -135,21 +135,50 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '정원이 마감되었습니다. 대기 등록을 이용해주세요.' }, { status: 400 });
     }
 
-    // Find a valid pass and deduct count.
-    // expiry_date is stored as TEXT (YYYY-MM-DD), so compare against today's
-    // date as a TEXT literal to keep behaviour consistent and avoid PG's
-    // strict text/date typing.
+    // PR-C1: 사용 가능한 수강권 1건 찾기 — 태그 기반 매칭으로 업그레이드.
+    //
+    // 우선순위:
+    //   1) 옴니패스('*' 태그를 가진 상품)는 무조건 OK
+    //   2) 세션 태그 ∩ 상품 태그 ≠ ∅
+    //   3) 둘 중 한쪽이라도 태그 매핑이 비어 있으면 legacy
+    //      applicable_sessions 컬럼으로 fallback (PR-C4 까지 유지)
+    //
+    // expiry_date 는 TEXT(YYYY-MM-DD) 라 today 도 문자열 비교.
     const todayStr = new Date().toISOString().slice(0, 10);
     const pass = await dbGet(`
       SELECT mp.*, pp.applicable_sessions, pp.category
       FROM member_passes mp
       JOIN pass_products pp ON mp.product_id = pp.id
       WHERE mp.member_id = $1 AND mp.status = 'active' AND mp.expiry_date >= $3
-        AND (pp.applicable_sessions = 'all' OR pp.applicable_sessions LIKE $2)
         AND (pp.category != 'count' OR mp.remaining_count > 0)
+        AND (
+          /* (1) 옴니패스 */
+          EXISTS (
+            SELECT 1 FROM pass_product_tag_map ptm
+             WHERE ptm.product_id = pp.id AND ptm.tag_id = '*'
+          )
+          /* (2) 세션태그 ∩ 상품태그 */
+          OR EXISTS (
+            SELECT 1
+              FROM pass_product_tag_map ptm
+              JOIN session_tag_map     stm ON stm.tag_id = ptm.tag_id
+             WHERE ptm.product_id = pp.id
+               AND stm.session_id = $4
+          )
+          /* (3a) 세션 태그 매핑이 0행 → legacy fallback */
+          OR (
+            NOT EXISTS (SELECT 1 FROM session_tag_map WHERE session_id = $4)
+            AND (pp.applicable_sessions = 'all' OR pp.applicable_sessions LIKE $2)
+          )
+          /* (3b) 상품 태그 매핑이 0행 → legacy fallback */
+          OR (
+            NOT EXISTS (SELECT 1 FROM pass_product_tag_map WHERE product_id = pp.id)
+            AND (pp.applicable_sessions = 'all' OR pp.applicable_sessions LIKE $2)
+          )
+        )
       ORDER BY mp.expiry_date ASC
       LIMIT 1
-    `, [targetMemberId, `%${session.type}%`, todayStr]);
+    `, [targetMemberId, `%${session.type}%`, todayStr, sessionId]);
 
     if (!pass && auth.role !== 'admin') {
       return NextResponse.json({ error: '사용 가능한 수강권이 없습니다' }, { status: 400 });

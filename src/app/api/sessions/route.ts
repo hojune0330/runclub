@@ -5,6 +5,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { safeSync } from '@/lib/sheets';
 import { mapSessionRow } from '@/lib/sheets-mappers';
 import { logAdminAction } from '@/lib/audit';
+import { getSessionTagsMap, replaceSessionTags } from '@/lib/tags';
 
 // EXT-I7: Bound the date window a logged-in client may request from
 // /api/sessions. Without this, a member could pull the entire historical
@@ -101,6 +102,9 @@ export async function GET(req: NextRequest) {
 
   const isAdmin = auth.role === 'admin';
 
+  // PR-C1: 세션별 태그를 한 번에 조회 (N+1 방지)
+  const tagsMap = await getSessionTagsMap(sessions.map((s: any) => s.id));
+
   return NextResponse.json(sessions.map(s => {
     // EXT-I1: Admin notes (memo) MUST stay private unless the admin marked
     // the memo as public. Previously the API exposed `memo` to every
@@ -134,6 +138,8 @@ export async function GET(req: NextRequest) {
       kakaoOpenChatUrl: s.kakao_openchat_url ?? null,
       ribbon: s.ribbon ?? null,
       coverImageUrl: s.cover_image_url ?? null,
+      // PR-C1: tag ids (legacy type 가 비어 있더라도 항상 배열로 반환)
+      tags: tagsMap[s.id] ?? [],
     };
   }));
 }
@@ -198,6 +204,22 @@ export async function POST(req: NextRequest) {
       body.cancelDeadlineMinutes || 120, body.recurringGroupId || null,
       description, eventUrl, instagramUrl, kakaoOpenChatUrl, ribbon, coverImageUrl,
     ]);
+
+    // PR-C1: 태그 매핑. body.tags 가 명시되어 있으면 그걸 사용하고, 없으면
+    // legacy type 값을 기본 태그로 자동 부착해 기존 매칭 로직과 동등하게 동작.
+    const requestedTags = Array.isArray(body.tags)
+      ? (body.tags as unknown[]).filter((t): t is string => typeof t === 'string' && t.length > 0)
+      : null;
+    const tagsToWrite = requestedTags && requestedTags.length > 0
+      ? requestedTags
+      : (typeof body.type === 'string' ? [body.type] : []);
+    if (tagsToWrite.length > 0) {
+      try {
+        await replaceSessionTags(id, tagsToWrite);
+      } catch (e) {
+        console.error('[sessions POST] replaceSessionTags failed:', e);
+      }
+    }
 
     // Sheets mirror — Sessions tab upsert
     void safeSync('sessions', 'upsert', mapSessionRow({
@@ -351,19 +373,36 @@ export async function PUT(req: NextRequest) {
     sets.push({ col: 'cover_image_url', val: sanitizeUrl(body.coverImageUrl) });
   }
 
-  if (sets.length === 0) {
+  // PR-C1: 태그가 본문에 명시되어 있으면 별도 트랜잭션으로 교체.
+  // sets 가 비어 있더라도 태그만 바꾸고 나가는 경로를 허용한다.
+  const tagsBodyProvided = Array.isArray(body.tags);
+  const newTags: string[] = tagsBodyProvided
+    ? (body.tags as unknown[]).filter((t): t is string => typeof t === 'string' && t.length > 0)
+    : [];
+
+  if (sets.length === 0 && !tagsBodyProvided) {
     return NextResponse.json({ error: '수정할 항목이 없습니다' }, { status: 400 });
   }
 
-  // Always touch updated_at so the sheet sync / cache invalidation can rely on it.
-  const setSql = sets.map((s, i) => `${s.col} = $${i + 1}`).join(', ');
-  const params = sets.map(s => s.val);
-  params.push(id);
+  if (sets.length > 0) {
+    // Always touch updated_at so the sheet sync / cache invalidation can rely on it.
+    const setSql = sets.map((s, i) => `${s.col} = $${i + 1}`).join(', ');
+    const params = sets.map(s => s.val);
+    params.push(id);
 
-  await dbRun(
-    `UPDATE sessions SET ${setSql}, updated_at = NOW() WHERE id = $${params.length}`,
-    params
-  );
+    await dbRun(
+      `UPDATE sessions SET ${setSql}, updated_at = NOW() WHERE id = $${params.length}`,
+      params
+    );
+  }
+
+  if (tagsBodyProvided) {
+    try {
+      await replaceSessionTags(id, newTags);
+    } catch (e) {
+      console.error('[sessions PUT] replaceSessionTags failed:', e);
+    }
+  }
 
   // Sheets mirror — re-upsert the row with the latest values.
   try {

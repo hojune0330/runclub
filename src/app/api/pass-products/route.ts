@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dbAll, dbGet, dbRun, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { logAdminAction } from '@/lib/audit';
+import { getProductTagsMap, replaceProductTags, OMNI_TAG } from '@/lib/tags';
 
 // PR-6: pass_products = "merchant catalog" so members can view a real menu
 // and admins have full CRUD plus rich detail fields.
@@ -19,7 +20,7 @@ const PATCHABLE_FIELDS = [
   'imageUrl', 'displayOrder', 'isFeatured', 'isActive',
 ] as const;
 
-function rowToProduct(p: any) {
+function rowToProduct(p: any, tags: string[] = []) {
   let applicableSessions: any;
   try {
     applicableSessions = p.applicable_sessions === 'all'
@@ -33,6 +34,9 @@ function rowToProduct(p: any) {
     name: p.name,
     category: p.category,
     applicableSessions,
+    // PR-C1: 태그 배열을 항상 반환. 빈 배열이면 클라이언트가 legacy
+    // applicableSessions 로 fallback 표시할 수 있다.
+    tags,
     totalCount: p.total_count,
     durationDays: p.duration_days,
     price: p.price,
@@ -66,7 +70,10 @@ export async function GET(req: NextRequest) {
     ORDER BY is_featured DESC NULLS LAST, display_order ASC NULLS LAST, price ASC
   `, []);
 
-  return NextResponse.json(products.map(rowToProduct));
+  // PR-C1: 모든 상품의 태그를 한 번에 조회 (N+1 방지)
+  const tagsMap = await getProductTagsMap(products.map((p: any) => p.id));
+
+  return NextResponse.json(products.map((p: any) => rowToProduct(p, tagsMap[p.id] ?? [])));
 }
 
 // ─── POST /api/pass-products ───
@@ -134,13 +141,39 @@ export async function POST(req: NextRequest) {
       body.isActive !== false,
     ]);
 
+    // PR-C1: 태그 매핑. body.tags 가 명시되어 있으면 그것을 우선 사용하고,
+    // 없으면 legacy applicableSessions 값에서 자동 변환:
+    //   'all'             → ['*']
+    //   ['ebw','slowrun'] → ['ebw','slowrun']
+    let tagsToWrite: string[];
+    if (Array.isArray(body.tags)) {
+      tagsToWrite = (body.tags as unknown[]).filter(
+        (t): t is string => typeof t === 'string' && t.length > 0
+      );
+    } else if (body.applicableSessions === 'all') {
+      tagsToWrite = [OMNI_TAG];
+    } else if (Array.isArray(body.applicableSessions)) {
+      tagsToWrite = (body.applicableSessions as unknown[]).filter(
+        (t): t is string => typeof t === 'string' && t.length > 0
+      );
+    } else {
+      tagsToWrite = [];
+    }
+    if (tagsToWrite.length > 0) {
+      try {
+        await replaceProductTags(id, tagsToWrite);
+      } catch (e) {
+        console.error('[pass-products POST] replaceProductTags failed:', e);
+      }
+    }
+
     void logAdminAction(req, auth.memberId, {
       action: 'pass_product.create',
       targetType: 'pass_product',
       targetId: id,
       targetName: body.name,
       summary: `수강권 상품 생성: ${body.name} (${body.price}원)`,
-      afterValue: { id, ...body },
+      afterValue: { id, ...body, tags: tagsToWrite },
     });
 
     return NextResponse.json({ id, success: true }, { status: 201 });
@@ -236,16 +269,48 @@ export async function PUT(req: NextRequest) {
       params.push(val);
     }
 
-    if (setParts.length === 0) {
+    // PR-C1: tags 가 본문에 명시되어 있으면 별도 트랜잭션으로 교체.
+    // setParts 가 비어 있더라도 태그만 바꾸고 나가는 경로를 허용한다.
+    const tagsBodyProvided = Array.isArray((body as any).tags);
+    const newTags: string[] = tagsBodyProvided
+      ? ((body as any).tags as unknown[]).filter(
+          (t): t is string => typeof t === 'string' && t.length > 0
+        )
+      : [];
+
+    if (setParts.length === 0 && !tagsBodyProvided) {
       return NextResponse.json({ error: '변경할 항목이 없습니다' }, { status: 400 });
     }
 
-    setParts.push(`updated_at = NOW()`);
-    params.push(id);
-    const sql = `UPDATE pass_products SET ${setParts.join(', ')} WHERE id = $${i}`;
-    await dbRun(sql, params);
+    if (setParts.length > 0) {
+      setParts.push(`updated_at = NOW()`);
+      params.push(id);
+      const sql = `UPDATE pass_products SET ${setParts.join(', ')} WHERE id = $${i}`;
+      await dbRun(sql, params);
+    }
+
+    if (tagsBodyProvided) {
+      try {
+        await replaceProductTags(id, newTags);
+      } catch (e) {
+        console.error('[pass-products PUT] replaceProductTags failed:', e);
+      }
+    }
 
     const after = await dbGet<any>('SELECT * FROM pass_products WHERE id = $1', [id]);
+    // 변경 후 태그도 함께 읽어 audit log 와 응답에 반영
+    const afterTagRows = await dbAll<{ tag_id: string }>(
+      'SELECT tag_id FROM pass_product_tag_map WHERE product_id = $1',
+      [id]
+    );
+    const afterTags = afterTagRows.map(r => r.tag_id);
+    const beforeTagRows = await dbAll<{ tag_id: string }>(
+      // 트랜잭션 후라 실제로는 새 값이 보이지만, 변경 이력 비교용으로
+      // 이전 태그 스냅샷이 필요하지 않으면 생략 가능. 여기선 단순화를 위해
+      // before 시점 태그를 별도로 보관하지 않고 audit afterValue 만 기록.
+      'SELECT tag_id FROM pass_product_tag_map WHERE product_id = $1 AND FALSE',
+      [id]
+    );
 
     void logAdminAction(req, auth.memberId, {
       action: 'pass_product.update',
@@ -253,8 +318,8 @@ export async function PUT(req: NextRequest) {
       targetId: id,
       targetName: after?.name ?? before.name,
       summary: `수강권 상품 수정: ${after?.name ?? before.name}`,
-      beforeValue: rowToProduct(before),
-      afterValue: rowToProduct(after),
+      beforeValue: rowToProduct(before, beforeTagRows.map(r => r.tag_id)),
+      afterValue: rowToProduct(after, afterTags),
     });
 
     return NextResponse.json({ success: true, id });

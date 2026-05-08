@@ -351,6 +351,112 @@ async function initSchema(): Promise<void> {
       ADD COLUMN IF NOT EXISTS updated_at           TIMESTAMPTZ
   `);
 
+  // ─── PR-C1: Tag-based session ↔ pass-product matching ──────────────────
+  // 기존에는 sessions.type(enum 3종)과 pass_products.applicable_sessions(JSON)
+  // 으로만 매칭했지만, 운영 중에 새 세션 종류(예: 금요 무료 슬로우 롱런)가
+  // 늘어날 때마다 enum/마이그레이션이 필요했다. 태그 시스템으로 분리하면
+  // 어드민이 코드 수정 없이 새 세션 카테고리를 만들고 기존 수강권을
+  // 그대로 적용할 수 있다.
+  //
+  // 매칭 규칙:
+  //   1) 수강권에 '*' 태그가 있으면 모든 세션 사용 가능 (옴니패스)
+  //   2) 그 외에는 세션 태그집합 ∩ 수강권 태그집합 ≠ ∅ 이면 사용 가능
+  //   3) 만약 세션이나 수강권에 태그가 하나도 없으면(legacy)
+  //      기존 sessions.type / pass_products.applicable_sessions 로 fallback
+  //      → PR-C4에서 fallback 경로 제거 예정
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS session_tags (
+      id             TEXT PRIMARY KEY,
+      label          TEXT NOT NULL,
+      color          TEXT,
+      icon           TEXT,
+      display_order  INTEGER NOT NULL DEFAULT 0,
+      is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at     TIMESTAMPTZ
+    )
+  `);
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS session_tag_map (
+      session_id   TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      tag_id       TEXT NOT NULL REFERENCES session_tags(id) ON DELETE CASCADE,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (session_id, tag_id)
+    )
+  `);
+  // pass_product_tag_map.tag_id 는 session_tags.id 또는 특수값 '*' 을 가진다.
+  // '*' 은 마스터에 존재하지 않으므로 FK 를 걸지 않는다.
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS pass_product_tag_map (
+      product_id   TEXT NOT NULL REFERENCES pass_products(id) ON DELETE CASCADE,
+      tag_id       TEXT NOT NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (product_id, tag_id)
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_session_tag_map_tag       ON session_tag_map(tag_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_pass_product_tag_map_tag  ON pass_product_tag_map(tag_id)`);
+
+  // ─── PR-C1: 시드 태그 3종 (idempotent) ───
+  // 운영 데이터에 이미 'ebw'/'slowrun'/'marathon' id 의 row 가 있으면 INSERT 무시.
+  await dbRun(`
+    INSERT INTO session_tags (id, label, color, icon, display_order, is_active)
+    VALUES
+      ('ebw',      'EBW',          '#ef4444', 'lucide:zap',           10, TRUE),
+      ('slowrun',  '슬로우 롱런',   '#3b82f6', 'lucide:trending-up',   20, TRUE),
+      ('marathon', '마라톤',        '#10b981', 'lucide:flag',          30, TRUE)
+    ON CONFLICT (id) DO NOTHING
+  `);
+
+  // ─── PR-C1: 기존 세션 데이터 → 태그 맵 백필 ───
+  // sessions.type 값을 그대로 tag_id 로 사용해 session_tag_map 행이 없는
+  // 세션에 한해서만 한 번 INSERT. 이미 매핑이 있는 세션은 건드리지 않음.
+  await dbRun(`
+    INSERT INTO session_tag_map (session_id, tag_id)
+    SELECT s.id, s.type
+      FROM sessions s
+     WHERE NOT EXISTS (
+       SELECT 1 FROM session_tag_map m WHERE m.session_id = s.id
+     )
+       AND s.type IN ('ebw','slowrun','marathon')
+    ON CONFLICT DO NOTHING
+  `);
+
+  // ─── PR-C1: 기존 수강권 상품 → 태그 맵 백필 ───
+  // applicable_sessions 가 'all' 이면 '*' 태그 1행, JSON 배열이면 펼쳐서 INSERT.
+  // pass_product_tag_map 에 row 가 이미 하나라도 있는 상품은 건너뜀.
+  // (운영에서 이미 PR-C1 마이그레이션이 한 번 끝난 환경 보호)
+  const productsForBackfill = await dbAll<{ id: string; applicable_sessions: string }>(`
+    SELECT p.id, p.applicable_sessions
+      FROM pass_products p
+     WHERE NOT EXISTS (
+       SELECT 1 FROM pass_product_tag_map t WHERE t.product_id = p.id
+     )
+  `);
+  for (const p of productsForBackfill) {
+    const raw = (p.applicable_sessions ?? 'all').trim();
+    let tagIds: string[];
+    if (raw === 'all' || raw === '"all"') {
+      tagIds = ['*'];
+    } else {
+      try {
+        const parsed = JSON.parse(raw);
+        tagIds = Array.isArray(parsed)
+          ? parsed.filter((t: unknown): t is string => typeof t === 'string' && t.length > 0)
+          : ['*'];
+      } catch {
+        tagIds = ['*'];
+      }
+    }
+    for (const tagId of tagIds) {
+      await dbRun(
+        `INSERT INTO pass_product_tag_map (product_id, tag_id)
+         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [p.id, tagId]
+      );
+    }
+  }
+
   // ─── Google Sheets sync infrastructure (PR-1) ───
   // sheet_sync_queue : retry buffer. A row is inserted whenever a sync call
   //   fails (e.g. transient Sheets API outage, quota). The worker (PR-3)

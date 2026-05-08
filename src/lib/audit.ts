@@ -51,11 +51,15 @@ export type AuditAction =
   | 'notice.create'
   | 'notice.delete'
   | 'reservation.update_status'
-  | 'qr.generate';
+  | 'qr.generate'
+  // PR-C1: 세션 태그 마스터 CRUD
+  | 'tag_create'
+  | 'tag_update'
+  | 'tag_delete';
 
 export interface AuditEntry {
   action: AuditAction;
-  targetType?: 'member' | 'session' | 'pass' | 'pass_product' | 'notice' | 'reservation' | 'qr';
+  targetType?: 'member' | 'session' | 'pass' | 'pass_product' | 'notice' | 'reservation' | 'qr' | 'tag';
   targetId?: string | null;
   targetName?: string | null;
   summary?: string | null;

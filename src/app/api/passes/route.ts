@@ -4,6 +4,7 @@ import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/l
 import { safeSync } from '@/lib/sheets';
 import { mapPassRow } from '@/lib/sheets-mappers';
 import { logAdminAction } from '@/lib/audit';
+import { getProductTagsMap } from '@/lib/tags';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-6: Pass lifecycle endpoint.
@@ -29,7 +30,7 @@ const SELECT_PASS_FULL = `
   JOIN pass_products pp ON mp.product_id = pp.id
 `;
 
-function rowToPass(p: any, isAdmin: boolean) {
+function rowToPass(p: any, isAdmin: boolean, tags: string[] = []) {
   let applicableSessions: any;
   try {
     applicableSessions = p.applicable_sessions === 'all'
@@ -46,6 +47,9 @@ function rowToPass(p: any, isAdmin: boolean) {
     productName: p.product_name,
     category: p.category,
     applicableSessions,
+    // PR-C1: 발급된 수강권의 태그(상품 태그 사본). 비어 있으면 회원 UI 가
+    // legacy applicableSessions 로 fallback 표시.
+    tags,
     totalCount: p.total_count ?? p.product_total_count,
     remainingCount: p.remaining_count,
     startDate: p.start_date,
@@ -96,7 +100,14 @@ export async function GET(req: NextRequest) {
 
   const passes = await dbAll(`${SELECT_PASS_FULL} ${where} ORDER BY mp.issued_date DESC`, params);
   const isAdmin = auth.role === 'admin';
-  return NextResponse.json(passes.map(p => rowToPass(p, isAdmin)));
+
+  // PR-C1: 발급된 수강권들이 가리키는 상품의 태그를 한 번에 조회 (N+1 방지)
+  const productIds = Array.from(new Set(passes.map((p: any) => p.product_id).filter(Boolean)));
+  const tagsMap = await getProductTagsMap(productIds);
+
+  return NextResponse.json(
+    passes.map((p: any) => rowToPass(p, isAdmin, tagsMap[p.product_id] ?? []))
+  );
 }
 
 // ─── POST /api/passes ───

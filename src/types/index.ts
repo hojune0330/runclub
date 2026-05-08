@@ -1,8 +1,25 @@
 // ─── Session Types ───
 
+// Legacy 3-종 enum. PR-C1 이후로는 태그 시스템(SessionTag)이 단일 진실
+// 공급원이며, 이 enum 은 마이그레이션 종료 시점(PR-C4)까지 fallback 용도로만
+// 유지된다. 새 코드 경로에서는 sessions.tags / passProducts.tags 를 사용할 것.
 export type SessionType = 'ebw' | 'slowrun' | 'marathon';
 export type SessionStatus = 'open' | 'closed' | 'cancelled';
 export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
+// ─── Session Tag (PR-C1) ───
+// 어드민이 자유롭게 추가/삭제할 수 있는 태그 마스터. 시드로 'ebw',
+// 'slowrun', 'marathon' 3종이 들어가 있고, 운영 중에 'friday-free',
+// 'morning' 같은 신규 태그를 코드 변경 없이 추가할 수 있다.
+export interface SessionTag {
+  id: string;
+  label: string;
+  color?: string;
+  icon?: string;
+  displayOrder?: number;
+  isActive: boolean;
+  updatedAt?: string;
+}
 
 // Predefined ribbon/badge styles members see before registering.
 // Using a closed enum (vs free-form text+icon name) keeps the UI consistent
@@ -53,6 +70,11 @@ export interface Session {
   ribbon?: SessionRibbon;
   // Optional cover image URL displayed on the member detail page.
   coverImageUrl?: string;
+
+  // ─── PR-C1: Tag-based categorisation ───
+  // 세션에 부착된 태그 id 배열. session_tag_map 테이블에서 조인해 온다.
+  // 비어 있으면 매칭 로직이 type 필드로 fallback 한다 (PR-C4 까지).
+  tags?: string[];
 }
 
 // ─── Reservation Types ───
@@ -113,7 +135,13 @@ export interface PassProduct {
   id: string;
   name: string;
   category: PassCategory;
+  // Legacy 매칭 필드. PR-C1 이후 tags 가 단일 진실 공급원이며 이 필드는
+  // PR-C4 까지 fallback 으로만 유지된다.
   applicableSessions: SessionType[] | 'all';
+  // ─── PR-C1: Tag-based applicability ───
+  // session_tags.id 의 배열. 특수값 '*' 한 개만 들어 있으면 모든 세션 사용
+  // 가능(옴니패스). 비어 있으면 applicableSessions 로 fallback.
+  tags?: string[];
   totalCount?: number; // for count-based
   durationDays: number;
   price: number;
@@ -142,7 +170,12 @@ export interface MemberPass {
   productId: string;
   productName: string;
   category: PassCategory;
+  // Legacy. PR-C1 이후 tags 가 우선이며 PR-C4 까지 fallback 으로 유지.
   applicableSessions: SessionType[] | 'all';
+  // ─── PR-C1: 상품 태그 사본 (조인 비용 절감용) ───
+  // 발급 당시 product 의 tags 를 그대로 복사해 둔다. 회원 UI 에서 빠르게
+  // 노출하기 위함. 빈 배열이면 applicableSessions 로 fallback.
+  tags?: string[];
   totalCount?: number;
   remainingCount?: number;
   startDate: string;
