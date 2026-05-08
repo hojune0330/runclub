@@ -10,6 +10,11 @@ import {
   DialogTitle as RadixDialogTitle,
   DialogBody as RadixDialogBody,
 } from '@/components/ui/shadcn/dialog';
+import {
+  Tabs as RadixTabs,
+  TabsList as RadixTabsList,
+  TabsTrigger as RadixTabsTrigger,
+} from '@/components/ui/shadcn/tabs';
 
 // ─── Panel ───
 export function Panel({
@@ -325,7 +330,14 @@ export function useToast(): ToastApi {
 // 직접 호출용 (컴포넌트 외부에서 쓸 때)
 export { sonnerToast as toast };
 
-// ─── Tabs ───
+// ─── Tabs (Radix Tabs 어댑터) ───
+// 기존 호출부 API(<Tabs tabs active onChange />)를 그대로 유지하고
+// 내부 구현만 @radix-ui/react-tabs 기반의 shadcn 톤 Tabs로 위임한다.
+// 이 어댑터로 좌우 화살표 키 네비게이션, role/aria 속성이 자동 적용된다.
+//
+// 활성 시 하단 인디케이터는 shadcn Tabs 프리미티브의 ::after 의사요소로
+// 그려지며, count 배지는 어댑터에서 직접 렌더한다 (data-[state=active]
+// CSS 셀렉터로 활성 색을 분기).
 export function Tabs<T extends string>({
   tabs,
   active,
@@ -336,34 +348,28 @@ export function Tabs<T extends string>({
   onChange: (id: T) => void;
 }) {
   return (
-    <div className="flex border-b border-[var(--color-border)]">
-      {tabs.map(t => (
-        <button
-          key={t.id}
-          onClick={() => onChange(t.id)}
-          className={cn(
-            "relative px-4 py-2.5 text-[13px] transition-colors",
-            active === t.id
-              ? "text-[var(--color-text)] font-medium"
-              : "text-[var(--color-text-muted)] hover:text-[var(--color-text-secondary)]"
-          )}
-        >
-          <span className="inline-flex items-center gap-1.5">
-            {t.label}
-            {typeof t.count === 'number' && (
-              <span className={cn(
-                "text-[11px] px-1.5 py-0.5 rounded tabular-nums",
-                active === t.id ? "bg-[var(--color-primary-bg)] text-[var(--color-primary)]" : "bg-[var(--color-bg-hover)] text-[var(--color-text-muted)]"
-              )}>
-                {t.count}
-              </span>
-            )}
-          </span>
-          {active === t.id && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--color-primary)]" />
-          )}
-        </button>
-      ))}
-    </div>
+    <RadixTabs value={active} onValueChange={(v) => onChange(v as T)}>
+      <RadixTabsList>
+        {tabs.map((t) => (
+          <RadixTabsTrigger key={t.id} value={t.id}>
+            <span className="inline-flex items-center gap-1.5">
+              {t.label}
+              {typeof t.count === 'number' && (
+                <span
+                  className={cn(
+                    "text-[11px] px-1.5 py-0.5 rounded tabular-nums",
+                    active === t.id
+                      ? "bg-[var(--color-primary-bg)] text-[var(--color-primary)]"
+                      : "bg-[var(--color-bg-hover)] text-[var(--color-text-muted)]"
+                  )}
+                >
+                  {t.count}
+                </span>
+              )}
+            </span>
+          </RadixTabsTrigger>
+        ))}
+      </RadixTabsList>
+    </RadixTabs>
   );
 }
