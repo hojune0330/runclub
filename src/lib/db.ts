@@ -46,14 +46,22 @@ function getPool(): Pool {
       'DATABASE_URL is not set. Set it in your environment (e.g. .env.local for dev, Render dashboard for prod).'
     );
   }
+  // HOTFIX: 회원가입 동시 폭주 시 풀 고갈로 다른 트래픽까지 멈추던 문제 대응.
+  // - max 10 → 20 (Render Starter Postgres 의 max_connections 기본값
+  //   97 안에서 안전. Sheets sync 워커/요청 폭주 동시 발생 시 여유 확보).
+  // - connectionTimeoutMillis 추가: 풀 만석일 때 무한 대기 대신 5초 안에
+  //   503 으로 떨어지도록 (사용자 측 폼 타임아웃이 우선 발화하지 않게).
+  // - 환경변수 DB_POOL_MAX 로 운영 중 추가 튜닝 가능.
+  const poolMax = Math.max(5, Math.min(50, Number(process.env.DB_POOL_MAX) || 20));
   _pool = new Pool({
     connectionString: DATABASE_URL,
     // Render's PG requires SSL; when running locally we skip it.
     ssl: /sslmode=require|render\.com|neon\.tech|supabase|amazonaws/i.test(DATABASE_URL)
       ? { rejectUnauthorized: false }
       : false,
-    max: 10,
+    max: poolMax,
     idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000,
   });
   _pool.on('error', err => {
     console.error('[db] unexpected pool error', err);
