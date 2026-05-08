@@ -182,7 +182,50 @@ export default function AttendanceHistory() {
                       )}
                     </div>
                   </div>
-                  <div className="scroll-x">
+                  {/* Mobile card list */}
+                  <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
+                    {items.map(r => {
+                      if (!r.session) return null;
+                      const config = sessionTypeConfig[r.session.type];
+                      const statusConf = reservationStatusConfig[r.status];
+                      return (
+                        <li key={r.id} className="px-4 py-2.5">
+                          <div className="flex items-start justify-between gap-2 mb-0.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium shrink-0"
+                                style={{ backgroundColor: config.bgColor, color: config.textColor }}
+                              >
+                                <span
+                                  className="w-1.5 h-1.5 rounded-full"
+                                  style={{ backgroundColor: config.color }}
+                                />
+                                {config.label}
+                              </span>
+                              <p className="text-[13px] text-[var(--color-text)] truncate">
+                                {r.session.name}
+                              </p>
+                            </div>
+                            <span
+                              className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium shrink-0"
+                              style={{
+                                backgroundColor: statusConf.bgColor,
+                                color: statusConf.color,
+                              }}
+                            >
+                              {statusConf.label}
+                            </span>
+                          </div>
+                          <div className="text-[12px] text-[var(--color-text-muted)] tabular-nums">
+                            {formatKoreanDate(r.session.date, 'M월 d일 (EEE)')} · {r.session.startTime}
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+
+                  {/* Desktop table */}
+                  <div className="hidden sm:block scroll-x">
                   <table className="responsive-table" style={{ minWidth: 640 }}>
                     <thead>
                       <tr className="border-b border-[var(--color-border-subtle)] text-[12px] text-[var(--color-text-muted)]">

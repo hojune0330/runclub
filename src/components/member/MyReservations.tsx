@@ -107,7 +107,69 @@ export default function MyReservations() {
             )}
           </div>
         ) : (
-          <div className="scroll-x">
+          <>
+          {/* Mobile card list */}
+          <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
+            {items.map(r => {
+              const session = r.session;
+              if (!session) return null;
+              const config = sessionTypeConfig[session.type];
+              const statusConf = reservationStatusConfig[r.status];
+              return (
+                <li key={r.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium shrink-0"
+                        style={{ backgroundColor: config.bgColor, color: config.textColor }}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: config.color }} />
+                        {config.label}
+                      </span>
+                      <p className="text-[13px] font-medium text-[var(--color-text)] truncate">
+                        {session.name}
+                      </p>
+                    </div>
+                    <span
+                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium shrink-0"
+                      style={{ backgroundColor: statusConf.bgColor, color: statusConf.color }}
+                    >
+                      {statusConf.label}
+                    </span>
+                  </div>
+                  <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-[var(--color-text-muted)] tabular-nums">
+                    <span className="inline-flex items-center gap-1">
+                      <CalendarDays size={11} />
+                      {formatKoreanDate(session.date, 'M월 d일 (EEE)')}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Clock size={11} />
+                      {session.startTime}
+                    </span>
+                    {session.location && (
+                      <span className="inline-flex items-center gap-1 truncate">
+                        <MapPin size={11} />
+                        {session.location}
+                      </span>
+                    )}
+                  </div>
+                  {tab === 'upcoming' && r.status === 'reserved' && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() => handleCancel(r.id)}
+                        className="text-[12px] px-2.5 py-1 border border-[var(--color-border)] rounded text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] hover:border-[var(--color-danger-border)] transition-colors"
+                      >
+                        예약 취소
+                      </button>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block scroll-x">
           <table className="responsive-table" style={{ minWidth: 640 }}>
             <thead>
               <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
@@ -187,6 +249,7 @@ export default function MyReservations() {
             </tbody>
           </table>
           </div>
+          </>
         )}
       </section>
     </div>

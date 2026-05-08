@@ -56,7 +56,62 @@ export default function NoticeManagement() {
       </div>
 
       <div className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
-        <div className="scroll-x">
+        {/* Mobile card list */}
+        <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
+          {notices.length === 0 ? (
+            <li className="py-14 text-center text-[13px] text-[var(--color-text-muted)]">등록된 공지사항이 없습니다.</li>
+          ) : (
+            notices.map((n, i) => (
+              <li key={n.id} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-[11.5px] text-[var(--color-text-muted)] tabular-nums shrink-0">
+                      #{notices.length - i}
+                    </span>
+                    <p className="text-[13px] font-medium text-[var(--color-text)] truncate">{n.title}</p>
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <button className="p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-primary)] hover:bg-[var(--color-bg-hover)] rounded transition-colors">
+                      <Edit3 size={13} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(n.id)}
+                      className="p-1.5 text-[var(--color-text-muted)] hover:text-[var(--color-danger)] hover:bg-[var(--color-danger-bg)] rounded transition-colors"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[12px] text-[var(--color-text-muted)] line-clamp-1 mb-1">{n.content}</p>
+                <div className="flex items-center flex-wrap gap-x-2 gap-y-1">
+                  {n.targetSessions && n.targetSessions.length > 0 ? (
+                    n.targetSessions.map(s => {
+                      const cfg = sessionTypeConfig[s];
+                      return (
+                        <span
+                          key={s}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium"
+                          style={{ backgroundColor: cfg.bgColor, color: cfg.textColor }}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: cfg.color }} />
+                          {cfg.label}
+                        </span>
+                      );
+                    })
+                  ) : (
+                    <Badge tone="muted">전체</Badge>
+                  )}
+                  <span className="text-[11.5px] text-[var(--color-text-muted)] tabular-nums ml-auto">
+                    {formatKoreanDate(n.createdAt, 'yyyy.M.d HH:mm')}
+                  </span>
+                </div>
+              </li>
+            ))
+          )}
+        </ul>
+
+        {/* Desktop table */}
+        <div className="hidden sm:block scroll-x">
         <table className="responsive-table" style={{ minWidth: 640 }}>
           <thead>
             <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">

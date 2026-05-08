@@ -198,7 +198,42 @@ export default function MyPasses() {
             <h2 className="text-[14px] font-semibold text-[var(--color-text)]">만료 / 정지</h2>
             <span className="text-[12px] text-[var(--color-text-muted)]">{inactivePasses.length}건</span>
           </div>
-          <div className="scroll-x">
+          {/* Mobile card list */}
+          <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
+            {inactivePasses.map(pass => {
+              const tagLabel = formatTagLabel(pass);
+              const applicableLabels =
+                tagLabel ??
+                (pass.applicableSessions === 'all'
+                  ? '전체 세션'
+                  : pass.applicableSessions.map(s => sessionTypeConfig[s].label).join(', '));
+              const statusConf = passStatusConfig[pass.status];
+              return (
+                <li key={pass.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-2 mb-0.5">
+                    <p className="text-[13px] text-[var(--color-text-secondary)] truncate">
+                      {pass.productName}
+                    </p>
+                    <span
+                      className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium shrink-0"
+                      style={{ backgroundColor: statusConf.bgColor, color: statusConf.color }}
+                    >
+                      {statusConf.label}
+                    </span>
+                  </div>
+                  <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-[var(--color-text-muted)]">
+                    <span className="truncate">{applicableLabels}</span>
+                    <span className="tabular-nums ml-auto">
+                      ~ {formatKoreanDate(pass.expiryDate, 'yyyy.M.d')}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block scroll-x">
           <table className="responsive-table" style={{ minWidth: 640 }}>
             <thead>
               <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">

@@ -318,7 +318,95 @@ export default function CalendarView() {
             </button>
           </div>
         ) : (
-          <div className="scroll-x">
+          <>
+          {/* Mobile card list */}
+          <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
+            {sessionsForDate.map(session => {
+              const config = sessionTypeConfig[session.type];
+              const full = isSessionFull(session);
+              const ratio = session.maxCapacity > 0
+                ? Math.round((session.currentReservations / session.maxCapacity) * 100)
+                : 0;
+              const statusLabel = getSessionStatusLabel(session);
+              const isReserved = reservations.some(
+                r =>
+                  r.sessionId === session.id &&
+                  r.memberId === currentMember.id &&
+                  r.status === 'reserved'
+              );
+              return (
+                <li
+                  key={session.id}
+                  onClick={() => setSelectedSession(session)}
+                  className="px-4 py-3 cursor-pointer hover:bg-[var(--color-bg-subtle)] transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[13px] font-medium text-[var(--color-text)] tabular-nums shrink-0">
+                        {session.startTime}
+                      </span>
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium shrink-0"
+                        style={{ backgroundColor: config.bgColor, color: config.textColor }}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: config.color }} />
+                        {config.label}
+                      </span>
+                      <p className="text-[13px] text-[var(--color-text)] truncate">
+                        {session.name}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        'text-[11.5px] shrink-0',
+                        full
+                          ? 'text-[var(--color-danger)]'
+                          : ratio >= 80
+                          ? 'text-[var(--color-warning)]'
+                          : 'text-[var(--color-success)]'
+                      )}
+                    >
+                      {statusLabel}
+                    </span>
+                  </div>
+                  <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-[var(--color-text-muted)]">
+                    {session.location && <span className="truncate">{session.location}</span>}
+                    {session.isIndoor && (
+                      <span className="text-[11px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded px-1 py-0">
+                        실내
+                      </span>
+                    )}
+                    {isReserved && (
+                      <span className="text-[11px] font-medium px-1 py-0 rounded bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary-border)]">
+                        예약됨
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="text-[11.5px] tabular-nums text-[var(--color-text-secondary)]">
+                      {session.currentReservations} / {session.maxCapacity}
+                    </span>
+                    <div className="flex-1 h-1 bg-[var(--color-bg-hover)] rounded overflow-hidden max-w-[100px]">
+                      <div
+                        className="h-full rounded"
+                        style={{
+                          width: `${ratio}%`,
+                          backgroundColor: full
+                            ? 'var(--color-danger)'
+                            : ratio >= 80
+                            ? 'var(--color-warning)'
+                            : config.color,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Desktop table */}
+          <div className="hidden sm:block scroll-x">
           <table className="responsive-table" style={{ minWidth: 640 }}>
             <thead>
               <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
@@ -420,6 +508,7 @@ export default function CalendarView() {
             </tbody>
           </table>
           </div>
+          </>
         )}
       </section>
     </div>
