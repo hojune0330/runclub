@@ -22,6 +22,19 @@ const MAX_ENTRIES = 10_000;
 export interface RateLimitOptions {
   windowMs: number; // window length in milliseconds
   max: number;      // max hits per window
+  /**
+   * 200명 단톡방 가입 폭주 hotfix:
+   * 같은 NAT/캐리어 IP 뒤에 수십~수백 명이 묶여 있으면 IP 단일 키로는
+   * 정상 사용자가 서로를 막아버린다 (예: 회원 A가 5번 시도하면 같은
+   * 와이파이의 회원 B,C,D 도 모두 차단). extraKey 를 주면 동일 IP 라도
+   * 사용자 식별값 (예: 정규화된 전화번호) 별로 카운터가 분리된다.
+   *
+   * 보안 영향: extraKey 는 호출 측이 사용자 입력을 *정규화한 뒤* 넘겨야
+   * 한다. 그렇지 않으면 공격자가 010-1234-5678 / 01012345678 처럼 형식만
+   * 바꿔 카운터를 우회할 수 있다. register 엔드포인트는 normalizePhone()
+   * 결과를 넘기므로 안전.
+   */
+  extraKey?: string;
 }
 
 export interface RateLimitResult {
@@ -87,7 +100,13 @@ export function rateLimit(req: NextRequest, bucket: string, opts: RateLimitOptio
   const now = Date.now();
   gcIfNeeded(now);
 
-  const key = `${bucket}:${clientIp(req)}`;
+  // 200명 단톡방 동시 가입 hotfix:
+  // extraKey 가 주어지면 IP 단독이 아닌 IP+extraKey 복합 키로 카운트.
+  // 같은 NAT 뒤 다른 회원은 서로 막지 않는다.
+  const ip = clientIp(req);
+  const key = opts.extraKey
+    ? `${bucket}:${ip}:${opts.extraKey}`
+    : `${bucket}:${ip}`;
   const cur = store.get(key);
 
   if (!cur || cur.resetAt <= now) {
