@@ -338,28 +338,113 @@ function ProductsTable({
   onToggleActive: (p: PassProduct) => void | Promise<void>;
   onDelete: (p: PassProduct) => void | Promise<void>;
 }) {
+  // 9컬럼 테이블을 모바일에서 가로 스크롤만 강제하면 셀 안 단어가 글자 단위로
+  // 줄바꿈돼 행 높이가 폭발한다. 모바일은 카드, sm 이상은 테이블로 분기.
+  if (products.length === 0) {
+    return (
+      <div className="py-12 px-6 text-center text-[13px] text-[var(--color-text-muted)]">
+        등록된 상품이 없습니다. 상단의 “상품 추가” 버튼을 눌러 첫 상품을 추가하세요.
+      </div>
+    );
+  }
+
   return (
-    <div className="overflow-x-auto">
-      <div className="scroll-x">
-      <table className="responsive-table" style={{ minWidth: 720 }}>
-        <thead>
-          <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
-            <th className="text-left font-medium px-4 py-2.5 w-[60px]">정렬</th>
-            <th className="text-left font-medium px-4 py-2.5">상품명</th>
-            <th className="text-left font-medium px-4 py-2.5 w-[100px]">분류</th>
-            <th className="text-left font-medium px-4 py-2.5">이용 가능 세션</th>
-            <th className="text-center font-medium px-4 py-2.5 w-[90px]">횟수/기간</th>
-            <th className="text-right font-medium px-4 py-2.5 w-[130px]">가격</th>
-            <th className="text-center font-medium px-4 py-2.5 w-[90px]">사용중</th>
-            <th className="text-center font-medium px-4 py-2.5 w-[90px]">상태</th>
-            <th className="text-right font-medium px-4 py-2.5 w-[180px]">관리</th>
-          </tr>
-        </thead>
-        <tbody>
-          {products.length === 0 ? (
-            <tr><td colSpan={9} className="py-12 text-center text-[13px] text-[var(--color-text-muted)]">등록된 상품이 없습니다. 상단의 “상품 추가” 버튼을 눌러 첫 상품을 추가하세요.</td></tr>
-          ) : (
-            products.map(p => {
+    <>
+      {/* ── Mobile: 카드 리스트 ── */}
+      <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
+        {products.map(p => {
+          const applicableLabels = p.applicableSessions === 'all'
+            ? '전체 세션'
+            : (p.applicableSessions as SessionType[]).map(s => sessionTypeConfig[s]?.label ?? s).join(', ');
+          const activeCount = memberPasses.filter(mp => mp.productId === p.id && mp.status === 'active').length;
+          const totalIssued = memberPasses.filter(mp => mp.productId === p.id).length;
+          const hasDiscount = p.originalPrice && p.originalPrice > p.price;
+          return (
+            <li key={p.id} className="px-3 py-3">
+              <div className="flex items-start justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => onSelect(p)}
+                  className="flex-1 min-w-0 text-left"
+                >
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {p.isFeatured && (
+                      <span className="inline-flex items-center gap-0.5 text-[10.5px] font-medium text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">
+                        <Star size={9} /> 추천
+                      </span>
+                    )}
+                    <span className="text-[14px] font-semibold text-[var(--color-text)] truncate">{p.name}</span>
+                  </div>
+                  {p.description && (
+                    <p className="text-[11.5px] text-[var(--color-text-muted)] mt-0.5 truncate">{p.description}</p>
+                  )}
+                </button>
+                {p.isActive
+                  ? <Badge tone="success" className="shrink-0">판매중</Badge>
+                  : <Badge tone="muted" className="shrink-0">중단</Badge>}
+              </div>
+
+              {/* 메타 한 줄 — 분류 · 대상 · 수량/기간 */}
+              <p className="text-[12px] text-[var(--color-text-secondary)] mt-1.5 truncate">
+                {passCategoryLabel(p.category)} · {applicableLabels} · {p.totalCount ? `${p.totalCount}회` : `${p.durationDays}일`}
+              </p>
+
+              {/* 가격/사용중 + 액션 — 같은 줄에 우측 정렬 */}
+              <div className="flex items-center justify-between gap-2 mt-2">
+                <div className="min-w-0">
+                  {hasDiscount && (
+                    <span className="text-[11px] text-[var(--color-text-muted)] line-through tabular-nums mr-1.5">
+                      {formatPrice(p.originalPrice!)}
+                    </span>
+                  )}
+                  <span className="text-[14px] font-semibold text-[var(--color-text)] tabular-nums">{formatPrice(p.price)}</span>
+                  <span className="text-[11.5px] text-[var(--color-text-muted)] tabular-nums ml-1.5">· 사용 {activeCount}/{totalIssued}</span>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => onEdit(p)}
+                    aria-label="수정"
+                    className="inline-flex items-center justify-center w-8 h-8 text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-subtle)]"
+                  ><Pencil size={13} /></button>
+                  <button
+                    onClick={() => onToggleActive(p)}
+                    aria-label={p.isActive ? '판매 중단' : '판매 재개'}
+                    className="inline-flex items-center justify-center w-8 h-8 text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-subtle)]"
+                  >
+                    {p.isActive ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
+                  {totalIssued === 0 && (
+                    <button
+                      onClick={() => onDelete(p)}
+                      aria-label="삭제"
+                      className="inline-flex items-center justify-center w-8 h-8 text-[var(--color-danger)] border border-[var(--color-danger-border)] rounded hover:bg-[var(--color-danger-bg)]"
+                    ><Trash2 size={13} /></button>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      {/* ── Desktop (sm+): 테이블 ── */}
+      <div className="hidden sm:block scroll-x">
+        <table className="responsive-table" style={{ minWidth: 720 }}>
+          <thead>
+            <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
+              <th className="text-left font-medium px-4 py-2.5 w-[60px]">정렬</th>
+              <th className="text-left font-medium px-4 py-2.5">상품명</th>
+              <th className="text-left font-medium px-4 py-2.5 w-[100px]">분류</th>
+              <th className="text-left font-medium px-4 py-2.5">이용 가능 세션</th>
+              <th className="text-center font-medium px-4 py-2.5 w-[90px]">횟수/기간</th>
+              <th className="text-right font-medium px-4 py-2.5 w-[130px]">가격</th>
+              <th className="text-center font-medium px-4 py-2.5 w-[90px]">사용중</th>
+              <th className="text-center font-medium px-4 py-2.5 w-[90px]">상태</th>
+              <th className="text-right font-medium px-4 py-2.5 w-[180px]">관리</th>
+            </tr>
+          </thead>
+          <tbody>
+            {products.map(p => {
               const applicableLabels = p.applicableSessions === 'all'
                 ? '전체 세션'
                 : (p.applicableSessions as SessionType[]).map(s => sessionTypeConfig[s]?.label ?? s).join(', ');
@@ -427,12 +512,11 @@ function ProductsTable({
                   </td>
                 </tr>
               );
-            })
-          )}
-        </tbody>
-      </table>
+            })}
+          </tbody>
+        </table>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -450,39 +534,110 @@ function PassesTable({
   onResume: (id: string) => void;
   onRefund: (id: string) => void;
 }) {
+  // 8컬럼 테이블도 모바일에선 가로 스크롤로 강제하면 셀이 글자단위로 줄바꿈된다.
+  // 모바일은 카드 / sm 이상은 테이블로 분기.
+  if (passes.length === 0) {
+    return (
+      <div className="py-12 px-6 text-center">
+        <p className="text-[13px] text-[var(--color-text-muted)]">조건에 맞는 수강권이 없습니다.</p>
+        {total === 0 && (
+          <button
+            onClick={onIssueClick}
+            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-medium text-[var(--color-primary)] border border-[var(--color-primary)]/30 rounded hover:bg-[var(--color-primary)]/10"
+          >
+            <Plus size={13} /> 첫 수강권 발급하기
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div className="overflow-x-auto">
-      <div className="scroll-x">
-      <table className="responsive-table" style={{ minWidth: 720 }}>
-        <thead>
-          <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
-            <th className="text-left font-medium px-4 py-2.5 w-[110px]">회원명</th>
-            <th className="text-left font-medium px-4 py-2.5">수강권</th>
-            <th className="text-left font-medium px-4 py-2.5 w-[100px]">잔여</th>
-            <th className="text-left font-medium px-4 py-2.5 w-[180px]">이용 기간</th>
-            <th className="text-right font-medium px-4 py-2.5 w-[100px]">가격</th>
-            <th className="text-center font-medium px-4 py-2.5 w-[110px]">결제</th>
-            <th className="text-center font-medium px-4 py-2.5 w-[100px]">상태</th>
-            <th className="text-right font-medium px-4 py-2.5 w-[160px]">처리</th>
-          </tr>
-        </thead>
-        <tbody>
-          {passes.length === 0 ? (
-            <tr>
-              <td colSpan={8} className="py-12 text-center">
-                <p className="text-[13px] text-[var(--color-text-muted)]">조건에 맞는 수강권이 없습니다.</p>
-                {total === 0 && (
-                  <button
-                    onClick={onIssueClick}
-                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-medium text-[var(--color-primary)] border border-[var(--color-primary)]/30 rounded hover:bg-[var(--color-primary)]/10"
-                  >
-                    <Plus size={13} /> 첫 수강권 발급하기
-                  </button>
-                )}
-              </td>
+    <>
+      {/* ── Mobile: 카드 리스트 ── */}
+      <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
+        {passes.map(p => {
+          const daysLeft = getDaysUntilExpiry(p);
+          const expiring = isPassExpiringSoon(p, 7);
+          const ps = p.paymentStatus ?? 'unpaid';
+          return (
+            <li key={p.id} className="px-3 py-3" onClick={() => onSelect(p)}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[14px] font-semibold text-[var(--color-text)] truncate">{p.memberName}</span>
+                    {p.status === 'active' ? (
+                      expiring
+                        ? <Badge tone="warning" className="shrink-0">D-{daysLeft}</Badge>
+                        : <Badge tone="success" className="shrink-0">사용중</Badge>
+                    ) : (
+                      <Badge tone="muted" className="shrink-0">{passStatusConfig[p.status]?.label ?? p.status}</Badge>
+                    )}
+                  </div>
+                  <p className="text-[12.5px] text-[var(--color-text-secondary)] mt-0.5 truncate">{p.productName}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <Badge tone={paymentStatusTone[ps] ?? 'muted'}>{paymentStatusLabel[ps] ?? ps}</Badge>
+                  {p.paymentMethod && (
+                    <div className="text-[10.5px] text-[var(--color-text-muted)] mt-0.5">
+                      {paymentMethodLabel[p.paymentMethod] ?? p.paymentMethod}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* 메타 — 잔여 / 기간 / 가격 */}
+              <p className="text-[12px] text-[var(--color-text-muted)] mt-1.5 tabular-nums truncate">
+                {p.category === 'count' && `${p.remainingCount}/${p.totalCount}회 · `}
+                {formatKoreanDate(p.startDate, 'yy.M.d')} — {formatKoreanDate(p.expiryDate, 'yy.M.d')}
+                {' · '}
+                <span className="text-[var(--color-text)] font-medium">{formatPrice(p.paymentAmount ?? p.price ?? 0)}</span>
+              </p>
+
+              {/* 액션 — 같은 줄에 우측 정렬 */}
+              {(p.status === 'active' || p.status === 'paused') && (
+                <div className="flex items-center justify-end gap-1.5 mt-2" onClick={(e) => e.stopPropagation()}>
+                  {p.status === 'active' ? (
+                    <>
+                      <button
+                        onClick={() => onPause(p.id)}
+                        className="px-2.5 py-1 text-[12px] text-[var(--color-warning)] border border-[var(--color-warning-border)] rounded hover:bg-[var(--color-warning-bg)]"
+                      >정지</button>
+                      <button
+                        onClick={() => onRefund(p.id)}
+                        className="px-2.5 py-1 text-[12px] text-[var(--color-danger)] border border-[var(--color-danger-border)] rounded hover:bg-[var(--color-danger-bg)]"
+                      >환불</button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => onResume(p.id)}
+                      className="px-2.5 py-1 text-[12px] text-[var(--color-primary)] border border-[var(--color-primary)]/30 rounded hover:bg-[var(--color-primary)]/10"
+                    >재개</button>
+                  )}
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      {/* ── Desktop (sm+): 테이블 ── */}
+      <div className="hidden sm:block scroll-x">
+        <table className="responsive-table" style={{ minWidth: 720 }}>
+          <thead>
+            <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
+              <th className="text-left font-medium px-4 py-2.5 w-[110px]">회원명</th>
+              <th className="text-left font-medium px-4 py-2.5">수강권</th>
+              <th className="text-left font-medium px-4 py-2.5 w-[100px]">잔여</th>
+              <th className="text-left font-medium px-4 py-2.5 w-[180px]">이용 기간</th>
+              <th className="text-right font-medium px-4 py-2.5 w-[100px]">가격</th>
+              <th className="text-center font-medium px-4 py-2.5 w-[110px]">결제</th>
+              <th className="text-center font-medium px-4 py-2.5 w-[100px]">상태</th>
+              <th className="text-right font-medium px-4 py-2.5 w-[160px]">처리</th>
             </tr>
-          ) : (
-            passes.map(p => {
+          </thead>
+          <tbody>
+            {passes.map(p => {
               const daysLeft = getDaysUntilExpiry(p);
               const expiring = isPassExpiringSoon(p, 7);
               const ps = p.paymentStatus ?? 'unpaid';
@@ -537,12 +692,11 @@ function PassesTable({
                   </td>
                 </tr>
               );
-            })
-          )}
-        </tbody>
-      </table>
+            })}
+          </tbody>
+        </table>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1749,7 +1903,7 @@ function PaymentsMonitorPanel() {
 
   return (
     <div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 px-4 py-4 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 px-3 sm:px-4 py-3 sm:py-4 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
         <StatCard icon={<TrendingUp size={14} />} label="오늘 결제"
           value={stats ? `${stats.today.count}건` : '—'}
           sub={stats ? formatPrice(stats.today.amount) : ''} tone="primary" />
@@ -1797,81 +1951,136 @@ function PaymentsMonitorPanel() {
         </button>
       </div>
 
-      <div className="overflow-x-auto">
-        <div className="scroll-x">
-        <table className="responsive-table" style={{ minWidth: 720 }}>
-          <thead>
-            <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
-              <th className="text-left font-medium px-4 py-2.5 w-[150px]">시각</th>
-              <th className="text-left font-medium px-4 py-2.5 w-[110px]">회원</th>
-              <th className="text-left font-medium px-4 py-2.5">상품</th>
-              <th className="text-right font-medium px-4 py-2.5 w-[110px]">금액</th>
-              <th className="text-center font-medium px-4 py-2.5 w-[110px]">상태</th>
-              <th className="text-left font-medium px-4 py-2.5 w-[200px]">주문/거래 ID</th>
-            </tr>
-          </thead>
-          <tbody>
-            {err && (
-              <tr><td colSpan={6} className="py-12 text-center text-[13px] text-[var(--color-danger)]">{err}</td></tr>
-            )}
-            {!err && items.length === 0 && !loading && (
-              <tr><td colSpan={6} className="py-12 text-center text-[13px] text-[var(--color-text-muted)]">결제 시도 내역이 없습니다.</td></tr>
-            )}
-            {!err && loading && items.length === 0 && (
-              <tr><td colSpan={6} className="py-12 text-center text-[13px] text-[var(--color-text-muted)]"><Loader2 size={16} className="inline animate-spin mr-1" /> 불러오는 중…</td></tr>
-            )}
+      {err && (
+        <div className="py-12 text-center text-[13px] text-[var(--color-danger)]">{err}</div>
+      )}
+      {!err && items.length === 0 && !loading && (
+        <div className="py-12 text-center text-[13px] text-[var(--color-text-muted)]">결제 시도 내역이 없습니다.</div>
+      )}
+      {!err && loading && items.length === 0 && (
+        <div className="py-12 text-center text-[13px] text-[var(--color-text-muted)]">
+          <Loader2 size={16} className="inline animate-spin mr-1" /> 불러오는 중…
+        </div>
+      )}
+
+      {!err && items.length > 0 && (
+        <>
+          {/* ── Mobile: 카드 리스트 ── */}
+          <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
             {items.map(it => {
               const isFailed = it.status === 'failed';
               const isPending = it.status === 'pending';
               return (
-                <tr
+                <li
                   key={it.orderId}
                   className={cn(
-                    'border-b border-[var(--color-border-subtle)] last:border-0',
-                    isFailed ? 'bg-red-50/40 hover:bg-red-50/70' :
-                    isPending ? 'bg-amber-50/40 hover:bg-amber-50/70' :
-                    'hover:bg-[var(--color-bg-subtle)]'
+                    'px-3 py-3',
+                    isFailed && 'bg-red-50/40',
+                    isPending && 'bg-amber-50/40'
                   )}
                 >
-                  <td className="px-4 py-2.5 text-[var(--color-text-secondary)] tabular-nums text-[12px]">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[14px] font-semibold text-[var(--color-text)] truncate">{it.memberName}</span>
+                        {statusBadge(it.status)}
+                      </div>
+                      <p className="text-[12.5px] text-[var(--color-text-secondary)] mt-0.5 truncate">{it.productName}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[14px] font-semibold text-[var(--color-text)] tabular-nums">{formatPrice(it.amount)}</div>
+                      {it.method && (
+                        <div className="text-[10.5px] text-[var(--color-text-muted)] mt-0.5">
+                          {paymentMethodLabel[it.method] ?? it.method}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-[11.5px] text-[var(--color-text-muted)] mt-1.5 tabular-nums">
                     {new Date(it.createdAt).toLocaleString('ko-KR', {
                       month: '2-digit', day: '2-digit',
                       hour: '2-digit', minute: '2-digit',
                     })}
-                  </td>
-                  <td className="px-4 py-2.5 text-[var(--color-text)] font-medium">{it.memberName}</td>
-                  <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">
-                    {it.productName}
-                    {isFailed && it.errorMessage && (
-                      <p className="text-[11px] text-red-700 mt-0.5 truncate max-w-[400px]" title={it.errorMessage}>
-                        실패 사유: {it.errorMessage}
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-right text-[var(--color-text)] tabular-nums">{formatPrice(it.amount)}</td>
-                  <td className="px-4 py-2.5 text-center">
-                    {statusBadge(it.status)}
-                    {it.method && (
-                      <div className="text-[10.5px] text-[var(--color-text-muted)] mt-0.5">
-                        {paymentMethodLabel[it.method] ?? it.method}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-2.5 text-[11.5px] text-[var(--color-text-muted)] tabular-nums">
-                    <div className="truncate max-w-[200px]" title={it.orderId}>{it.orderId}</div>
-                    {it.paymentKey && (
-                      <div className="truncate max-w-[200px] text-[10.5px]" title={it.paymentKey}>
-                        {it.paymentKey.slice(0, 16)}…
-                      </div>
-                    )}
-                  </td>
-                </tr>
+                    {' · '}
+                    <span className="truncate inline-block max-w-[180px] align-bottom" title={it.orderId}>{it.orderId}</span>
+                  </p>
+                  {isFailed && it.errorMessage && (
+                    <p className="text-[11px] text-red-700 mt-1 truncate" title={it.errorMessage}>
+                      실패 사유: {it.errorMessage}
+                    </p>
+                  )}
+                </li>
               );
             })}
-          </tbody>
-        </table>
-        </div>
-      </div>
+          </ul>
+
+          {/* ── Desktop (sm+): 테이블 ── */}
+          <div className="hidden sm:block scroll-x">
+            <table className="responsive-table" style={{ minWidth: 720 }}>
+              <thead>
+                <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
+                  <th className="text-left font-medium px-4 py-2.5 w-[150px]">시각</th>
+                  <th className="text-left font-medium px-4 py-2.5 w-[110px]">회원</th>
+                  <th className="text-left font-medium px-4 py-2.5">상품</th>
+                  <th className="text-right font-medium px-4 py-2.5 w-[110px]">금액</th>
+                  <th className="text-center font-medium px-4 py-2.5 w-[110px]">상태</th>
+                  <th className="text-left font-medium px-4 py-2.5 w-[200px]">주문/거래 ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(it => {
+                  const isFailed = it.status === 'failed';
+                  const isPending = it.status === 'pending';
+                  return (
+                    <tr
+                      key={it.orderId}
+                      className={cn(
+                        'border-b border-[var(--color-border-subtle)] last:border-0',
+                        isFailed ? 'bg-red-50/40 hover:bg-red-50/70' :
+                        isPending ? 'bg-amber-50/40 hover:bg-amber-50/70' :
+                        'hover:bg-[var(--color-bg-subtle)]'
+                      )}
+                    >
+                      <td className="px-4 py-2.5 text-[var(--color-text-secondary)] tabular-nums text-[12px]">
+                        {new Date(it.createdAt).toLocaleString('ko-KR', {
+                          month: '2-digit', day: '2-digit',
+                          hour: '2-digit', minute: '2-digit',
+                        })}
+                      </td>
+                      <td className="px-4 py-2.5 text-[var(--color-text)] font-medium">{it.memberName}</td>
+                      <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">
+                        {it.productName}
+                        {isFailed && it.errorMessage && (
+                          <p className="text-[11px] text-red-700 mt-0.5 truncate max-w-[400px]" title={it.errorMessage}>
+                            실패 사유: {it.errorMessage}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-[var(--color-text)] tabular-nums">{formatPrice(it.amount)}</td>
+                      <td className="px-4 py-2.5 text-center">
+                        {statusBadge(it.status)}
+                        {it.method && (
+                          <div className="text-[10.5px] text-[var(--color-text-muted)] mt-0.5">
+                            {paymentMethodLabel[it.method] ?? it.method}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-[11.5px] text-[var(--color-text-muted)] tabular-nums">
+                        <div className="truncate max-w-[200px]" title={it.orderId}>{it.orderId}</div>
+                        {it.paymentKey && (
+                          <div className="truncate max-w-[200px] text-[10.5px]" title={it.paymentKey}>
+                            {it.paymentKey.slice(0, 16)}…
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       <div className="px-4 py-2.5 border-t border-[var(--color-border)] text-[11.5px] text-[var(--color-text-muted)] flex items-center gap-1.5">
         <Info size={11} />
@@ -1905,13 +2114,13 @@ function StatCard({
     muted: 'text-[var(--color-text-muted)]',
   };
   return (
-    <div className={cn('rounded-md border px-3 py-2.5', toneClasses[tone])}>
-      <div className="flex items-center gap-1.5 text-[11.5px] text-[var(--color-text-muted)]">
+    <div className={cn('rounded-md border px-2.5 sm:px-3 py-2 sm:py-2.5', toneClasses[tone])}>
+      <div className="flex items-center gap-1 sm:gap-1.5 text-[11px] sm:text-[11.5px] text-[var(--color-text-muted)]">
         <span className={iconTone[tone]}>{icon}</span>
-        {label}
+        <span className="truncate">{label}</span>
       </div>
-      <div className="mt-1 text-[18px] font-semibold text-[var(--color-text)] tabular-nums leading-none">{value}</div>
-      {sub && <div className="mt-1 text-[11.5px] text-[var(--color-text-muted)] tabular-nums">{sub}</div>}
+      <div className="mt-1 text-[16px] sm:text-[18px] font-semibold text-[var(--color-text)] tabular-nums leading-none truncate">{value}</div>
+      {sub && <div className="mt-1 text-[11px] sm:text-[11.5px] text-[var(--color-text-muted)] tabular-nums truncate">{sub}</div>}
     </div>
   );
 }

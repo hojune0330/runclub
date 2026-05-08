@@ -257,78 +257,127 @@ export default function SessionManagement() {
         </span>
       </div>
 
-      {/* Table */}
+      {/* List — 모바일은 카드, sm 이상은 테이블 */}
       <div className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
-        <div className="scroll-x">
-        <table className="responsive-table" style={{ minWidth: 720 }}>
-          <thead>
-            <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
-              <th className="text-left font-medium px-4 py-2.5 w-[130px] whitespace-nowrap">날짜</th>
-              <th className="text-left font-medium px-4 py-2.5 w-[70px] whitespace-nowrap">시간</th>
-              <th className="text-left font-medium px-4 py-2.5 w-[120px] whitespace-nowrap">유형</th>
-              <th className="text-left font-medium px-4 py-2.5 whitespace-nowrap">세션명</th>
-              <th className="text-left font-medium px-4 py-2.5 whitespace-nowrap">장소</th>
-              <th className="text-right font-medium px-4 py-2.5 w-[130px] whitespace-nowrap">예약/정원</th>
-              <th className="text-center font-medium px-4 py-2.5 w-[80px] whitespace-nowrap">상태</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredSessions.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="py-14 text-center text-[13px] text-[var(--color-text-muted)]">
-                  조회 조건에 해당하는 세션이 없습니다.
-                </td>
-              </tr>
-            ) : (
-              filteredSessions.map(s => {
+        {filteredSessions.length === 0 ? (
+          <div className="py-14 px-6 text-center text-[13px] text-[var(--color-text-muted)]">
+            조회 조건에 해당하는 세션이 없습니다.
+          </div>
+        ) : (
+          <>
+            {/* ── Mobile: 카드 리스트 ── */}
+            <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
+              {filteredSessions.map(s => {
                 const config = sessionTypeConfig[s.type];
                 const full = isSessionFull(s);
                 const ratio = s.maxCapacity > 0 ? (s.currentReservations / s.maxCapacity) * 100 : 0;
                 const isSelected = liveSession?.id === s.id;
                 return (
-                  <tr
+                  <li
                     key={s.id}
                     onClick={() => setSelectedSession(s)}
                     className={cn(
-                      "border-b border-[var(--color-border-subtle)] last:border-0 cursor-pointer transition-colors",
+                      "px-3 py-3 cursor-pointer transition-colors",
                       isSelected ? "bg-[var(--color-primary-bg)]" : "hover:bg-[var(--color-bg-subtle)]"
                     )}
                   >
-                    <td className="px-4 py-2.5 text-[var(--color-text)] tabular-nums">
-                      {formatKoreanDate(s.date, 'yyyy.M.d (EEE)')}
-                    </td>
-                    <td className="px-4 py-2.5 text-[var(--color-text)] tabular-nums font-medium">{s.startTime}</td>
-                    <td className="px-4 py-2.5 whitespace-nowrap">
-                      <span
-                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[12px] font-medium whitespace-nowrap"
-                        style={{ backgroundColor: config.bgColor, color: config.textColor }}
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: config.color }} />
-                        {config.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 text-[var(--color-text)] whitespace-nowrap">{s.name}</td>
-                    <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">{s.location || '—'}</td>
-                    <td className="px-4 py-2.5 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <span className={cn("tabular-nums", full ? "text-[var(--color-danger)]" : "text-[var(--color-text)]")}>
-                          {s.currentReservations} / {s.maxCapacity}
-                        </span>
-                        <div className="w-12 h-1.5 bg-[var(--color-bg-hover)] rounded overflow-hidden">
-                          <div className="h-full rounded" style={{ width: `${ratio}%`, backgroundColor: full ? 'var(--color-danger)' : config.color }} />
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium shrink-0"
+                            style={{ backgroundColor: config.bgColor, color: config.textColor }}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: config.color }} />
+                            {config.label}
+                          </span>
+                          <span className="text-[14px] font-semibold text-[var(--color-text)] truncate">{s.name}</span>
                         </div>
+                        <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5 tabular-nums truncate">
+                          {formatKoreanDate(s.date, 'M.d (EEE)')} · {s.startTime}
+                          {s.location && ` · ${s.location}`}
+                        </p>
                       </div>
-                    </td>
-                    <td className="px-4 py-2.5 text-center">
                       <StatusBadge status={s.status} full={full} />
-                    </td>
-                  </tr>
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <span className={cn("text-[12px] tabular-nums shrink-0", full ? "text-[var(--color-danger)]" : "text-[var(--color-text-secondary)]")}>
+                        {s.currentReservations} / {s.maxCapacity}
+                      </span>
+                      <div className="flex-1 h-1.5 bg-[var(--color-bg-hover)] rounded overflow-hidden">
+                        <div className="h-full rounded" style={{ width: `${ratio}%`, backgroundColor: full ? 'var(--color-danger)' : config.color }} />
+                      </div>
+                    </div>
+                  </li>
                 );
-              })
-            )}
-          </tbody>
-        </table>
-        </div>
+              })}
+            </ul>
+
+            {/* ── Desktop (sm+): 테이블 ── */}
+            <div className="hidden sm:block scroll-x">
+              <table className="responsive-table" style={{ minWidth: 720 }}>
+                <thead>
+                  <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
+                    <th className="text-left font-medium px-4 py-2.5 w-[130px] whitespace-nowrap">날짜</th>
+                    <th className="text-left font-medium px-4 py-2.5 w-[70px] whitespace-nowrap">시간</th>
+                    <th className="text-left font-medium px-4 py-2.5 w-[120px] whitespace-nowrap">유형</th>
+                    <th className="text-left font-medium px-4 py-2.5 whitespace-nowrap">세션명</th>
+                    <th className="text-left font-medium px-4 py-2.5 whitespace-nowrap">장소</th>
+                    <th className="text-right font-medium px-4 py-2.5 w-[130px] whitespace-nowrap">예약/정원</th>
+                    <th className="text-center font-medium px-4 py-2.5 w-[80px] whitespace-nowrap">상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredSessions.map(s => {
+                    const config = sessionTypeConfig[s.type];
+                    const full = isSessionFull(s);
+                    const ratio = s.maxCapacity > 0 ? (s.currentReservations / s.maxCapacity) * 100 : 0;
+                    const isSelected = liveSession?.id === s.id;
+                    return (
+                      <tr
+                        key={s.id}
+                        onClick={() => setSelectedSession(s)}
+                        className={cn(
+                          "border-b border-[var(--color-border-subtle)] last:border-0 cursor-pointer transition-colors",
+                          isSelected ? "bg-[var(--color-primary-bg)]" : "hover:bg-[var(--color-bg-subtle)]"
+                        )}
+                      >
+                        <td className="px-4 py-2.5 text-[var(--color-text)] tabular-nums">
+                          {formatKoreanDate(s.date, 'yyyy.M.d (EEE)')}
+                        </td>
+                        <td className="px-4 py-2.5 text-[var(--color-text)] tabular-nums font-medium">{s.startTime}</td>
+                        <td className="px-4 py-2.5 whitespace-nowrap">
+                          <span
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[12px] font-medium whitespace-nowrap"
+                            style={{ backgroundColor: config.bgColor, color: config.textColor }}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: config.color }} />
+                            {config.label}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-[var(--color-text)] whitespace-nowrap">{s.name}</td>
+                        <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">{s.location || '—'}</td>
+                        <td className="px-4 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <span className={cn("tabular-nums", full ? "text-[var(--color-danger)]" : "text-[var(--color-text)]")}>
+                              {s.currentReservations} / {s.maxCapacity}
+                            </span>
+                            <div className="w-12 h-1.5 bg-[var(--color-bg-hover)] rounded overflow-hidden">
+                              <div className="h-full rounded" style={{ width: `${ratio}%`, backgroundColor: full ? 'var(--color-danger)' : config.color }} />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <StatusBadge status={s.status} full={full} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Session detail panel */}
@@ -440,60 +489,105 @@ export default function SessionManagement() {
                 </div>
               ) : (
                 <div className="border border-[var(--color-border)] rounded overflow-hidden">
-                  <div className="scroll-x">
-                  <table className="responsive-table" style={{ minWidth: 720 }}>
-                    <thead>
-                      <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
-                        <th className="text-left font-medium px-3 py-2 w-[40px]">#</th>
-                        <th className="text-left font-medium px-3 py-2">이름</th>
-                        <th className="text-left font-medium px-3 py-2 w-[140px]">예약일시</th>
-                        <th className="text-left font-medium px-3 py-2 w-[90px]">상태</th>
-                        <th className="text-right font-medium px-3 py-2 w-[180px]">처리</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sessionReservations.map((r, i) => {
-                        const statusConf = reservationStatusConfig[r.status];
-                        return (
-                          <tr key={r.id} className="border-b border-[var(--color-border-subtle)] last:border-0 hover:bg-[var(--color-bg-subtle)]">
-                            <td className="px-3 py-2 text-[var(--color-text-muted)] tabular-nums">{i + 1}</td>
-                            <td className="px-3 py-2 text-[var(--color-text)] font-medium">{r.memberName}</td>
-                            <td className="px-3 py-2 text-[var(--color-text-secondary)] tabular-nums">
-                              {formatKoreanDate(r.reservedAt, 'M.d HH:mm')}
-                            </td>
-                            <td className="px-3 py-2">
+                  {/* ── Mobile: 카드 ── */}
+                  <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
+                    {sessionReservations.map((r, i) => {
+                      const statusConf = reservationStatusConfig[r.status];
+                      return (
+                        <li key={r.id} className="px-3 py-2.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-[11.5px] text-[var(--color-text-muted)] tabular-nums shrink-0">{i + 1}</span>
+                              <span className="text-[13.5px] font-semibold text-[var(--color-text)] truncate">{r.memberName}</span>
                               <span
-                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium"
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10.5px] font-medium shrink-0"
                                 style={{ backgroundColor: statusConf.bgColor, color: statusConf.color }}
                               >
                                 {statusConf.label}
                               </span>
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              <div className="flex items-center justify-end gap-1">
-                                {r.status === 'reserved' && (
-                                  <>
-                                    <button
-                                      onClick={() => updateReservationStatus(r.id, 'attended')}
-                                      className="px-2 py-0.5 text-[11px] text-[var(--color-success)] border border-[var(--color-success-border)] rounded hover:bg-[var(--color-success-bg)] transition-colors"
-                                    >출석</button>
-                                    <button
-                                      onClick={() => updateReservationStatus(r.id, 'noshow')}
-                                      className="px-2 py-0.5 text-[11px] text-[var(--color-danger)] border border-[var(--color-danger-border)] rounded hover:bg-[var(--color-danger-bg)] transition-colors"
-                                    >노쇼</button>
-                                  </>
-                                )}
+                            </div>
+                            <span className="text-[11px] text-[var(--color-text-muted)] tabular-nums shrink-0">
+                              {formatKoreanDate(r.reservedAt, 'M.d HH:mm')}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-end gap-1 mt-1.5">
+                            {r.status === 'reserved' && (
+                              <>
                                 <button
-                                  onClick={() => { if (confirm('이 예약을 취소하시겠습니까?')) cancelReservation(r.id); }}
-                                  className="px-2 py-0.5 text-[11px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text)] transition-colors"
-                                >취소</button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                                  onClick={() => updateReservationStatus(r.id, 'attended')}
+                                  className="px-2.5 py-1 text-[12px] text-[var(--color-success)] border border-[var(--color-success-border)] rounded hover:bg-[var(--color-success-bg)]"
+                                >출석</button>
+                                <button
+                                  onClick={() => updateReservationStatus(r.id, 'noshow')}
+                                  className="px-2.5 py-1 text-[12px] text-[var(--color-danger)] border border-[var(--color-danger-border)] rounded hover:bg-[var(--color-danger-bg)]"
+                                >노쇼</button>
+                              </>
+                            )}
+                            <button
+                              onClick={() => { if (confirm('이 예약을 취소하시겠습니까?')) cancelReservation(r.id); }}
+                              className="px-2.5 py-1 text-[12px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text)]"
+                            >취소</button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+
+                  {/* ── Desktop (sm+): 테이블 ── */}
+                  <div className="hidden sm:block scroll-x">
+                    <table className="responsive-table" style={{ minWidth: 720 }}>
+                      <thead>
+                        <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
+                          <th className="text-left font-medium px-3 py-2 w-[40px]">#</th>
+                          <th className="text-left font-medium px-3 py-2">이름</th>
+                          <th className="text-left font-medium px-3 py-2 w-[140px]">예약일시</th>
+                          <th className="text-left font-medium px-3 py-2 w-[90px]">상태</th>
+                          <th className="text-right font-medium px-3 py-2 w-[180px]">처리</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sessionReservations.map((r, i) => {
+                          const statusConf = reservationStatusConfig[r.status];
+                          return (
+                            <tr key={r.id} className="border-b border-[var(--color-border-subtle)] last:border-0 hover:bg-[var(--color-bg-subtle)]">
+                              <td className="px-3 py-2 text-[var(--color-text-muted)] tabular-nums">{i + 1}</td>
+                              <td className="px-3 py-2 text-[var(--color-text)] font-medium">{r.memberName}</td>
+                              <td className="px-3 py-2 text-[var(--color-text-secondary)] tabular-nums">
+                                {formatKoreanDate(r.reservedAt, 'M.d HH:mm')}
+                              </td>
+                              <td className="px-3 py-2">
+                                <span
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium"
+                                  style={{ backgroundColor: statusConf.bgColor, color: statusConf.color }}
+                                >
+                                  {statusConf.label}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <div className="flex items-center justify-end gap-1">
+                                  {r.status === 'reserved' && (
+                                    <>
+                                      <button
+                                        onClick={() => updateReservationStatus(r.id, 'attended')}
+                                        className="px-2 py-0.5 text-[11px] text-[var(--color-success)] border border-[var(--color-success-border)] rounded hover:bg-[var(--color-success-bg)] transition-colors"
+                                      >출석</button>
+                                      <button
+                                        onClick={() => updateReservationStatus(r.id, 'noshow')}
+                                        className="px-2 py-0.5 text-[11px] text-[var(--color-danger)] border border-[var(--color-danger-border)] rounded hover:bg-[var(--color-danger-bg)] transition-colors"
+                                      >노쇼</button>
+                                    </>
+                                  )}
+                                  <button
+                                    onClick={() => { if (confirm('이 예약을 취소하시겠습니까?')) cancelReservation(r.id); }}
+                                    className="px-2 py-0.5 text-[11px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text)] transition-colors"
+                                  >취소</button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}

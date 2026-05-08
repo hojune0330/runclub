@@ -258,79 +258,122 @@ export default function MemberManagement() {
         </span>
       </div>
 
-      {/* Table */}
+      {/* List — 모바일은 카드, sm 이상은 테이블 */}
       <div className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
-        <div className="scroll-x">
-        <table className="responsive-table" style={{ minWidth: 720 }}>
-          <thead>
-            <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
-              <th className="text-left font-medium px-4 py-2.5">이름</th>
-              <th className="text-left font-medium px-4 py-2.5">연락처</th>
-              <th className="text-left font-medium px-4 py-2.5">이메일</th>
-              <th className="text-left font-medium px-4 py-2.5 w-[110px]">가입일</th>
-              <th className="text-center font-medium px-4 py-2.5 w-[100px]">활성 수강권</th>
-              <th className="text-left font-medium px-4 py-2.5 w-[110px]">최근 출석</th>
-              <th className="text-center font-medium px-4 py-2.5 w-[80px]">상태</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredMembers.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="py-14 text-center text-[13px] text-[var(--color-text-muted)]">
-                  조회된 회원이 없습니다.
-                </td>
-              </tr>
-            ) : (
-              filteredMembers.map(m => {
+        {filteredMembers.length === 0 ? (
+          <div className="py-14 px-6 text-center text-[13px] text-[var(--color-text-muted)]">
+            조회된 회원이 없습니다.
+          </div>
+        ) : (
+          <>
+            {/* ── Mobile: 카드 리스트 ── */}
+            <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
+              {filteredMembers.map(m => {
                 const isSelected = selectedMember?.id === m.id;
                 const activePasses = activePassCountByMember[m.id] || 0;
                 const lastAttend = lastAttendanceByMember[m.id];
                 return (
-                  <tr
+                  <li
                     key={m.id}
                     onClick={() => setSelectedMember(m)}
                     className={cn(
-                      "border-b border-[var(--color-border-subtle)] last:border-0 cursor-pointer transition-colors",
+                      "px-3 py-3 cursor-pointer transition-colors",
                       isSelected ? "bg-[var(--color-primary-bg)]" : "hover:bg-[var(--color-bg-subtle)]"
                     )}
                   >
-                    <td className="px-4 py-2.5 text-[var(--color-text)] font-medium">
-                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-[var(--color-bg-hover)] flex items-center justify-center shrink-0">
-                          <span className="text-[12px] text-[var(--color-text-secondary)] font-medium">{m.name.charAt(0)}</span>
-                        </div>
-                        {m.name}
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-9 h-9 rounded-full bg-[var(--color-bg-hover)] flex items-center justify-center shrink-0">
+                        <span className="text-[13px] text-[var(--color-text-secondary)] font-medium">{m.name.charAt(0)}</span>
                       </div>
-                    </td>
-                    <td className="px-4 py-2.5 text-[var(--color-text-secondary)] tabular-nums">{m.phone}</td>
-                    <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">{m.email || '—'}</td>
-                    <td className="px-4 py-2.5 text-[var(--color-text-secondary)] tabular-nums">
-                      {formatKoreanDate(m.joinDate, 'yyyy.M.d')}
-                    </td>
-                    <td className="px-4 py-2.5 text-center tabular-nums">
-                      {activePasses > 0 ? (
-                        <span className="text-[var(--color-text)]">{activePasses}건</span>
-                      ) : (
-                        <span className="text-[var(--color-text-muted)]">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5 text-[var(--color-text-secondary)] tabular-nums">
-                      {lastAttend ? formatKoreanDate(lastAttend, 'yyyy.M.d') : '—'}
-                    </td>
-                    <td className="px-4 py-2.5 text-center">
-                      {m.isActive ? (
-                        <Badge tone="success">활성</Badge>
-                      ) : (
-                        <Badge tone="muted">비활성</Badge>
-                      )}
-                    </td>
-                  </tr>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[14px] font-semibold text-[var(--color-text)] truncate">{m.name}</span>
+                          {m.isActive
+                            ? <Badge tone="success" className="shrink-0">활성</Badge>
+                            : <Badge tone="muted" className="shrink-0">비활성</Badge>}
+                        </div>
+                        <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5 tabular-nums truncate">
+                          {m.phone}
+                          {m.email && <> · {m.email}</>}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[11.5px] text-[var(--color-text-muted)] mt-1.5 tabular-nums truncate">
+                      가입 {formatKoreanDate(m.joinDate, 'yy.M.d')}
+                      {activePasses > 0 && ` · 수강권 ${activePasses}건`}
+                      {lastAttend && ` · 최근 출석 ${formatKoreanDate(lastAttend, 'yy.M.d')}`}
+                    </p>
+                  </li>
                 );
-              })
-            )}
-          </tbody>
-        </table>
-        </div>
+              })}
+            </ul>
+
+            {/* ── Desktop (sm+): 테이블 ── */}
+            <div className="hidden sm:block scroll-x">
+              <table className="responsive-table" style={{ minWidth: 720 }}>
+                <thead>
+                  <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
+                    <th className="text-left font-medium px-4 py-2.5">이름</th>
+                    <th className="text-left font-medium px-4 py-2.5">연락처</th>
+                    <th className="text-left font-medium px-4 py-2.5">이메일</th>
+                    <th className="text-left font-medium px-4 py-2.5 w-[110px]">가입일</th>
+                    <th className="text-center font-medium px-4 py-2.5 w-[100px]">활성 수강권</th>
+                    <th className="text-left font-medium px-4 py-2.5 w-[110px]">최근 출석</th>
+                    <th className="text-center font-medium px-4 py-2.5 w-[80px]">상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredMembers.map(m => {
+                    const isSelected = selectedMember?.id === m.id;
+                    const activePasses = activePassCountByMember[m.id] || 0;
+                    const lastAttend = lastAttendanceByMember[m.id];
+                    return (
+                      <tr
+                        key={m.id}
+                        onClick={() => setSelectedMember(m)}
+                        className={cn(
+                          "border-b border-[var(--color-border-subtle)] last:border-0 cursor-pointer transition-colors",
+                          isSelected ? "bg-[var(--color-primary-bg)]" : "hover:bg-[var(--color-bg-subtle)]"
+                        )}
+                      >
+                        <td className="px-4 py-2.5 text-[var(--color-text)] font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-[var(--color-bg-hover)] flex items-center justify-center shrink-0">
+                              <span className="text-[12px] text-[var(--color-text-secondary)] font-medium">{m.name.charAt(0)}</span>
+                            </div>
+                            {m.name}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2.5 text-[var(--color-text-secondary)] tabular-nums">{m.phone}</td>
+                        <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">{m.email || '—'}</td>
+                        <td className="px-4 py-2.5 text-[var(--color-text-secondary)] tabular-nums">
+                          {formatKoreanDate(m.joinDate, 'yyyy.M.d')}
+                        </td>
+                        <td className="px-4 py-2.5 text-center tabular-nums">
+                          {activePasses > 0 ? (
+                            <span className="text-[var(--color-text)]">{activePasses}건</span>
+                          ) : (
+                            <span className="text-[var(--color-text-muted)]">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-[var(--color-text-secondary)] tabular-nums">
+                          {lastAttend ? formatKoreanDate(lastAttend, 'yyyy.M.d') : '—'}
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          {m.isActive ? (
+                            <Badge tone="success">활성</Badge>
+                          ) : (
+                            <Badge tone="muted">비활성</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Detail */}
