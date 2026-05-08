@@ -861,6 +861,8 @@ function ProductFormModal({
   onClose: () => void;
   onSubmit: (data: any) => Promise<void>;
 }) {
+  // PR-A: 태그 마스터를 컨텍스트에서 가져온다.
+  const { sessionTags } = useApp();
   const isEdit = !!product;
   const [name, setName] = useState(product?.name ?? '');
   const [category, setCategory] = useState<PassProduct['category']>(product?.category ?? 'count');
@@ -869,6 +871,16 @@ function ProductFormModal({
   );
   const [applicableTypes, setApplicableTypes] = useState<SessionType[]>(
     Array.isArray(product?.applicableSessions) ? (product?.applicableSessions as SessionType[]) : []
+  );
+
+  // PR-A: 태그 기반 매칭 (PR-C1 인프라). omnipass = '*' 한 개 태그만 들어
+  // 있으면 모든 세션에 사용 가능. 그 외에는 세션 태그와 교집합으로 판정.
+  // 기존 product 의 tags 가 ['*'] 이면 omnipass=true, 그 외 배열은 selected.
+  const initialTags: string[] = Array.isArray(product?.tags) ? (product?.tags as string[]) : [];
+  const initialOmnipass = initialTags.length === 1 && initialTags[0] === '*';
+  const [omnipass, setOmnipass] = useState<boolean>(initialOmnipass);
+  const [selectedTags, setSelectedTags] = useState<string[]>(
+    initialOmnipass ? [] : initialTags.filter(t => t !== '*')
   );
   const [totalCount, setTotalCount] = useState<string>(product?.totalCount?.toString() ?? '');
   const [durationDays, setDurationDays] = useState<string>(product?.durationDays?.toString() ?? '60');
@@ -907,12 +919,22 @@ function ProductFormModal({
       return setError('이용 가능 세션을 1개 이상 선택해주세요');
     }
 
+    // PR-A: 태그 페이로드 결정
+    // - omnipass = ['*']  (모든 세션 사용 가능, OMNI_TAG)
+    // - 일반    = 선택된 태그 배열 (비어 있으면 legacy applicableSessions 로 fallback)
+    const tagsPayload: string[] | undefined = omnipass
+      ? ['*']
+      : selectedTags.length > 0
+      ? selectedTags
+      : undefined;
+
     setSubmitting(true);
     try {
       await onSubmit({
         name: name.trim(),
         category,
         applicableSessions: applicableMode === 'all' ? 'all' : applicableTypes,
+        tags: tagsPayload,
         totalCount: totalN,
         durationDays: durN,
         price: priceN,
@@ -960,7 +982,7 @@ function ProductFormModal({
           </FormField>
         )}
 
-        <FormField label="이용 가능 세션" required>
+        <FormField label="이용 가능 세션 (Legacy fallback)" hint="아래 태그가 비어 있을 때만 사용됩니다">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <label className="inline-flex items-center gap-1.5 text-[12.5px] cursor-pointer">
@@ -984,6 +1006,69 @@ function ProductFormModal({
                     {sessionTypeConfig[t].label}
                   </label>
                 ))}
+              </div>
+            )}
+          </div>
+        </FormField>
+
+        {/* ── PR-A: 태그 매칭 (단일 진실 공급원) ── */}
+        {/* omnipass=true 면 모든 세션에 사용 가능. false 면 아래 선택된 */}
+        {/* 태그와 세션 태그의 교집합으로 사용 가능 여부 판정. */}
+        <FormField
+          label="태그 매칭 (권장)"
+          hint="omnipass 또는 선택된 태그와 매칭되는 세션에서만 사용 가능"
+        >
+          <div className="space-y-2">
+            <label className="inline-flex items-center gap-2 text-[12.5px] cursor-pointer p-2 border border-[var(--color-border)] rounded bg-amber-50/40">
+              <input
+                type="checkbox"
+                checked={omnipass}
+                onChange={e => {
+                  setOmnipass(e.target.checked);
+                  if (e.target.checked) setSelectedTags([]);
+                }}
+              />
+              <Sparkles size={13} className="text-amber-500" />
+              <span className="font-medium">옴니패스 (모든 세션 사용 가능)</span>
+            </label>
+            {!omnipass && (
+              <div className="flex flex-wrap gap-1.5">
+                {sessionTags.filter(t => t.isActive && t.id !== '*').length === 0 ? (
+                  <span className="text-[12px] text-[var(--color-text-muted)]">
+                    등록된 태그가 없습니다 — 어드민 → 태그 마스터에서 먼저 추가하세요.
+                  </span>
+                ) : (
+                  sessionTags
+                    .filter(t => t.isActive && t.id !== '*')
+                    .map(t => {
+                      const checked = selectedTags.includes(t.id);
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedTags(prev =>
+                              checked ? prev.filter(x => x !== t.id) : [...prev, t.id]
+                            )
+                          }
+                          className={cn(
+                            'inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[12px] transition-colors',
+                            checked
+                              ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+                              : 'bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-primary)]/40'
+                          )}
+                          style={
+                            checked && t.color
+                              ? { backgroundColor: t.color, borderColor: t.color }
+                              : undefined
+                          }
+                        >
+                          {t.icon && <span>{t.icon}</span>}
+                          {t.label}
+                        </button>
+                      );
+                    })
+                )}
               </div>
             )}
           </div>

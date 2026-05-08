@@ -346,5 +346,54 @@ export const api = {
       }),
   },
 
+  // ─── PR-A: Session tag master CRUD ───
+  // 어드민이 세션/수강권 매칭에 사용할 태그를 코드 변경 없이 추가/수정/삭제.
+  // GET 은 회원도 호출 가능 (회원 UI 가 태그 라벨/색상을 표시하기 위함).
+  // POST/PUT/DELETE 는 서버에서 어드민으로 강제.
+  tags: {
+    list: (includeInactive = false) => {
+      const qs = includeInactive ? '?includeInactive=1' : '';
+      return request<{ tags: SessionTagDto[] }>(`/tags${qs}`);
+    },
+    create: (data: {
+      id: string;
+      label: string;
+      color?: string;
+      icon?: string;
+      displayOrder?: number;
+    }) =>
+      request<{ tag: SessionTagDto }>('/tags', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (data: {
+      id: string;
+      label?: string;
+      color?: string | null;
+      icon?: string | null;
+      displayOrder?: number;
+      isActive?: boolean;
+    }) =>
+      request<{ tag: SessionTagDto }>('/tags', {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) =>
+      request<{ success: boolean }>(`/tags?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+  },
+
   seed: () => request<any>('/seed', { method: 'POST' }),
 };
+
+// ─── PR-A: Tag DTO (camelCase as returned by /api/tags) ───
+export interface SessionTagDto {
+  id: string;
+  label: string;
+  color?: string;
+  icon?: string;
+  displayOrder: number;
+  isActive: boolean;
+  updatedAt?: string;
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, Calendar, Users, Ticket, Megaphone, BarChart3, QrCode, LogOut, ChevronDown, HelpCircle, Menu, X, Shield } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, Ticket, Megaphone, BarChart3, QrCode, LogOut, ChevronDown, HelpCircle, Menu, X, Shield, Tag } from 'lucide-react';
 import { useAuth } from '@/store/AuthContext';
 import Dashboard from './Dashboard';
 import SessionManagement from './SessionManagement';
@@ -12,10 +12,11 @@ import Statistics from './Statistics';
 import AdminQR from './AdminQR';
 import AuditLog from './AuditLog';
 import Help from './Help';
+import TagManagement from './TagManagement';
 import { cn } from '@/lib/utils';
 import BusinessFooter from '@/components/public/BusinessFooter';
 
-type AdminTab = 'dashboard' | 'sessions' | 'members' | 'passes' | 'notices' | 'stats' | 'qr' | 'audit' | 'help';
+type AdminTab = 'dashboard' | 'sessions' | 'members' | 'passes' | 'notices' | 'stats' | 'qr' | 'audit' | 'tags' | 'help';
 
 const navGroups: { label: string; items: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] }[] = [
   {
@@ -31,6 +32,7 @@ const navGroups: { label: string; items: { id: AdminTab; label: string; icon: ty
       { id: 'sessions', label: '세션 관리', icon: Calendar },
       { id: 'qr', label: '출석 QR', icon: QrCode },
       { id: 'notices', label: '공지사항', icon: Megaphone },
+      { id: 'tags', label: '세션 태그', icon: Tag },
     ],
   },
   {
@@ -103,6 +105,7 @@ export default function AdminApp() {
       case 'stats': return <Statistics />;
       case 'qr': return <AdminQR />;
       case 'audit': return <AuditLog />;
+      case 'tags': return <TagManagement />;
       case 'help': return <Help />;
     }
   };

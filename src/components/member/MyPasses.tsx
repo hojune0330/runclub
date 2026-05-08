@@ -4,12 +4,24 @@ import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig, passStatusConfig } from '@/lib/config';
 import { getDaysUntilExpiry, isPassExpiringSoon, formatKoreanDate, cn } from '@/lib/utils';
 import { Ticket, HelpCircle, ShoppingBag } from 'lucide-react';
+import type { MemberPass } from '@/types';
 
 export default function MyPasses() {
-  const { memberPasses, currentMember } = useApp();
+  const { memberPasses, currentMember, sessionTags } = useApp();
   const myPasses = memberPasses.filter(p => p.memberId === currentMember.id);
   const activePasses = myPasses.filter(p => p.status === 'active');
   const inactivePasses = myPasses.filter(p => p.status !== 'active');
+
+  // PR-A: 수강권에 부착된 tags 가 있으면 그 라벨을, 없으면 legacy
+  // applicableSessions 로 fallback. ['*'] 한 개면 옴니패스로 표시.
+  const formatTagLabel = (pass: MemberPass): string | null => {
+    if (!pass.tags || pass.tags.length === 0) return null;
+    if (pass.tags.length === 1 && pass.tags[0] === '*') return '전체 세션';
+    const labels = pass.tags
+      .map(id => sessionTags.find(t => t.id === id)?.label)
+      .filter((l): l is string => !!l);
+    return labels.length > 0 ? labels.join(', ') : null;
+  };
 
   return (
     <div className="space-y-6 max-w-[1200px]">
@@ -63,10 +75,12 @@ export default function MyPasses() {
               const used = isCount && pass.totalCount ? pass.totalCount - (pass.remainingCount || 0) : 0;
               const progress = isCount && pass.totalCount ? (used / pass.totalCount) * 100 : 0;
 
+              const tagLabel = formatTagLabel(pass);
               const applicableLabels =
-                pass.applicableSessions === 'all'
+                tagLabel ??
+                (pass.applicableSessions === 'all'
                   ? '전체 세션'
-                  : pass.applicableSessions.map(s => sessionTypeConfig[s].label).join(', ');
+                  : pass.applicableSessions.map(s => sessionTypeConfig[s].label).join(', '));
 
               const passColor =
                 pass.applicableSessions === 'all'
@@ -195,10 +209,12 @@ export default function MyPasses() {
             </thead>
             <tbody>
               {inactivePasses.map(pass => {
+                const tagLabel = formatTagLabel(pass);
                 const applicableLabels =
-                  pass.applicableSessions === 'all'
+                  tagLabel ??
+                  (pass.applicableSessions === 'all'
                     ? '전체 세션'
-                    : pass.applicableSessions.map(s => sessionTypeConfig[s].label).join(', ');
+                    : pass.applicableSessions.map(s => sessionTypeConfig[s].label).join(', '));
                 const statusConf = passStatusConfig[pass.status];
                 return (
                   <tr

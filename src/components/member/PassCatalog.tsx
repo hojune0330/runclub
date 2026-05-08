@@ -95,7 +95,19 @@ export default function PassCatalog() {
 // ProductCard — catalog tile.
 // ─────────────────────────────────────────────────────────────────────
 function ProductCard({ product, onClick }: { product: PassProduct; onClick: () => void }) {
-  const apply = product.applicableSessions === 'all'
+  // PR-A: 태그가 있으면 태그 라벨로, 없으면 legacy applicableSessions 로 fallback.
+  const { sessionTags } = useApp();
+  const tagLabels = useMemo(() => {
+    if (!product.tags || product.tags.length === 0) return null;
+    if (product.tags.length === 1 && product.tags[0] === '*') return ['전체 세션'];
+    return product.tags
+      .map(id => sessionTags.find(t => t.id === id))
+      .filter((t): t is NonNullable<typeof t> => !!t)
+      .map(t => t.label);
+  }, [product.tags, sessionTags]);
+  const apply = tagLabels && tagLabels.length > 0
+    ? tagLabels.join(' · ')
+    : product.applicableSessions === 'all'
     ? '전체 세션'
     : (product.applicableSessions as SessionType[])
         .map(s => sessionTypeConfig[s]?.label)
@@ -166,10 +178,22 @@ function ProductCard({ product, onClick }: { product: PassProduct; onClick: () =
 // PassProductDetail — full description + buy button.
 // ─────────────────────────────────────────────────────────────────────
 function PassProductDetail({ product, onClose }: { product: PassProduct; onClose: () => void }) {
+  const { sessionTags } = useApp();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const apply = product.applicableSessions === 'all'
+  // PR-A: 태그 기반 라벨 (fallback to legacy applicableSessions)
+  const tagLabels = useMemo(() => {
+    if (!product.tags || product.tags.length === 0) return null;
+    if (product.tags.length === 1 && product.tags[0] === '*') return ['전체 세션'];
+    return product.tags
+      .map(id => sessionTags.find(t => t.id === id))
+      .filter((t): t is NonNullable<typeof t> => !!t)
+      .map(t => t.label);
+  }, [product.tags, sessionTags]);
+  const apply = tagLabels && tagLabels.length > 0
+    ? tagLabels.join(', ')
+    : product.applicableSessions === 'all'
     ? '전체 세션'
     : (product.applicableSessions as SessionType[])
         .map(s => sessionTypeConfig[s]?.label)

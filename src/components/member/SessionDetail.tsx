@@ -34,6 +34,7 @@ export default function SessionDetail({ session, onBack }: Props) {
     currentMember,
     memberPasses,
     waitlistEntries,
+    sessionTags,
     makeReservation,
     cancelReservation,
     joinWaitlist,
@@ -57,6 +58,11 @@ export default function SessionDetail({ session, onBack }: Props) {
     : 'idle';
 
   const config = sessionTypeConfig[session.type];
+  // PR-A: 세션 태그 칩에 표시할 라벨 (시스템 태그 '*' 제외).
+  const sessionTagLabels = (session.tags ?? [])
+    .filter(id => id !== '*')
+    .map(id => sessionTags.find(t => t.id === id))
+    .filter((t): t is NonNullable<typeof t> => !!t && t.isActive);
   const full = isSessionFull(session);
   const isPast = new Date(session.date + 'T' + session.startTime) < new Date();
   const myPasses = memberPasses.filter(p => p.memberId === currentMember.id);
@@ -184,6 +190,21 @@ export default function SessionDetail({ session, onBack }: Props) {
               대기 {waitPos}번째
             </span>
           )}
+          {/* PR-A: 세션 태그 칩 */}
+          {sessionTagLabels.map(t => (
+            <span
+              key={t.id}
+              className="text-[12px] font-medium px-2 py-0.5 rounded border inline-flex items-center gap-1"
+              style={
+                t.color
+                  ? { backgroundColor: `${t.color}15`, color: t.color, borderColor: `${t.color}40` }
+                  : { backgroundColor: 'var(--color-bg-subtle)', color: 'var(--color-text-secondary)', borderColor: 'var(--color-border)' }
+              }
+            >
+              {t.icon && <span aria-hidden>{t.icon}</span>}
+              {t.label}
+            </span>
+          ))}
         </div>
         <h1 className="text-[20px] font-semibold text-[var(--color-text)]">{session.name}</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">

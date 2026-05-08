@@ -1,8 +1,8 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
-import type { Session, Member, MemberPass, Reservation, WaitlistEntry, Notice, PassProduct, ReservationStatus } from '@/types';
-import { api, AuthExpiredError } from '@/lib/api';
+import type { Session, Member, MemberPass, Reservation, WaitlistEntry, Notice, PassProduct, ReservationStatus, SessionTag } from '@/types';
+import { api, AuthExpiredError, type SessionTagDto } from '@/lib/api';
 import { useAuth } from './AuthContext';
 
 interface AppState {
@@ -13,6 +13,9 @@ interface AppState {
   waitlistEntries: WaitlistEntry[];
   notices: Notice[];
   passProducts: PassProduct[];
+  // PR-A: 세션 태그 마스터 (어드민 CRUD + 회원 표시용)
+  // 회원 화면도 태그 라벨/색상을 표시하므로 모든 사용자에게 로드.
+  sessionTags: SessionTag[];
   currentMember: Member;
   loading: boolean;
 }
@@ -23,7 +26,13 @@ interface AppActions {
   refreshPasses: () => Promise<void>;
   refreshNotices: () => Promise<void>;
   refreshMembers: () => Promise<void>;
+  refreshSessionTags: () => Promise<void>;
   refreshAll: () => Promise<void>;
+
+  // PR-A: 태그 마스터 CRUD (어드민 전용 — 서버에서 강제)
+  createSessionTag: (data: { id: string; label: string; color?: string; icon?: string; displayOrder?: number }) => Promise<boolean>;
+  updateSessionTag: (data: { id: string; label?: string; color?: string | null; icon?: string | null; displayOrder?: number; isActive?: boolean }) => Promise<boolean>;
+  deleteSessionTag: (id: string) => Promise<boolean>;
 
   makeReservation: (sessionId: string, memberId?: string) => Promise<boolean>;
   cancelReservation: (reservationId: string) => Promise<void>;
@@ -100,6 +109,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [waitlistEntries, setWaitlistEntries] = useState<WaitlistEntry[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [passProducts, setPassProducts] = useState<PassProduct[]>([]);
+  const [sessionTags, setSessionTags] = useState<SessionTag[]>([]);
   const [loading, setLoading] = useState(true);
 
   const currentMember: Member = user ? {
@@ -186,6 +196,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [handleAuthError]);
 
+  // PR-A: 세션 태그 마스터 로드. 회원도 태그 라벨/색상이 필요하므로 호출.
+  // 어드민은 비활성 태그까지 보고 관리할 수 있도록 includeInactive=1.
+  const refreshSessionTags = useCallback(async () => {
+    try {
+      const isAdmin = userRoleRef.current === 'admin';
+      const data = await api.tags.list(isAdmin);
+      const tags: SessionTag[] = (data?.tags ?? []).map((t: SessionTagDto) => ({
+        id: t.id,
+        label: t.label,
+        color: t.color,
+        icon: t.icon,
+        displayOrder: t.displayOrder,
+        isActive: t.isActive,
+        updatedAt: t.updatedAt,
+      }));
+      setSessionTags(tags);
+    } catch (e) {
+      if (!handleAuthError(e)) console.error('Failed to refresh tags:', e);
+    }
+  }, [handleAuthError]);
+
   const refreshAll = useCallback(async () => {
     setLoading(true);
     try {
@@ -195,13 +226,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         refreshPasses(),
         refreshNotices(),
         refreshMembers(),
+        refreshSessionTags(),
       ]);
     } catch (e) {
       console.error('Failed to refresh data:', e);
     } finally {
       setLoading(false);
     }
-  }, [refreshSessions, refreshReservations, refreshPasses, refreshNotices, refreshMembers]);
+  }, [refreshSessions, refreshReservations, refreshPasses, refreshNotices, refreshMembers, refreshSessionTags]);
 
   // Initial data load — run once per user login
   useEffect(() => {
@@ -520,9 +552,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshPasses, handleAuthError]);
 
+  // ─── PR-A: Session tag CRUD actions (admin only) ───
+  const createSessionTag = useCallback(async (data: {
+    id: string; label: string; color?: string; icon?: string; displayOrder?: number;
+  }) => {
+    try {
+      await api.tags.create(data);
+      await refreshSessionTags();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshSessionTags, handleAuthError]);
+
+  const updateSessionTag = useCallback(async (data: {
+    id: string; label?: string; color?: string | null; icon?: string | null;
+    displayOrder?: number; isActive?: boolean;
+  }) => {
+    try {
+      await api.tags.update(data);
+      await refreshSessionTags();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshSessionTags, handleAuthError]);
+
+  const deleteSessionTag = useCallback(async (id: string) => {
+    try {
+      await api.tags.delete(id);
+      await refreshSessionTags();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshSessionTags, handleAuthError]);
+
   const value = {
-    sessions, members, memberPasses, reservations, waitlistEntries, notices, passProducts, currentMember, loading,
-    refreshSessions, refreshReservations, refreshPasses, refreshNotices, refreshMembers, refreshAll,
+    sessions, members, memberPasses, reservations, waitlistEntries, notices, passProducts, sessionTags, currentMember, loading,
+    refreshSessions, refreshReservations, refreshPasses, refreshNotices, refreshMembers, refreshSessionTags, refreshAll,
     makeReservation, cancelReservation, updateReservationStatus,
     joinWaitlist, leaveWaitlist,
     createSession, updateSession, deleteSession,
@@ -532,6 +603,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     issueMemberPass, pauseMemberPass, resumeMemberPass, refundMemberPass,
     extendMemberPass, adjustMemberPass, setMemberPassPayment, setMemberPassMemo,
     createPassProduct, updatePassProduct, deactivatePassProduct, deletePassProduct,
+    createSessionTag, updateSessionTag, deleteSessionTag,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

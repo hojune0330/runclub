@@ -745,8 +745,16 @@ function EditSessionModal({
   onClose: () => void;
   onSave: (patch: Partial<Session>) => Promise<boolean>;
 }) {
+  // PR-A: 태그 마스터를 컨텍스트에서 가져와 멀티셀렉트로 노출.
+  // sessionTags 가 비어 있으면 (admin 이 처음 들어와 아직 fetch 가 끝나지
+  // 않은 경우) 빈 배열을 그대로 두어 fallback 으로 type 만 사용하도록 한다.
+  const { sessionTags } = useApp();
   const [name, setName] = useState(session.name);
   const [type, setType] = useState<SessionType>(session.type);
+  // 초기 태그 — Session.tags 가 우선이고, 없으면 legacy type 으로 single-tag 처리.
+  const [tags, setTags] = useState<string[]>(
+    Array.isArray(session.tags) && session.tags.length > 0 ? [...session.tags] : []
+  );
   const [date, setDate] = useState(session.date);
   const [startTime, setStartTime] = useState(session.startTime);
   const [endTime, setEndTime] = useState(session.endTime ?? '');
@@ -791,6 +799,14 @@ function EditSessionModal({
     if (locationAddress !== (session.locationAddress ?? '')) patch.locationAddress = locationAddress;
     if (trim(locationMapUrl) !== (session.locationMapUrl ?? '')) patch.locationMapUrl = trim(locationMapUrl) || undefined;
     if (Number(maxCapacity) !== session.maxCapacity) patch.maxCapacity = Number(maxCapacity);
+
+    // PR-A: 태그 diff. 정렬 후 비교해 순서가 달라지는 noise 를 막는다.
+    const prevTags = [...(session.tags ?? [])].sort();
+    const nextTags = [...tags].sort();
+    if (prevTags.length !== nextTags.length || prevTags.some((t, i) => t !== nextTags[i])) {
+      patch.tags = [...tags];
+    }
+
     if (isIndoor !== !!session.isIndoor) patch.isIndoor = isIndoor;
     if (Number(cancelDeadline) !== session.cancelDeadlineMinutes) patch.cancelDeadlineMinutes = Number(cancelDeadline);
     if (status !== session.status) patch.status = status;
@@ -916,6 +932,53 @@ function EditSessionModal({
               <input type="checkbox" checked={isIndoor} onChange={e => setIsIndoor(e.target.checked)} />
               실내 세션 (우천 무관)
             </label>
+
+            {/* ── PR-A: 태그 멀티셀렉트 ── */}
+            {/* 태그가 단일 진실 공급원이며, 매칭 시 수강권의 태그 교집합으로 */}
+            {/* 사용 가능 여부를 판정한다. 비활성 태그는 노출하지 않는다. */}
+            <FormField
+              label="태그"
+              hint="수강권 매칭에 사용. 비워 두면 위의 '유형' fallback 으로 동작"
+            >
+              <div className="flex flex-wrap gap-1.5">
+                {sessionTags.filter(t => t.isActive && t.id !== '*').length === 0 ? (
+                  <span className="text-[12px] text-[var(--color-text-muted)]">
+                    등록된 태그가 없습니다 — 어드민 → 태그 마스터에서 먼저 추가하세요.
+                  </span>
+                ) : (
+                  sessionTags
+                    .filter(t => t.isActive && t.id !== '*')
+                    .map(t => {
+                      const checked = tags.includes(t.id);
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() =>
+                            setTags(prev =>
+                              checked ? prev.filter(x => x !== t.id) : [...prev, t.id]
+                            )
+                          }
+                          className={cn(
+                            'inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[12px] transition-colors',
+                            checked
+                              ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]'
+                              : 'bg-white text-[var(--color-text-secondary)] border-[var(--color-border)] hover:border-[var(--color-primary)]/40'
+                          )}
+                          style={
+                            checked && t.color
+                              ? { backgroundColor: t.color, borderColor: t.color }
+                              : undefined
+                          }
+                        >
+                          {t.icon && <span>{t.icon}</span>}
+                          {t.label}
+                        </button>
+                      );
+                    })
+                )}
+              </div>
+            </FormField>
           </section>
 
           {/* ── Section: 장소 ── */}
