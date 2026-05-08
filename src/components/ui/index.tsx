@@ -1,8 +1,17 @@
 'use client';
 
-import { X } from 'lucide-react';
+import { X, CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 
 // ─── Panel ───
 export function Panel({
@@ -157,6 +166,158 @@ export function EmptyState({
       {action && <div className="mt-3">{action}</div>}
     </div>
   );
+}
+
+// ─── Skeleton ───
+export function Skeleton({ className }: { className?: string }) {
+  return <div className={cn("skeleton", className)} aria-hidden />;
+}
+
+export function SkeletonText({ lines = 1, className }: { lines?: number; className?: string }) {
+  return (
+    <div className={cn("space-y-1.5", className)} aria-hidden>
+      {Array.from({ length: lines }).map((_, i) => (
+        <div
+          key={i}
+          className="skeleton skeleton-text"
+          style={{ width: i === lines - 1 && lines > 1 ? '70%' : '100%' }}
+        />
+      ))}
+    </div>
+  );
+}
+
+export function SkeletonCard({ className }: { className?: string }) {
+  return <div className={cn("skeleton skeleton-card", className)} aria-hidden />;
+}
+
+// ─── Toast ───
+type ToastTone = 'success' | 'error' | 'info' | 'warning';
+interface ToastItem {
+  id: string;
+  tone: ToastTone;
+  message: string;
+  description?: string;
+}
+
+interface ToastApi {
+  show: (message: string, options?: { tone?: ToastTone; description?: string; duration?: number }) => void;
+  success: (message: string, description?: string) => void;
+  error: (message: string, description?: string) => void;
+  info: (message: string, description?: string) => void;
+  warning: (message: string, description?: string) => void;
+}
+
+const ToastContext = createContext<ToastApi | null>(null);
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const dismiss = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+    const timer = timers.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      timers.current.delete(id);
+    }
+  }, []);
+
+  const show = useCallback<ToastApi['show']>((message, options) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const tone = options?.tone ?? 'info';
+    const duration = options?.duration ?? (tone === 'error' ? 4500 : 3000);
+    setToasts(prev => [...prev, { id, tone, message, description: options?.description }]);
+    const timer = setTimeout(() => dismiss(id), duration);
+    timers.current.set(id, timer);
+  }, [dismiss]);
+
+  const api = useMemo<ToastApi>(() => ({
+    show,
+    success: (m, d) => show(m, { tone: 'success', description: d }),
+    error: (m, d) => show(m, { tone: 'error', description: d }),
+    info: (m, d) => show(m, { tone: 'info', description: d }),
+    warning: (m, d) => show(m, { tone: 'warning', description: d }),
+  }), [show]);
+
+  useEffect(() => {
+    const map = timers.current;
+    return () => {
+      map.forEach(clearTimeout);
+      map.clear();
+    };
+  }, []);
+
+  return (
+    <ToastContext.Provider value={api}>
+      {children}
+      <div
+        className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] flex flex-col gap-2 pointer-events-none w-[calc(100%-24px)] max-w-[420px] sm:top-4"
+        role="region"
+        aria-live="polite"
+        aria-label="알림"
+      >
+        {toasts.map(t => (
+          <ToastView key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
+        ))}
+      </div>
+    </ToastContext.Provider>
+  );
+}
+
+function ToastView({ toast, onDismiss }: { toast: ToastItem; onDismiss: () => void }) {
+  const Icon =
+    toast.tone === 'success' ? CheckCircle2 :
+    toast.tone === 'error' ? AlertCircle :
+    toast.tone === 'warning' ? AlertTriangle : Info;
+  const toneClass =
+    toast.tone === 'success' ? 'border-[var(--color-success-border)] bg-[var(--color-success-bg)] text-[var(--color-success)]' :
+    toast.tone === 'error' ? 'border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]' :
+    toast.tone === 'warning' ? 'border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] text-[var(--color-warning)]' :
+    'border-[var(--color-border)] bg-white text-[var(--color-text)]';
+  return (
+    <div
+      role="status"
+      className={cn(
+        "toast-enter pointer-events-auto flex items-start gap-2.5 px-3.5 py-2.5 rounded-md border shadow-md",
+        toneClass
+      )}
+    >
+      <Icon size={16} className="mt-0.5 shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-medium leading-snug break-words">{toast.message}</p>
+        {toast.description && (
+          <p className="text-[12px] mt-0.5 opacity-80 leading-snug break-words">{toast.description}</p>
+        )}
+      </div>
+      <button
+        onClick={onDismiss}
+        aria-label="알림 닫기"
+        className="shrink-0 -mr-1 p-1 rounded hover:bg-black/5 transition-colors"
+      >
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
+export function useToast(): ToastApi {
+  const ctx = useContext(ToastContext);
+  if (!ctx) {
+    // 폴백: Provider가 없는 환경에서도 안전하게 (개발 중 실수 방지)
+    if (typeof window !== 'undefined') {
+      // eslint-disable-next-line no-console
+      console.warn('[useToast] ToastProvider가 트리에 없습니다. 알림이 표시되지 않습니다.');
+    }
+    return {
+      show: () => {},
+      success: () => {},
+      error: () => {},
+      info: () => {},
+      warning: () => {},
+    };
+  }
+  return ctx;
 }
 
 // ─── Tabs ───

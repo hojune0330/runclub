@@ -124,7 +124,7 @@ export default function Help() {
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-1">
           <HelpCircle size={18} className="text-[var(--color-primary)]" />
-          <h1 className="text-[20px] font-semibold text-[var(--color-text)]">관리자 도움말</h1>
+          <h1 className="page-title">관리자 도움말</h1>
         </div>
         <p className="text-[13px] text-[var(--color-text-muted)]">
           처음 운영을 시작하거나 특정 기능이 어떻게 동작하는지 확인할 때 참고하세요.

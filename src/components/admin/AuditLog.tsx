@@ -163,7 +163,7 @@ export default function AuditLog() {
       {/* Header */}
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-[20px] font-semibold text-[var(--color-text)] flex items-center gap-2">
+          <h1 className="page-title flex items-center gap-2">
             <Shield size={18} className="text-[var(--color-primary)]" />
             관리자 감사 로그
           </h1>
@@ -243,7 +243,8 @@ export default function AuditLog() {
 
       {/* Table */}
       <div className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
-        <table className="w-full text-[13px]">
+        <div className="scroll-x">
+        <table className="responsive-table" style={{ minWidth: 720 }}>
           <thead>
             <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
               <th className="text-left font-medium px-3 py-2.5 w-[150px]">시각</th>
@@ -354,6 +355,7 @@ export default function AuditLog() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Pagination */}

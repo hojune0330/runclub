@@ -202,7 +202,7 @@ export default function InviteModal({ open, onClose, session }: InviteModalProps
             <p className="text-[12px] text-[var(--color-text-secondary)] font-medium mb-1.5">
               공유하기
             </p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <ShareButton
                 onClick={handleKakaoShare}
                 icon={MessageCircle}

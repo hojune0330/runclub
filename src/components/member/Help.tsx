@@ -109,7 +109,7 @@ export default function Help() {
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-1">
           <HelpCircle size={18} className="text-[var(--color-primary)]" />
-          <h1 className="text-[20px] font-semibold text-[var(--color-text)]">도움말</h1>
+          <h1 className="page-title">도움말</h1>
         </div>
         <p className="text-[13px] text-[var(--color-text-muted)]">
           런클럽 매니저를 처음 사용하시나요? 주요 기능을 3분 안에 익혀보세요.

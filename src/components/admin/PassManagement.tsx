@@ -10,7 +10,7 @@ import {
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig, passStatusConfig } from '@/lib/config';
 import { formatKoreanDate, formatPrice, cn, getDaysUntilExpiry, isPassExpiringSoon } from '@/lib/utils';
-import { Tabs, Badge, Modal, FormField } from '@/components/ui';
+import { Tabs, Badge, Modal, FormField, useToast } from '@/components/ui';
 import { api } from '@/lib/api';
 import type { Member, PassProduct, MemberPass, SessionType } from '@/types';
 
@@ -56,6 +56,7 @@ export default function PassManagement() {
     extendMemberPass, adjustMemberPass, setMemberPassPayment, setMemberPassMemo,
     createPassProduct, updatePassProduct, deactivatePassProduct, deletePassProduct,
   } = useApp();
+  const notify = useToast();
 
   const [tab, setTab] = useState<Tab>('products');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'expired' | 'expiring' | 'unpaid'>('all');
@@ -110,7 +111,7 @@ export default function PassManagement() {
       {/* Page header */}
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-[20px] font-semibold text-[var(--color-text)]">수강권 관리</h1>
+          <h1 className="page-title">수강권 관리</h1>
           <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
             수강권 상품과 회원별 발급 내역을 관리합니다.
           </p>
@@ -159,7 +160,10 @@ export default function PassManagement() {
             onDelete={async (p) => {
               const issuedCount = memberPasses.filter(mp => mp.productId === p.id).length;
               if (issuedCount > 0) {
-                alert(`발급 이력이 ${issuedCount}건 있어 영구 삭제할 수 없습니다.\n대신 "판매 중단"을 사용하세요.`);
+                notify.warning(
+                  `발급 이력이 ${issuedCount}건 있어 영구 삭제할 수 없어요`,
+                  '대신 "판매 중단"을 사용해주세요.'
+                );
                 return;
               }
               if (confirm(`'${p.name}'을(를) 영구 삭제하시겠습니까?`)) {
@@ -336,7 +340,8 @@ function ProductsTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-[13px]">
+      <div className="scroll-x">
+      <table className="responsive-table" style={{ minWidth: 720 }}>
         <thead>
           <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
             <th className="text-left font-medium px-4 py-2.5 w-[60px]">정렬</th>
@@ -426,6 +431,7 @@ function ProductsTable({
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -446,7 +452,8 @@ function PassesTable({
 }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-[13px]">
+      <div className="scroll-x">
+      <table className="responsive-table" style={{ minWidth: 720 }}>
         <thead>
           <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
             <th className="text-left font-medium px-4 py-2.5 w-[110px]">회원명</th>
@@ -534,6 +541,7 @@ function PassesTable({
           )}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }
@@ -778,7 +786,7 @@ function IssuePassModal({
                   </select>
                 </FormField>
               )}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <FormField label="할인 금액">
                   <input type="number" min="0" max={selectedProduct.price} value={discountAmount}
                     onChange={e => setDiscountAmount(e.target.value)}
@@ -960,7 +968,7 @@ function ProductFormModal({
             className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]" />
         </FormField>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="분류" required>
             <select value={category} onChange={e => setCategory(e.target.value as any)}
               className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]">
@@ -1074,7 +1082,7 @@ function ProductFormModal({
           </div>
         </FormField>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="판매가 (원)" required>
             <input type="number" min="0" value={price} onChange={e => setPrice(e.target.value)} placeholder="예: 200000"
               className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded tabular-nums focus:outline-none focus:border-[var(--color-primary)]" />
@@ -1103,7 +1111,7 @@ function ProductFormModal({
             className="w-full px-3 py-2 text-[13px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)] resize-y" />
         </FormField>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="이미지 URL (선택)">
             <input type="text" value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="https://…"
               className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]" />
@@ -1182,11 +1190,11 @@ function ProductDetailModal({
             {product.originalPrice && product.originalPrice > product.price && (
               <div className="text-[12px] text-[var(--color-text-muted)] line-through tabular-nums">{formatPrice(product.originalPrice)}</div>
             )}
-            <div className="text-[20px] font-bold text-[var(--color-text)] tabular-nums">{formatPrice(product.price)}</div>
+            <div className="price-num">{formatPrice(product.price)}</div>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 text-[12.5px]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[12.5px]">
           <Info_ label="분류" value={passCategoryLabel(product.category)} />
           <Info_ label="이용 기간" value={`${product.durationDays}일`} />
           {product.totalCount && <Info_ label="총 횟수" value={`${product.totalCount}회`} />}
@@ -1279,7 +1287,7 @@ function PassDetailModal({
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-2 text-[12.5px]">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12.5px]">
           {pass.category === 'count' && (
             <Info_ label="잔여" value={`${pass.remainingCount ?? 0} / ${pass.totalCount ?? 0}회`} />
           )}
@@ -1379,7 +1387,7 @@ function PassDetailModal({
 
         {section === 'adjust' && pass.category === 'count' && (
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField label="총 횟수">
                 <input type="number" min="0" value={adjTotal} onChange={e => setAdjTotal(e.target.value)}
                   className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded tabular-nums" />
@@ -1412,7 +1420,7 @@ function PassDetailModal({
                 <option value="partial_refund">부분환불</option>
               </select>
             </FormField>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField label="결제 수단">
                 <select value={pMethod} onChange={e => setPMethod(e.target.value)}
                   className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded">
@@ -1790,7 +1798,8 @@ function PaymentsMonitorPanel() {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-[13px]">
+        <div className="scroll-x">
+        <table className="responsive-table" style={{ minWidth: 720 }}>
           <thead>
             <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
               <th className="text-left font-medium px-4 py-2.5 w-[150px]">시각</th>
@@ -1861,6 +1870,7 @@ function PaymentsMonitorPanel() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
 
       <div className="px-4 py-2.5 border-t border-[var(--color-border)] text-[11.5px] text-[var(--color-text-muted)] flex items-center gap-1.5">

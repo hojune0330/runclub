@@ -3,12 +3,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { Check, Camera, X, AlertCircle, Info, RefreshCw, UserCheck } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
+import { useToast } from '@/components/ui';
 import { sessionTypeConfig } from '@/lib/config';
 import { format, canUsePassForSession } from '@/lib/utils';
 import { api } from '@/lib/api';
 
 export default function QRCheckin() {
   const { sessions, reservations, memberPasses, currentMember, refreshReservations } = useApp();
+  const toast = useToast();
   const [scanned, setScanned] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [scannedSession, setScannedSession] = useState('');
@@ -144,7 +146,7 @@ export default function QRCheckin() {
     <div className="space-y-6 max-w-[1000px]">
       {/* Page heading */}
       <div>
-        <h1 className="text-[20px] font-semibold text-[var(--color-text)]">QR 체크인</h1>
+        <h1 className="page-title">QR 체크인</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
           세션 시작 30분 전부터 코치가 제시하는 QR 코드를 스캔하여 출석할 수 있습니다.
         </p>
@@ -404,8 +406,9 @@ export default function QRCheckin() {
             <div className="px-4 py-3 border-t border-[var(--color-border-subtle)] bg-[var(--color-bg-subtle)]">
               <button
                 onClick={() =>
-                  alert(
-                    '코치에게 수동 출석을 요청하세요.\n\n현장에서 코치가 관리자 페이지에서 직접 출석 처리를 해드릴 수 있습니다.'
+                  toast.info(
+                    '코치에게 수동 출석을 요청하세요',
+                    '현장에서 코치가 관리자 페이지에서 직접 출석 처리를 해드릴 수 있습니다.'
                   )
                 }
                 className="h-9 inline-flex items-center gap-1.5 text-[12.5px] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] active:bg-[var(--color-bg-hover)] rounded px-2 -mx-2"

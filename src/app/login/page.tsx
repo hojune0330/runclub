@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { AuthProvider, useAuth } from '@/store/AuthContext';
 import LoginPage from '@/components/auth/LoginPage';
+import { ToastProvider } from '@/components/ui';
 import { api } from '@/lib/api';
 
 function LoginGate() {
@@ -54,8 +55,10 @@ function LoginGate() {
 
 export default function LoginRoute() {
   return (
-    <AuthProvider>
-      <LoginGate />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <LoginGate />
+      </AuthProvider>
+    </ToastProvider>
   );
 }

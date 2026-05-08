@@ -60,12 +60,12 @@ export default function Statistics() {
   return (
     <div className="max-w-[1400px] space-y-5">
       <div>
-        <h1 className="text-[20px] font-semibold text-[var(--color-text)]">통계</h1>
+        <h1 className="page-title">통계</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">예약, 출석, 수강권 매출 현황입니다.</p>
       </div>
 
       {/* Summary KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="kpi-grid-4">
         <SummaryCard label="총 예약" value={reservations.length.toString()} suffix="건" />
         <SummaryCard
           label="전체 출석률"
@@ -82,7 +82,7 @@ export default function Statistics() {
 
       {/* Session type stats */}
       <Panel title="세션 유형별 출석률">
-        <div className="grid grid-cols-3 divide-x divide-[var(--color-border)]">
+        <div className="grid grid-cols-1 sm:grid-cols-3 sm:divide-x divide-[var(--color-border)]">
           {(Object.entries(stats.byType) as [SessionType, typeof stats.byType.ebw][]).map(([type, data]) => {
             const config = sessionTypeConfig[type];
             const done = data.attended + data.noshow;
@@ -94,13 +94,13 @@ export default function Statistics() {
                   <span className="text-[13px] text-[var(--color-text-secondary)] font-medium">{config.label}</span>
                 </div>
                 <div className="flex items-baseline gap-1 mb-3">
-                  <span className="text-[28px] font-semibold text-[var(--color-text)] tabular-nums">{rate}</span>
+                  <span className="kpi-num">{rate}</span>
                   <span className="text-[14px] text-[var(--color-text-muted)]">%</span>
                 </div>
                 <div className="w-full h-1.5 bg-[var(--color-bg-hover)] rounded overflow-hidden mb-3">
                   <div className="h-full rounded" style={{ width: `${rate}%`, backgroundColor: config.color }} />
                 </div>
-                <div className="grid grid-cols-3 gap-2 text-[12px]">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[12px]">
                   <StatItem label="출석" value={data.attended} tone="success" />
                   <StatItem label="노쇼" value={data.noshow} tone={data.noshow > 0 ? 'danger' : 'muted'} />
                   <StatItem label="전체" value={data.total} />
@@ -111,7 +111,7 @@ export default function Statistics() {
         </div>
       </Panel>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
         {/* Weekly trend chart — SVG area + line */}
         <Panel title="주간 추이 (최근 8주)" action={<span>예약 / 출석 / 노쇼</span>}>
           <div className="p-5">
@@ -133,14 +133,14 @@ export default function Statistics() {
         {/* Revenue — Donut */}
         <Panel title="수강권 매출 분석">
           <div className="p-5">
-            <div className="grid grid-cols-2 gap-4 mb-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-5">
               <div>
                 <p className="text-[12px] text-[var(--color-text-muted)] mb-1">총 매출</p>
-                <p className="text-[22px] font-semibold text-[var(--color-text)] tabular-nums">{formatPrice(stats.totalRevenue)}</p>
+                <p className="kpi-num">{formatPrice(stats.totalRevenue)}</p>
               </div>
               <div>
                 <p className="text-[12px] text-[var(--color-text-muted)] mb-1">활성 수강권</p>
-                <p className="text-[22px] font-semibold text-[var(--color-text)] tabular-nums">{stats.activePassCount}건</p>
+                <p className="kpi-num">{stats.activePassCount}건</p>
               </div>
             </div>
 
@@ -157,7 +157,7 @@ function SummaryCard({ label, value, suffix }: { label: string; value: string; s
     <div className="bg-white border border-[var(--color-border)] rounded-md p-4">
       <p className="text-[13px] text-[var(--color-text-secondary)] font-medium mb-2">{label}</p>
       <div className="flex items-baseline gap-1">
-        <span className="text-[24px] font-semibold text-[var(--color-text)] tabular-nums">{value}</span>
+        <span className="kpi-num">{value}</span>
         <span className="text-[13px] text-[var(--color-text-muted)]">{suffix}</span>
       </div>
     </div>

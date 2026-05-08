@@ -9,7 +9,7 @@ import { useApp } from '@/store/AppContext';
 import { useAuth } from '@/store/AuthContext';
 import { sessionTypeConfig, reservationStatusConfig, passStatusConfig } from '@/lib/config';
 import { formatKoreanDate, cn, getDaysUntilExpiry } from '@/lib/utils';
-import { Modal, FormField, Badge } from '@/components/ui';
+import { Modal, FormField, Badge, useToast } from '@/components/ui';
 import type { Member } from '@/types';
 
 export default function MemberManagement() {
@@ -18,6 +18,7 @@ export default function MemberManagement() {
     resetMemberPassword, deleteMember, setMemberActive, setMemberRole,
   } = useApp();
   const { user: currentUser } = useAuth();
+  const toast = useToast();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
@@ -83,7 +84,7 @@ export default function MemberManagement() {
   const handleResetPassword = async () => {
     if (!selectedMember || actionBusy) return;
     if (isSelf) {
-      alert('본인 계정은 마이페이지의 비밀번호 변경 메뉴를 사용해 주세요.');
+      toast.warning('본인 계정 비밀번호는 직접 변경할 수 없어요', '마이페이지의 비밀번호 변경 메뉴를 사용해 주세요.');
       return;
     }
     if (!confirm(`'${selectedMember.name}' 회원의 비밀번호를 임시 비밀번호로 재발급할까요?\n\n기존 세션은 모두 즉시 로그아웃되며, 첫 로그인 시 비밀번호 변경이 강제됩니다.`)) return;
@@ -99,7 +100,7 @@ export default function MemberManagement() {
   const handleToggleActive = async () => {
     if (!selectedMember || actionBusy) return;
     if (isSelf) {
-      alert('본인 계정은 비활성화할 수 없습니다.');
+      toast.warning('본인 계정은 비활성화할 수 없어요');
       return;
     }
     const willDeactivate = selectedMember.isActive;
@@ -123,7 +124,7 @@ export default function MemberManagement() {
     if (!selectedMember || actionBusy) return;
     const isAdmin = selectedMember.role === 'admin';
     if (isSelf && isAdmin) {
-      alert('본인 권한은 스스로 변경할 수 없습니다. 다른 관리자에게 요청하세요.');
+      toast.warning('본인 권한은 스스로 변경할 수 없어요', '다른 관리자에게 요청해주세요.');
       return;
     }
     const next: 'admin' | 'member' = isAdmin ? 'member' : 'admin';
@@ -143,11 +144,11 @@ export default function MemberManagement() {
   const handleDelete = async () => {
     if (!selectedMember || actionBusy) return;
     if (isSelf) {
-      alert('본인 계정은 삭제할 수 없습니다.');
+      toast.warning('본인 계정은 삭제할 수 없어요');
       return;
     }
     if (selectedMember.role === 'admin') {
-      alert('관리자 권한 회원은 삭제할 수 없습니다. 먼저 권한을 일반 회원으로 변경하세요.');
+      toast.warning('관리자 권한 회원은 삭제할 수 없어요', '먼저 권한을 일반 회원으로 변경해주세요.');
       return;
     }
     if (!confirm(`'${selectedMember.name}' 회원을 영구 삭제할까요?\n\n예약/수강권 이력이 있으면 거부됩니다(이 경우 비활성화로 처리하세요). 이 작업은 되돌릴 수 없습니다.`)) return;
@@ -164,10 +165,10 @@ export default function MemberManagement() {
     if (!tempPwInfo) return;
     try {
       await navigator.clipboard.writeText(tempPwInfo.tempPassword);
-      alert('임시 비밀번호를 클립보드에 복사했습니다.');
+      toast.success('임시 비밀번호를 클립보드에 복사했어요');
     } catch {
       // Clipboard may be blocked (e.g. http) — fall back to a manual hint.
-      alert('자동 복사에 실패했습니다. 화면에 표시된 비밀번호를 직접 복사해 주세요.');
+      toast.error('자동 복사에 실패했어요', '화면에 표시된 비밀번호를 직접 복사해 주세요.');
     }
   };
 
@@ -200,7 +201,7 @@ export default function MemberManagement() {
       {/* Page header */}
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-[20px] font-semibold text-[var(--color-text)]">회원 관리</h1>
+          <h1 className="page-title">회원 관리</h1>
           <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
             전체 {members.length}명 · 활성 {members.filter(m => m.isActive).length}명
           </p>
@@ -259,7 +260,8 @@ export default function MemberManagement() {
 
       {/* Table */}
       <div className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
-        <table className="w-full text-[13px]">
+        <div className="scroll-x">
+        <table className="responsive-table" style={{ minWidth: 720 }}>
           <thead>
             <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
               <th className="text-left font-medium px-4 py-2.5">이름</th>
@@ -328,6 +330,7 @@ export default function MemberManagement() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Detail */}
@@ -417,7 +420,7 @@ export default function MemberManagement() {
             </button>
           </div>
 
-          <div className="grid grid-cols-3 divide-x divide-[var(--color-border)]">
+          <div className="grid grid-cols-1 sm:grid-cols-3 sm:divide-x divide-[var(--color-border)]">
             {/* Profile */}
             <div className="p-5">
               <div className="flex items-start gap-3 mb-4">

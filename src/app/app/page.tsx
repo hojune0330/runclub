@@ -7,6 +7,7 @@ import { AppProvider, useApp } from '@/store/AppContext';
 import MemberApp from '@/components/member/MemberApp';
 import AdminApp from '@/components/admin/AdminApp';
 import ForcePasswordChange from '@/components/auth/ForcePasswordChange';
+import { ToastProvider } from '@/components/ui';
 import { api } from '@/lib/api';
 
 function LoadingSpinner({ message }: { message: string }) {
@@ -71,8 +72,10 @@ function AppContent() {
 
 export default function AppRoute() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ToastProvider>
   );
 }

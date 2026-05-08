@@ -155,7 +155,7 @@ export default function Overview() {
       {/* Greeting */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-[20px] font-semibold text-[var(--color-text)]">
+          <h1 className="page-title">
             안녕하세요, {currentMember.name}님 👋
           </h1>
           <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
@@ -172,7 +172,7 @@ export default function Overview() {
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="kpi-grid-4">
         <KpiCard
           icon={Flame}
           label="연속 출석"
@@ -215,12 +215,12 @@ export default function Overview() {
       </div>
 
       {/* Main Grid */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Monthly chart */}
         <Panel
           title="최근 6개월 출석"
           action={`총 ${monthly.reduce((a, m) => a + m.attended, 0)}회`}
-          className="col-span-2"
+          className="lg:col-span-2"
         >
           <div className="p-4">
             <MonthlyBarChart data={monthly} />
@@ -271,8 +271,8 @@ export default function Overview() {
       </div>
 
       {/* Heatmap + Upcoming */}
-      <div className="grid grid-cols-3 gap-4">
-        <Panel title="최근 12주 출석 히트맵" className="col-span-2">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
+        <Panel title="최근 12주 출석 히트맵" className="lg:col-span-2">
           <div className="p-4">
             <HeatmapView heatmap={heatmap} max={maxHeatmap} />
             <div className="flex items-center justify-between mt-3 text-[11.5px] text-[var(--color-text-muted)]">
@@ -373,10 +373,10 @@ export default function Overview() {
       </div>
 
       {/* Achievements + Pass */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Achievements */}
-        <Panel title="배지" action={`${achievements.filter(a => a.earned).length}/${achievements.length}`} className="col-span-2">
-          <div className="p-4 grid grid-cols-4 gap-3">
+        <Panel title="배지" action={`${achievements.filter(a => a.earned).length}/${achievements.length}`} className="lg:col-span-2">
+          <div className="p-4 grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
             {achievements.map(a => {
               const Icon = a.icon;
               return (
@@ -675,7 +675,7 @@ function KpiCard({
       <div className="flex items-baseline gap-1">
         <span
           className={cn(
-            'text-[30px] font-semibold leading-none tabular-nums tracking-tight',
+            'kpi-num',
             tone === 'highlight' ? 'text-[var(--color-primary)]' : 'text-[var(--color-text)]'
           )}
         >

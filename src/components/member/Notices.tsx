@@ -25,7 +25,7 @@ export default function Notices() {
     <div className="space-y-6 max-w-[1200px]">
       {/* Page heading */}
       <div>
-        <h1 className="text-[20px] font-semibold text-[var(--color-text)]">공지사항</h1>
+        <h1 className="page-title">공지사항</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
           {unreadCount > 0 ? (
             <>
@@ -44,7 +44,8 @@ export default function Notices() {
             <p className="text-[13px] text-[var(--color-text-muted)]">등록된 공지사항이 없습니다.</p>
           </div>
         ) : (
-          <table className="w-full text-[13px]">
+          <div className="scroll-x">
+          <table className="responsive-table" style={{ minWidth: 560 }}>
             <thead>
               <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
                 <th className="text-left font-medium px-4 py-2.5 w-[60px]">상태</th>
@@ -136,6 +137,7 @@ export default function Notices() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>

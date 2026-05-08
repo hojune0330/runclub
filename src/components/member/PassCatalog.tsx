@@ -47,7 +47,7 @@ export default function PassCatalog() {
   return (
     <div className="space-y-6 max-w-[1200px]">
       <div>
-        <h1 className="text-[20px] font-semibold text-[var(--color-text)]">수강권 구매</h1>
+        <h1 className="page-title">수강권 구매</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
           판매중인 상품 {total}건 — 카드를 눌러 상세 정보를 확인하고 결제할 수 있습니다.
         </p>
@@ -270,7 +270,7 @@ function PassProductDetail({ product, onClose }: { product: PassProduct; onClose
               {formatPrice(product.originalPrice as number)}
             </span>
           )}
-          <span className="text-[24px] font-bold text-[var(--color-text)] tabular-nums">{formatPrice(product.price)}</span>
+          <span className="price-num">{formatPrice(product.price)}</span>
           <span className="text-[12px] text-[var(--color-text-muted)]">
             · {product.totalCount ? `${product.totalCount}회` : `${product.durationDays}일`}
           </span>

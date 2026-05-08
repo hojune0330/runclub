@@ -70,13 +70,13 @@ export default function AdminQR() {
   return (
     <div className="max-w-[1400px] space-y-5">
       <div>
-        <h1 className="text-[20px] font-semibold text-[var(--color-text)]">출석 QR 생성</h1>
+        <h1 className="page-title">출석 QR 생성</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
           세션별로 QR 코드를 표시합니다. 코드는 30초마다 자동 갱신되며, 회원이 카메라로 스캔하여 출석 체크합니다.
         </p>
       </div>
 
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-4">
         {/* Session list */}
         <div className="col-span-2 space-y-4">
           <Panel title="오늘의 세션" action={`${todaySessions.length}개`}>

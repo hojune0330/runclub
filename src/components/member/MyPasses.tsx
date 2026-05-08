@@ -27,7 +27,7 @@ export default function MyPasses() {
     <div className="space-y-6 max-w-[1200px]">
       {/* Page heading */}
       <div>
-        <h1 className="text-[20px] font-semibold text-[var(--color-text)]">내 수강권</h1>
+        <h1 className="page-title">내 수강권</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
           활성 수강권 {activePasses.length}건 · 전체 {myPasses.length}건
         </p>
@@ -136,7 +136,7 @@ export default function MyPasses() {
                     <div>
                       <div className="flex items-baseline justify-between mb-1.5">
                         <div className="flex items-baseline gap-1">
-                          <span className="text-[24px] font-semibold text-[var(--color-text)] tabular-nums leading-none">
+                          <span className="kpi-num">
                             {pass.remainingCount}
                           </span>
                           <span className="text-[12px] text-[var(--color-text-muted)]">
@@ -156,7 +156,7 @@ export default function MyPasses() {
                     </div>
                   ) : (
                     <div className="flex items-baseline gap-2">
-                      <span className="text-[20px] font-semibold text-[var(--color-text)] leading-none">
+                      <span className="page-title leading-none">
                         무제한
                       </span>
                       <span className="text-[12px] text-[var(--color-text-muted)]">
@@ -198,7 +198,8 @@ export default function MyPasses() {
             <h2 className="text-[14px] font-semibold text-[var(--color-text)]">만료 / 정지</h2>
             <span className="text-[12px] text-[var(--color-text-muted)]">{inactivePasses.length}건</span>
           </div>
-          <table className="w-full text-[13px]">
+          <div className="scroll-x">
+          <table className="responsive-table" style={{ minWidth: 640 }}>
             <thead>
               <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
                 <th className="text-left font-medium px-4 py-2.5">수강권</th>
@@ -239,6 +240,7 @@ export default function MyPasses() {
               })}
             </tbody>
           </table>
+          </div>
         </section>
       )}
     </div>

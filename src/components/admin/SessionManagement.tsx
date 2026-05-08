@@ -8,7 +8,7 @@ import {
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig, reservationStatusConfig } from '@/lib/config';
 import { formatKoreanDate, cn, format, isSessionFull } from '@/lib/utils';
-import { Modal, FormField } from '@/components/ui';
+import { Modal, FormField, useToast } from '@/components/ui';
 import type { Session, SessionType, SessionRibbon } from '@/types';
 
 // ─── Ribbon presets shared between admin editor and member view ──────────
@@ -36,6 +36,7 @@ export default function SessionManagement() {
     createSession, updateSession, deleteSession,
     updateReservationStatus, cancelReservation, refreshSessions,
   } = useApp();
+  const toast = useToast();
 
   // Filters
   const [search, setSearch] = useState('');
@@ -125,7 +126,7 @@ export default function SessionManagement() {
 
   const handleBulkGenerate = async () => {
     if (!bulkFrom || !bulkTo || bulkFrom > bulkTo) {
-      alert('기간을 확인해주세요. 시작일이 종료일보다 이후일 수 없습니다.');
+      toast.warning('기간을 확인해주세요', '시작일이 종료일보다 이후일 수 없습니다.');
       return;
     }
     setBulkBusy(true);
@@ -145,7 +146,7 @@ export default function SessionManagement() {
       setBulkResult({ created: data.created, upcomingTotal: data.upcomingTotal });
       await refreshSessions();
     } catch (e: any) {
-      alert(e.message || '오류가 발생했습니다.');
+      toast.error('일괄 생성 실패', e.message || '오류가 발생했습니다.');
     } finally {
       setBulkBusy(false);
     }
@@ -156,7 +157,7 @@ export default function SessionManagement() {
       {/* Page header */}
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-[20px] font-semibold text-[var(--color-text)]">세션 관리</h1>
+          <h1 className="page-title">세션 관리</h1>
           <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
             세션 생성과 예약자 현황을 확인·관리합니다. (총 {sessions.length}건)
           </p>
@@ -258,7 +259,8 @@ export default function SessionManagement() {
 
       {/* Table */}
       <div className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
-        <table className="w-full text-[13px]">
+        <div className="scroll-x">
+        <table className="responsive-table" style={{ minWidth: 720 }}>
           <thead>
             <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
               <th className="text-left font-medium px-4 py-2.5 w-[130px] whitespace-nowrap">날짜</th>
@@ -326,6 +328,7 @@ export default function SessionManagement() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* Session detail panel */}
@@ -357,7 +360,7 @@ export default function SessionManagement() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 divide-x divide-[var(--color-border)]">
+          <div className="grid grid-cols-1 sm:grid-cols-3 sm:divide-x divide-[var(--color-border)]">
             {/* Left info */}
             <div className="p-5">
               <div className="flex items-center gap-2 mb-2">
@@ -437,7 +440,8 @@ export default function SessionManagement() {
                 </div>
               ) : (
                 <div className="border border-[var(--color-border)] rounded overflow-hidden">
-                  <table className="w-full text-[13px]">
+                  <div className="scroll-x">
+                  <table className="responsive-table" style={{ minWidth: 720 }}>
                     <thead>
                       <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
                         <th className="text-left font-medium px-3 py-2 w-[40px]">#</th>
@@ -490,6 +494,7 @@ export default function SessionManagement() {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               )}
             </div>
@@ -529,7 +534,7 @@ export default function SessionManagement() {
               </select>
             </FormField>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField label="날짜" required>
                 <input type="date" value={formDate} onChange={e => setFormDate(e.target.value)} className="form-input" />
               </FormField>
@@ -594,7 +599,7 @@ export default function SessionManagement() {
                 이미 같은 날짜·시작시간·유형의 세션이 있으면 건너뜁니다.
               </span>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField label="시작일">
                 <input
                   type="date"
@@ -892,7 +897,7 @@ function EditSessionModal({
           {/* ── Section: 기본 ── */}
           <section className="space-y-3">
             <h4 className="text-[12px] font-semibold text-[var(--color-text-muted)] uppercase tracking-wide">기본 정보</h4>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField label="세션명" required>
                 <input className="form-input" value={name} onChange={e => setName(e.target.value)} maxLength={200} />
               </FormField>
@@ -904,7 +909,7 @@ function EditSessionModal({
                 </select>
               </FormField>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <FormField label="날짜" required>
                 <input type="date" className="form-input" value={date} onChange={e => setDate(e.target.value)} />
               </FormField>
@@ -915,7 +920,7 @@ function EditSessionModal({
                 <input type="time" className="form-input" value={endTime} onChange={e => setEndTime(e.target.value)} />
               </FormField>
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <FormField label="정원" required>
                 <input
                   type="number" min={1} className="form-input"

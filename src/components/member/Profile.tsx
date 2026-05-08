@@ -23,7 +23,7 @@ export default function Profile() {
     <div className="space-y-6 max-w-[900px]">
       {/* Page heading */}
       <div>
-        <h1 className="text-[20px] font-semibold text-[var(--color-text)]">프로필</h1>
+        <h1 className="page-title">프로필</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
           계정 정보와 활성 수강권을 확인하고 설정을 변경할 수 있습니다.
         </p>
@@ -77,7 +77,8 @@ export default function Profile() {
             <p className="text-[13px] text-[var(--color-text-muted)]">활성 수강권이 없습니다.</p>
           </div>
         ) : (
-          <table className="w-full text-[13px]">
+          <div className="scroll-x">
+          <table className="responsive-table" style={{ minWidth: 560 }}>
             <thead>
               <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
                 <th className="text-left font-medium px-4 py-2.5">수강권</th>
@@ -125,6 +126,7 @@ export default function Profile() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 

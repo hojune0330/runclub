@@ -61,14 +61,14 @@ export default function AttendanceHistory() {
     <div className="space-y-6 max-w-[1200px]">
       {/* Page heading */}
       <div>
-        <h1 className="text-[20px] font-semibold text-[var(--color-text)]">출석 이력</h1>
+        <h1 className="page-title">출석 이력</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
           참여한 세션의 출석 기록을 확인할 수 있습니다.
         </p>
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="kpi-grid-4">
         <SummaryCard label="출석" value={attended} suffix="회" icon={CalIcon} />
         <SummaryCard label="노쇼" value={noshow} suffix="회" tone={noshow > 0 ? 'danger' : 'default'} />
         <SummaryCard
@@ -176,7 +176,8 @@ export default function AttendanceHistory() {
                       )}
                     </div>
                   </div>
-                  <table className="w-full text-[13px]">
+                  <div className="scroll-x">
+                  <table className="responsive-table" style={{ minWidth: 640 }}>
                     <thead>
                       <tr className="border-b border-[var(--color-border-subtle)] text-[12px] text-[var(--color-text-muted)]">
                         <th className="text-left font-medium px-4 py-2 w-[140px]">날짜</th>
@@ -231,6 +232,7 @@ export default function AttendanceHistory() {
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
               );
             })}
@@ -273,7 +275,7 @@ function SummaryCard({
         {Icon && <Icon size={15} className={iconColor} />}
       </div>
       <div className="flex items-baseline gap-1">
-        <span className={cn('text-[28px] font-semibold leading-none tabular-nums', color)}>
+        <span className={cn('kpi-num', color)}>
           {value}
         </span>
         <span className="text-[13px] text-[var(--color-text-muted)]">{suffix}</span>

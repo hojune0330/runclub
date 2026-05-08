@@ -136,3 +136,102 @@ table { border-collapse: collapse; }
 /* Scrollbar hide utility (for horizontal filter chips etc.) */
 .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
 .scrollbar-hide::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   ── Responsive Design Tokens (PR-MOBILE) ──
+   모바일 깨짐 방지용 공통 유틸. 새 컴포넌트는 가능한 한 이 토큰을 쓸 것.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* 페이지 타이틀 — 모바일 18px, 데스크톱 20px */
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text);
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+}
+@media (min-width: 640px) {
+  .page-title { font-size: 20px; }
+}
+
+/* KPI 큰 숫자 — 모바일 22 → sm 26 → lg 30 */
+.kpi-num {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+@media (min-width: 640px) { .kpi-num { font-size: 26px; } }
+@media (min-width: 1024px) { .kpi-num { font-size: 30px; } }
+
+/* 가격 숫자 — 모바일 18 → sm 22 → lg 24 */
+.price-num {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+@media (min-width: 640px) { .price-num { font-size: 22px; } }
+@media (min-width: 1024px) { .price-num { font-size: 24px; } }
+
+/* 가로 스크롤 래퍼 — 테이블/막대그래프/긴 콘텐츠를 모바일에서 잘리지 않게 */
+.scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+/* KPI 카드 그리드 — 4열용. 모바일 2 / 데스크톱(lg) 4 */
+.kpi-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (min-width: 640px) { .kpi-grid-4 { gap: 16px; } }
+@media (min-width: 1024px) { .kpi-grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* 3열 그리드 — 모바일 1 / sm 3 */
+.kpi-grid-3 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+@media (min-width: 640px) { .kpi-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; } }
+
+/* 반응형 테이블 — 가로 스크롤 + 최소폭 보장 (개별 컴포넌트는 min-width로 미세 조정) */
+.responsive-table {
+  width: 100%;
+  font-size: 13px;
+  min-width: 640px;
+}
+
+/* ── 스켈레톤 로딩 ── */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--color-bg-hover) 0%, var(--color-bg-subtle) 50%, var(--color-bg-hover) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: 4px;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.skeleton-text { height: 12px; border-radius: 3px; }
+.skeleton-text-lg { height: 18px; border-radius: 4px; }
+.skeleton-card { height: 96px; border-radius: 6px; }
+
+/* ── 토스트 (in-house, shadcn 도입 전 임시) ── */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast-enter { animation: toast-in 0.18s ease-out; }

@@ -222,7 +222,7 @@ export default function SessionDetail({ session, onBack }: Props) {
             </span>
           ))}
         </div>
-        <h1 className="text-[20px] font-semibold text-[var(--color-text)]">{session.name}</h1>
+        <h1 className="page-title">{session.name}</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
           {formatKoreanDate(session.date, 'yyyy년 M월 d일 EEEE')} · {session.startTime}
           {session.endTime ? ` — ${session.endTime}` : ''}

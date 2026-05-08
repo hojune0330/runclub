@@ -16,6 +16,7 @@ import {
   CalendarPlus,
 } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
+import { useToast } from '@/components/ui';
 import { CLUBS } from '@/lib/clubs';
 import { format, cn, isSessionFull } from '@/lib/utils';
 import type { SessionType, Session, Reservation } from '@/types';
@@ -51,6 +52,7 @@ export default function ClubHome({
     makeReservation,
     cancelReservation,
   } = useApp();
+  const toast = useToast();
 
   const todayIso = format(new Date(), 'yyyy-MM-dd');
 
@@ -127,8 +129,9 @@ export default function ClubHome({
 
   const handleReserve = async (session: Session) => {
     if (myPasses.length === 0) {
-      alert(
-        `${meta.name}에 사용할 수 있는 활성 수강권이 없어요. '내 수강권' 메뉴에서 구매 후 예약해주세요.`
+      toast.warning(
+        '사용 가능한 수강권이 없어요',
+        `${meta.name} 예약을 위해 '내 수강권' 메뉴에서 먼저 구매해주세요.`
       );
       return;
     }

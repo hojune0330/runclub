@@ -42,7 +42,7 @@ export default function MyReservations() {
     <div className="space-y-6 max-w-[1200px]">
       {/* Page heading */}
       <div>
-        <h1 className="text-[20px] font-semibold text-[var(--color-text)]">내 예약</h1>
+        <h1 className="page-title">내 예약</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
           다가오는 예약 {upcoming.length}건 · 지난 예약 {past.length}건
         </p>
@@ -107,7 +107,8 @@ export default function MyReservations() {
             )}
           </div>
         ) : (
-          <table className="w-full text-[13px]">
+          <div className="scroll-x">
+          <table className="responsive-table" style={{ minWidth: 640 }}>
             <thead>
               <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
                 <th className="text-left font-medium px-4 py-2.5 w-[140px]">날짜</th>
@@ -185,6 +186,7 @@ export default function MyReservations() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>

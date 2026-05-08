@@ -57,7 +57,7 @@ export default function CalendarView() {
     <div className="space-y-6 max-w-[1400px]">
       {/* Page heading */}
       <div>
-        <h1 className="text-[20px] font-semibold text-[var(--color-text)]">세션 일정</h1>
+        <h1 className="page-title">세션 일정</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
           {formatKoreanDate(new Date(), 'yyyy년 M월 d일 EEEE')} · 세션을 선택해 예약하세요.
         </p>
@@ -318,7 +318,8 @@ export default function CalendarView() {
             </button>
           </div>
         ) : (
-          <table className="w-full text-[13px]">
+          <div className="scroll-x">
+          <table className="responsive-table" style={{ minWidth: 640 }}>
             <thead>
               <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
                 <th className="text-left font-medium px-4 py-2.5 w-[80px]">시간</th>
@@ -418,6 +419,7 @@ export default function CalendarView() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </section>
     </div>
