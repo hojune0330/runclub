@@ -204,14 +204,14 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-6 max-w-[1500px]">
+    <div className="grid grid-cols-1 xl:grid-cols-[1fr_320px] gap-4 sm:gap-6 max-w-[1500px]">
       {/* ── MAIN COLUMN ── */}
-      <div className="space-y-6 min-w-0">
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-[20px] font-semibold text-[var(--color-text)]">대시보드</h1>
-            <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
+      <div className="space-y-4 sm:space-y-6 min-w-0">
+        {/* Header — 모바일에선 타이틀과 액션을 별도 줄로 wrap */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-[18px] sm:text-[20px] font-semibold text-[var(--color-text)]">대시보드</h1>
+            <p className="text-[12.5px] sm:text-[13px] text-[var(--color-text-muted)] mt-0.5">
               {formatKoreanDate(now, 'yyyy년 M월 d일 EEEE')} · 현재 {nowHM}
             </p>
           </div>
@@ -226,8 +226,8 @@ export default function Dashboard() {
           total={todaySessions.length}
         />
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-4 gap-4">
+        {/* KPI Cards — 모바일 2열 → 작은 데스크톱 4열 */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           <KpiCard
             icon={Users}
             label="활성 회원"
@@ -291,12 +291,13 @@ export default function Dashboard() {
           {todaySessions.length === 0 ? (
             <EmptyState message="오늘 예정된 세션이 없습니다." />
           ) : (
-            <table className="w-full text-[13px]">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-[13px]">
               <thead>
                 <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
-                  <th className="text-left font-medium px-4 py-2.5 w-[68px]">상태</th>
-                  <th className="text-left font-medium px-4 py-2.5 w-[80px]">시간</th>
-                  <th className="text-left font-medium px-4 py-2.5 w-[110px]">유형</th>
+                  <th className="text-left font-medium px-4 py-2.5 w-[68px] whitespace-nowrap">상태</th>
+                  <th className="text-left font-medium px-4 py-2.5 w-[80px] whitespace-nowrap">시간</th>
+                  <th className="text-left font-medium px-4 py-2.5 w-[110px] whitespace-nowrap">유형</th>
                   <th className="text-left font-medium px-4 py-2.5">세션명</th>
                   <th className="text-left font-medium px-4 py-2.5">장소</th>
                   <th className="text-right font-medium px-4 py-2.5 w-[140px]">예약/정원</th>
@@ -388,11 +389,12 @@ export default function Dashboard() {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </Panel>
 
-        {/* Recent + Expiring */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* Recent + Expiring — 모바일에선 1열로 쌓기 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
           <Panel title="최근 가입 회원" action={`${recentMembers.length}명`}>
             {recentMembers.length === 0 ? (
               <EmptyState message="최근 가입한 회원이 없습니다." />
@@ -688,12 +690,16 @@ function LiveBanner({
 }
 
 function QuickActions({ onNavigate }: { onNavigate: (tab: string) => void }) {
+  // 모바일: 좁은 화면에서 잘리지 않도록 가로 스크롤(스냅) + 줄어들지 않는 버튼
+  // 데스크톱: 기존 레이아웃 유지
   return (
-    <div className="flex items-center gap-1.5">
-      <ActionButton icon={PlusCircle} label="세션 추가" onClick={() => onNavigate('sessions')} />
-      <ActionButton icon={UserPlus} label="회원 추가" onClick={() => onNavigate('members')} />
-      <ActionButton icon={QrCode} label="출석 QR" onClick={() => onNavigate('qr')} />
-      <ActionButton icon={Megaphone} label="공지" onClick={() => onNavigate('notices')} />
+    <div className="-mx-3 sm:mx-0 px-3 sm:px-0 overflow-x-auto sm:overflow-visible no-scrollbar">
+      <div className="flex items-center gap-1.5 w-max sm:w-auto">
+        <ActionButton icon={PlusCircle} label="세션 추가" onClick={() => onNavigate('sessions')} />
+        <ActionButton icon={UserPlus} label="회원 추가" onClick={() => onNavigate('members')} />
+        <ActionButton icon={QrCode} label="출석 QR" onClick={() => onNavigate('qr')} />
+        <ActionButton icon={Megaphone} label="공지" onClick={() => onNavigate('notices')} />
+      </div>
     </div>
   );
 }
@@ -710,7 +716,7 @@ function ActionButton({
   return (
     <button
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12.5px] font-medium border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-bg)] transition-colors"
+      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12.5px] font-medium border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-bg)] transition-colors whitespace-nowrap shrink-0"
     >
       <Icon size={13} />
       {label}
@@ -720,8 +726,10 @@ function ActionButton({
 
 function Sparkline({ data }: { data: { date: string; count: number; label: string }[] }) {
   const max = Math.max(1, ...data.map(d => d.count));
+  // 14개 막대를 좁은 모바일에서 강제로 욱여넣으면 라벨이 깨짐 → 가로 스크롤로 처리
   return (
-    <div className="flex items-end gap-1.5 h-[80px]">
+    <div className="overflow-x-auto -mx-1 px-1">
+    <div className="flex items-end gap-1.5 h-[80px] min-w-[420px]">
       {data.map(d => {
         const h = d.count === 0 ? 2 : (d.count / max) * 70;
         return (
@@ -749,6 +757,7 @@ function Sparkline({ data }: { data: { date: string; count: number; label: strin
           </div>
         );
       })}
+    </div>
     </div>
   );
 }
@@ -804,27 +813,27 @@ function KpiCard({
       ? 'text-[var(--color-success)]'
       : 'text-[var(--color-danger)]';
   return (
-    <div className="bg-white border border-[var(--color-border)] rounded-md p-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[13px] text-[var(--color-text-secondary)] font-medium">{label}</span>
-        <Icon size={16} className={tone === 'warning' ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-muted)]'} />
+    <div className="bg-white border border-[var(--color-border)] rounded-md p-3 sm:p-4 min-w-0">
+      <div className="flex items-center justify-between mb-1.5 sm:mb-2 gap-2">
+        <span className="text-[12px] sm:text-[13px] text-[var(--color-text-secondary)] font-medium truncate min-w-0">{label}</span>
+        <Icon size={15} className={cn("shrink-0", tone === 'warning' ? 'text-[var(--color-warning)]' : 'text-[var(--color-text-muted)]')} />
       </div>
-      <div className="flex items-baseline gap-1.5">
+      <div className="flex items-baseline gap-1 sm:gap-1.5 flex-wrap">
         <span className={cn(
-          "text-[30px] font-semibold leading-none tabular-nums tracking-tight",
+          "text-[22px] sm:text-[26px] lg:text-[30px] font-semibold leading-none tabular-nums tracking-tight",
           tone === 'warning' && value > 0 ? "text-[var(--color-warning)]" : "text-[var(--color-text)]"
         )}>
           {value}
         </span>
-        <span className="text-[13px] text-[var(--color-text-muted)]">{suffix}</span>
+        <span className="text-[12px] sm:text-[13px] text-[var(--color-text-muted)]">{suffix}</span>
         {hasDelta && DeltaIcon && (
-          <span className={cn("ml-auto inline-flex items-center gap-0.5 text-[11.5px] font-medium tabular-nums", deltaColor)}>
+          <span className={cn("ml-auto inline-flex items-center gap-0.5 text-[11px] sm:text-[11.5px] font-medium tabular-nums shrink-0", deltaColor)}>
             <DeltaIcon size={11} strokeWidth={2.4} />
             {delta === 0 ? '0' : Math.abs(delta)}{deltaSuffix}
           </span>
         )}
       </div>
-      {hint && <p className="text-[12px] text-[var(--color-text-muted)] mt-2 truncate">{hint}</p>}
+      {hint && <p className="text-[11.5px] sm:text-[12px] text-[var(--color-text-muted)] mt-1.5 sm:mt-2 truncate">{hint}</p>}
     </div>
   );
 }
