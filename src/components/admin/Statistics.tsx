@@ -66,7 +66,12 @@ export default function Statistics() {
 
       {/* Summary KPIs */}
       <div className="kpi-grid-4">
-        <SummaryCard label="총 예약" value={reservations.length.toString()} suffix="건" />
+        <SummaryCard
+          label="총 예약"
+          value={reservations.length.toString()}
+          suffix="건"
+          hint={reservations.length === 0 ? '아직 예약이 없어요' : undefined}
+        />
         <SummaryCard
           label="전체 출석률"
           value={(() => {
@@ -75,9 +80,23 @@ export default function Statistics() {
             return done > 0 ? Math.round((att / done) * 100).toString() : '0';
           })()}
           suffix="%"
+          hint={(() => {
+            const done = reservations.filter(r => r.status === 'attended' || r.status === 'noshow').length;
+            return done === 0 ? '출석/노쇼 처리 후 집계돼요' : undefined;
+          })()}
         />
-        <SummaryCard label="수강권 매출" value={formatPrice(stats.totalRevenue).replace('원', '')} suffix="원" />
-        <SummaryCard label="가입 회원" value={members.length.toString()} suffix="명" />
+        <SummaryCard
+          label="수강권 매출"
+          value={formatPrice(stats.totalRevenue).replace('원', '')}
+          suffix="원"
+          hint={stats.totalRevenue === 0 ? '발급된 유료 수강권이 없어요' : undefined}
+        />
+        <SummaryCard
+          label="가입 회원"
+          value={members.length.toString()}
+          suffix="명"
+          hint={members.length === 0 ? '회원을 등록해주세요' : undefined}
+        />
       </div>
 
       {/* Session type stats */}
@@ -152,7 +171,7 @@ export default function Statistics() {
   );
 }
 
-function SummaryCard({ label, value, suffix }: { label: string; value: string; suffix: string }) {
+function SummaryCard({ label, value, suffix, hint }: { label: string; value: string; suffix: string; hint?: string }) {
   return (
     <div className="bg-white border border-[var(--color-border)] rounded-md p-4">
       <p className="text-[13px] text-[var(--color-text-secondary)] font-medium mb-2">{label}</p>
@@ -160,6 +179,7 @@ function SummaryCard({ label, value, suffix }: { label: string; value: string; s
         <span className="kpi-num">{value}</span>
         <span className="text-[13px] text-[var(--color-text-muted)]">{suffix}</span>
       </div>
+      {hint && <p className="text-[12px] text-[var(--color-text-muted)] mt-2 truncate">{hint}</p>}
     </div>
   );
 }

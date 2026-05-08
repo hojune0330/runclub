@@ -178,7 +178,13 @@ export default function Overview() {
           label="연속 출석"
           value={streak}
           suffix="주"
-          hint={streak > 0 ? `${streak}주째 이어가는 중 🔥` : '이번 주 출석하고 시작해보세요'}
+          hint={
+            streak >= 3
+              ? `${streak}주째 이어가는 중 🔥`
+              : streak > 0
+              ? `${streak}주째! 한 번 더 가면 ‘3주 연속’ 🔥`
+              : '이번 주 한 번이면 시작이에요'
+          }
           tone={streak >= 3 ? 'highlight' : 'default'}
         />
         <KpiCard
@@ -189,7 +195,7 @@ export default function Overview() {
           hint={
             thisMonthRecords.length > 0
               ? `출석률 ${thisMonthRate}% · 노쇼 ${thisMonthNoshow}`
-              : '아직 출석 기록이 없어요'
+              : '이번 달 첫 세션을 기다리고 있어요'
           }
         />
         <KpiCard
@@ -197,7 +203,11 @@ export default function Overview() {
           label="누적 출석"
           value={totalAttended}
           suffix="회"
-          hint={`전체 출석률 ${attendanceRate}%`}
+          hint={
+            totalAttended > 0
+              ? `전체 출석률 ${attendanceRate}%`
+              : '첫 출석을 등록하면 통계가 쌓여요'
+          }
         />
         <KpiCard
           icon={Ticket}
@@ -209,7 +219,7 @@ export default function Overview() {
               ? activePasses[0].category === 'count'
                 ? `${activePasses[0].productName} · 잔여 ${activePasses[0].remainingCount}회`
                 : activePasses[0].productName
-              : '수강권을 등록해주세요'
+              : '수강권 등록하고 세션 신청해보세요'
           }
         />
       </div>

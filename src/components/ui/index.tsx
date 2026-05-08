@@ -1,17 +1,9 @@
 'use client';
 
-import { X, CheckCircle2, AlertCircle, Info, AlertTriangle } from 'lucide-react';
+import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useMemo, type ReactNode } from 'react';
+import { Toaster as SonnerToaster, toast as sonnerToast } from '@/components/ui/shadcn/sonner';
 
 // ─── Panel ───
 export function Panel({
@@ -191,14 +183,100 @@ export function SkeletonCard({ className }: { className?: string }) {
   return <div className={cn("skeleton skeleton-card", className)} aria-hidden />;
 }
 
-// ─── Toast ───
-type ToastTone = 'success' | 'error' | 'info' | 'warning';
-interface ToastItem {
-  id: string;
-  tone: ToastTone;
-  message: string;
-  description?: string;
+// ─── Page-shaped skeletons (route-level loading) ───
+// 첫 진입 시 단순 스피너 대신 실제 화면 레이아웃과 닮은 형태를 보여줘
+// "곧 무엇이 뜰지" 미리 알려주기 위한 컴포넌트.
+export function PageSkeleton({ variant }: { variant: 'admin' | 'member' }) {
+  return (
+    <div className="min-h-screen bg-[var(--color-bg-subtle)]">
+      {/* Top bar */}
+      <div className="bg-white border-b border-[var(--color-border)]">
+        <div className="max-w-[1200px] mx-auto px-4 py-3 flex items-center justify-between">
+          <Skeleton className="h-5 w-28" />
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-8 w-8 rounded-full" />
+            <Skeleton className="h-4 w-16 hidden sm:block" />
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-[1200px] mx-auto px-4 py-4 space-y-4">
+        {/* Page title */}
+        <Skeleton className="h-6 w-40" />
+
+        {/* KPI strip */}
+        <div className={variant === 'admin' ? 'kpi-grid-4' : 'kpi-grid-4'}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div
+              key={i}
+              className="bg-white border border-[var(--color-border)] rounded-md p-3 space-y-2"
+            >
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-7 w-20" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          ))}
+        </div>
+
+        {/* Main content area */}
+        {variant === 'admin' ? (
+          /* admin: table-ish */
+          <div className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-7 w-20" />
+            </div>
+            <div className="divide-y divide-[var(--color-border)]">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="px-4 py-3 flex items-center gap-3">
+                  <Skeleton className="h-4 w-4 rounded-full" />
+                  <Skeleton className="h-4 flex-1 max-w-[180px]" />
+                  <Skeleton className="h-4 w-16 hidden sm:block" />
+                  <Skeleton className="h-4 w-12 hidden md:block" />
+                  <Skeleton className="h-4 w-14" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* member: session card list */
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="lg:col-span-2 space-y-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="bg-white border border-[var(--color-border)] rounded-md p-3 flex items-center gap-3"
+                >
+                  <Skeleton className="h-10 w-10 rounded-md" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-48" />
+                  </div>
+                  <Skeleton className="h-7 w-16" />
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              <div className="bg-white border border-[var(--color-border)] rounded-md p-3 space-y-2">
+                <Skeleton className="h-4 w-20" />
+                <SkeletonText lines={3} />
+              </div>
+              <div className="bg-white border border-[var(--color-border)] rounded-md p-3 space-y-2">
+                <Skeleton className="h-4 w-24" />
+                <SkeletonText lines={2} />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
+
+// ─── Toast (Sonner 어댑터) ───
+// 기존 호출부(toast.success/error/info/warning/show) 시그니처를 유지한 채
+// 내부 구현만 Sonner로 위임. ToastProvider는 Sonner Toaster를 렌더하는 얇은 래퍼.
+type ToastTone = 'success' | 'error' | 'info' | 'warning';
 
 interface ToastApi {
   show: (message: string, options?: { tone?: ToastTone; description?: string; duration?: number }) => void;
@@ -208,117 +286,37 @@ interface ToastApi {
   warning: (message: string, description?: string) => void;
 }
 
-const ToastContext = createContext<ToastApi | null>(null);
-
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-
-  const dismiss = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-    const timer = timers.current.get(id);
-    if (timer) {
-      clearTimeout(timer);
-      timers.current.delete(id);
-    }
-  }, []);
-
-  const show = useCallback<ToastApi['show']>((message, options) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const tone = options?.tone ?? 'info';
-    const duration = options?.duration ?? (tone === 'error' ? 4500 : 3000);
-    setToasts(prev => [...prev, { id, tone, message, description: options?.description }]);
-    const timer = setTimeout(() => dismiss(id), duration);
-    timers.current.set(id, timer);
-  }, [dismiss]);
-
-  const api = useMemo<ToastApi>(() => ({
-    show,
-    success: (m, d) => show(m, { tone: 'success', description: d }),
-    error: (m, d) => show(m, { tone: 'error', description: d }),
-    info: (m, d) => show(m, { tone: 'info', description: d }),
-    warning: (m, d) => show(m, { tone: 'warning', description: d }),
-  }), [show]);
-
-  useEffect(() => {
-    const map = timers.current;
-    return () => {
-      map.forEach(clearTimeout);
-      map.clear();
-    };
-  }, []);
-
   return (
-    <ToastContext.Provider value={api}>
+    <>
       {children}
-      <div
-        className="fixed top-3 left-1/2 -translate-x-1/2 z-[60] flex flex-col gap-2 pointer-events-none w-[calc(100%-24px)] max-w-[420px] sm:top-4"
-        role="region"
-        aria-live="polite"
-        aria-label="알림"
-      >
-        {toasts.map(t => (
-          <ToastView key={t.id} toast={t} onDismiss={() => dismiss(t.id)} />
-        ))}
-      </div>
-    </ToastContext.Provider>
-  );
-}
-
-function ToastView({ toast, onDismiss }: { toast: ToastItem; onDismiss: () => void }) {
-  const Icon =
-    toast.tone === 'success' ? CheckCircle2 :
-    toast.tone === 'error' ? AlertCircle :
-    toast.tone === 'warning' ? AlertTriangle : Info;
-  const toneClass =
-    toast.tone === 'success' ? 'border-[var(--color-success-border)] bg-[var(--color-success-bg)] text-[var(--color-success)]' :
-    toast.tone === 'error' ? 'border-[var(--color-danger-border)] bg-[var(--color-danger-bg)] text-[var(--color-danger)]' :
-    toast.tone === 'warning' ? 'border-[var(--color-warning-border)] bg-[var(--color-warning-bg)] text-[var(--color-warning)]' :
-    'border-[var(--color-border)] bg-white text-[var(--color-text)]';
-  return (
-    <div
-      role="status"
-      className={cn(
-        "toast-enter pointer-events-auto flex items-start gap-2.5 px-3.5 py-2.5 rounded-md border shadow-md",
-        toneClass
-      )}
-    >
-      <Icon size={16} className="mt-0.5 shrink-0" />
-      <div className="flex-1 min-w-0">
-        <p className="text-[13px] font-medium leading-snug break-words">{toast.message}</p>
-        {toast.description && (
-          <p className="text-[12px] mt-0.5 opacity-80 leading-snug break-words">{toast.description}</p>
-        )}
-      </div>
-      <button
-        onClick={onDismiss}
-        aria-label="알림 닫기"
-        className="shrink-0 -mr-1 p-1 rounded hover:bg-black/5 transition-colors"
-      >
-        <X size={13} />
-      </button>
-    </div>
+      <SonnerToaster />
+    </>
   );
 }
 
 export function useToast(): ToastApi {
-  const ctx = useContext(ToastContext);
-  if (!ctx) {
-    // 폴백: Provider가 없는 환경에서도 안전하게 (개발 중 실수 방지)
-    if (typeof window !== 'undefined') {
-      // eslint-disable-next-line no-console
-      console.warn('[useToast] ToastProvider가 트리에 없습니다. 알림이 표시되지 않습니다.');
-    }
-    return {
-      show: () => {},
-      success: () => {},
-      error: () => {},
-      info: () => {},
-      warning: () => {},
-    };
-  }
-  return ctx;
+  return useMemo<ToastApi>(() => ({
+    show: (message, options) => {
+      const tone = options?.tone ?? 'info';
+      const opts = {
+        description: options?.description,
+        duration: options?.duration,
+      };
+      if (tone === 'success') sonnerToast.success(message, opts);
+      else if (tone === 'error') sonnerToast.error(message, opts);
+      else if (tone === 'warning') sonnerToast.warning(message, opts);
+      else sonnerToast.info(message, opts);
+    },
+    success: (m, d) => sonnerToast.success(m, { description: d }),
+    error: (m, d) => sonnerToast.error(m, { description: d }),
+    info: (m, d) => sonnerToast.info(m, { description: d }),
+    warning: (m, d) => sonnerToast.warning(m, { description: d }),
+  }), []);
 }
+
+// 직접 호출용 (컴포넌트 외부에서 쓸 때)
+export { sonnerToast as toast };
 
 // ─── Tabs ───
 export function Tabs<T extends string>({

@@ -7,23 +7,20 @@ import { AppProvider, useApp } from '@/store/AppContext';
 import MemberApp from '@/components/member/MemberApp';
 import AdminApp from '@/components/admin/AdminApp';
 import ForcePasswordChange from '@/components/auth/ForcePasswordChange';
-import { ToastProvider } from '@/components/ui';
+import { ToastProvider, PageSkeleton } from '@/components/ui';
 import { api } from '@/lib/api';
 
-function LoadingSpinner({ message }: { message: string }) {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-subtle)]">
-      <div className="text-center">
-        <div className="w-6 h-6 border-2 border-[var(--color-border)] border-t-[var(--color-primary)] rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-[13px] text-[var(--color-text-muted)]">{message}</p>
-      </div>
-    </div>
-  );
+// 로그인 직후 role을 모르는 짧은 구간에서 보여줄 중립 스켈레톤.
+// member 변형이 admin 변형보다 헤더/카드 톤이 일반적이라 기본값으로 사용한다.
+function NeutralPageSkeleton() {
+  return <PageSkeleton variant="member" />;
 }
 
 function AppLoadingGate({ role }: { role: 'admin' | 'member' }) {
   const { loading } = useApp();
-  if (loading) return <LoadingSpinner message="데이터 불러오는 중..." />;
+  // 첫 진입 시 단순 스피너 대신 실제 화면 모양과 닮은 스켈레톤을 보여줘
+  // 체감 속도와 "곧 무엇이 뜰지" 명확성을 같이 끌어올린다.
+  if (loading) return <PageSkeleton variant={role} />;
   return (
     <div className="min-h-screen">
       {role === 'member' ? <MemberApp /> : <AdminApp />}
@@ -55,7 +52,9 @@ function AppContent() {
   }, [user, loading, router]);
 
   if (loading || !user) {
-    return <LoadingSpinner message="로딩 중..." />;
+    // 인증 확인 단계에서도 페이지 스켈레톤을 보여주면 이후 AppLoadingGate
+    // 단계의 스켈레톤과 자연스럽게 연결되어 "스피너 → 스켈레톤" 깜빡임이 없어진다.
+    return <NeutralPageSkeleton />;
   }
 
   // Block the entire app behind the password-change wall when required.

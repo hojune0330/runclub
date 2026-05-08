@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 import { AuthProvider, useAuth } from '@/store/AuthContext';
 import LoginPage from '@/components/auth/LoginPage';
-import { ToastProvider } from '@/components/ui';
+import { ToastProvider, PageSkeleton } from '@/components/ui';
 import { api } from '@/lib/api';
 
 function LoginGate() {
@@ -28,14 +28,9 @@ function LoginGate() {
   }, [user, loading, router]);
 
   if (loading || user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg-subtle)]">
-        <div className="text-center">
-          <div className="w-6 h-6 border-2 border-[var(--color-border)] border-t-[var(--color-primary)] rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-[13px] text-[var(--color-text-muted)]">이동 중…</p>
-        </div>
-      </div>
-    );
+    // /app 으로 이동하는 짧은 구간에서도 같은 스켈레톤을 사용해
+    // 로그인 → 앱 진입 사이 깜빡임을 없앤다.
+    return <PageSkeleton variant="member" />;
   }
 
   return (

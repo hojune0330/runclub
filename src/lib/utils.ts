@@ -97,10 +97,13 @@ export const formatPrice = (price: number) => {
   return new Intl.NumberFormat('ko-KR').format(price) + '원';
 };
 
-// ─── cn helper ───
+// ─── cn helper (shadcn-compatible) ───
 
-export function cn(...classes: (string | undefined | false | null)[]) {
-  return classes.filter(Boolean).join(' ');
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
 }
 
 // ─── Attendance stats helpers ───
