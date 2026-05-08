@@ -209,6 +209,16 @@ function PassProductDetail({ product, onClose }: { product: PassProduct; onClose
       //    Toss params we need to open the SDK widget.
       const checkout = await api.payments.checkout(product.id);
 
+      // PR-C3: 0원 무료 패스는 서버에서 즉시 발급되어 free=true로 응답.
+      // Toss SDK를 우회하고 곧장 success 페이지로 이동한다.
+      if (checkout.free) {
+        const base = window.location.origin;
+        window.location.href = `${base}/payments/success?orderId=${encodeURIComponent(
+          checkout.orderId
+        )}&free=1`;
+        return;
+      }
+
       if (!checkout.tossClientKey) {
         // Fallback: server has no Toss client key → tell user to contact
         // the manager. We *don't* try to silently succeed.
@@ -318,7 +328,13 @@ function PassProductDetail({ product, onClose }: { product: PassProduct; onClose
         </button>
         <button type="button" onClick={handleBuy} disabled={busy}
           className="flex-1 h-11 inline-flex items-center justify-center gap-1.5 text-[13.5px] font-semibold text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-border)]">
-          {busy ? <><Loader2 size={14} className="animate-spin" /> 결제창 여는 중…</> : <><ShoppingBag size={14} /> {formatPrice(product.price)} 결제하기</>}
+          {busy ? (
+            <><Loader2 size={14} className="animate-spin" /> {product.price === 0 ? '발급 중…' : '결제창 여는 중…'}</>
+          ) : product.price === 0 ? (
+            <><ShoppingBag size={14} /> 무료로 발급받기</>
+          ) : (
+            <><ShoppingBag size={14} /> {formatPrice(product.price)} 결제하기</>
+          )}
         </button>
       </div>
     </Modal>

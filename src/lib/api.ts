@@ -260,17 +260,28 @@ export const api = {
   payments: {
     // PR-6: member-initiated checkout (Toss).
     checkout: (productId: string) =>
-      request<{
-        orderId: string;
-        orderName: string;
-        amount: number;
-        customerName: string;
-        customerEmail?: string;
-        customerMobilePhone?: string;
-        tossClientKey: string | null;
-        successUrl: string;
-        failUrl: string;
-      }>('/payments/checkout', {
+      request<
+        | {
+            // PR-C3: 0원 무료 패스는 Toss를 거치지 않고 즉시 발급된다.
+            free: true;
+            orderId: string;
+            passId: string;
+            orderName: string;
+            amount: 0;
+          }
+        | {
+            free: false;
+            orderId: string;
+            orderName: string;
+            amount: number;
+            customerName: string;
+            customerEmail?: string;
+            customerMobilePhone?: string;
+            tossClientKey: string | null;
+            successUrl: string;
+            failUrl: string;
+          }
+      >('/payments/checkout', {
         method: 'POST',
         body: JSON.stringify({ productId }),
       }),

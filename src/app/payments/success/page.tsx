@@ -26,10 +26,22 @@ function PaymentSuccessContent() {
   const [state, setState] = useState<'pending' | 'ok' | 'fail'>('pending');
   const [message, setMessage] = useState<string>('결제 승인 중입니다…');
   const [passId, setPassId] = useState<string | null>(null);
+  const [isFree, setIsFree] = useState(false);
 
   useEffect(() => {
-    const paymentKey = params.get('paymentKey');
     const orderId = params.get('orderId');
+
+    // PR-C3: 0원 무료 패스는 서버 checkout 단계에서 이미 발급이 끝난다.
+    // 클라이언트는 free=1 쿼리만 받고 별도 confirm 호출 없이 성공 화면을 그린다.
+    const free = params.get('free') === '1';
+    if (free) {
+      setIsFree(true);
+      setState('ok');
+      setMessage('무료 수강권이 발급되었습니다.');
+      return;
+    }
+
+    const paymentKey = params.get('paymentKey');
     const amount = Number(params.get('amount'));
 
     if (!paymentKey || !orderId || !Number.isFinite(amount)) {
@@ -72,7 +84,9 @@ function PaymentSuccessContent() {
           {state === 'ok' && (
             <>
               <CheckCircle2 size={40} className="text-[var(--color-success)] mx-auto mb-3" />
-              <p className="text-[16px] font-semibold text-[var(--color-text)]">결제가 완료되었습니다</p>
+              <p className="text-[16px] font-semibold text-[var(--color-text)]">
+                {isFree ? '무료 수강권이 발급되었습니다' : '결제가 완료되었습니다'}
+              </p>
               <p className="text-[13px] text-[var(--color-text-muted)] mt-1">{message}</p>
               {passId && <p className="text-[11.5px] text-[var(--color-text-muted)] mt-2 tabular-nums">발급 ID: {passId}</p>}
               <div className="mt-5 flex flex-col gap-2">

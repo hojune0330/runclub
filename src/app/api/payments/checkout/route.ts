@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dbGet, dbRun, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse } from '@/lib/auth';
+import { safeSync } from '@/lib/sheets';
+import { mapPassRow } from '@/lib/sheets-mappers';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-6: Member-initiated purchase — Step 1 (CHECKOUT)
@@ -16,6 +18,17 @@ import { getAuthFromRequest, unauthorizedResponse } from '@/lib/auth';
 // We don't store the Toss secret key on the client. The client only
 // needs the *client* key (env: NEXT_PUBLIC_TOSS_CLIENT_KEY) and the
 // orderId we generated here. Confirmation always happens server-side.
+//
+// PR-C3 (0원 패스 즉시 발급):
+//   product.price === 0 인 상품은 Toss를 거치지 않습니다.
+//   Toss는 100원 미만 결제를 거부하므로, 가격이 0인 무료 체험권/이벤트권은
+//   체크아웃 단계에서 즉시 member_passes에 발급하고 pending_payments는
+//   audit 용도로 'confirmed' 상태로 한 번에 기록합니다.
+//   클라이언트는 응답에 free=true 가 있으면 SDK를 열지 않고 곧장
+//   /payments/success?orderId=...&free=1 로 이동합니다.
+//
+//   동일 회원에게 같은 무료 상품이 이미 활성/일시정지 상태로 존재하면
+//   재발급을 거절합니다 (무료 무한 발급 차단).
 // ─────────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -67,12 +80,92 @@ export async function POST(req: NextRequest) {
       )
     `);
 
+    // ── PR-C3: 0원 패스 즉시 발급 분기 ──
+    if (product.price === 0) {
+      // 중복 발급 방지: 같은 무료 상품을 이미 활성/일시정지로 보유 중이면 거절.
+      const existing = await dbGet<{ id: string }>(
+        `SELECT id FROM member_passes
+          WHERE member_id = $1 AND product_id = $2
+            AND status IN ('active','paused')
+          LIMIT 1`,
+        [member.id, product.id]
+      );
+      if (existing) {
+        return NextResponse.json(
+          { error: '이미 발급받은 무료 수강권이 있습니다' },
+          { status: 400 }
+        );
+      }
+
+      const today = new Date().toISOString().split('T')[0];
+      const startMs = new Date(`${today}T00:00:00Z`).getTime();
+      const expiryDate = new Date(startMs + product.duration_days * 86400000)
+        .toISOString().split('T')[0];
+
+      const passId = genId('mp');
+      await dbRun(`
+        INSERT INTO member_passes (
+          id, member_id, product_id,
+          total_count, remaining_count,
+          start_date, expiry_date, issued_date,
+          price, status,
+          payment_status, payment_method, payment_amount, paid_at,
+          transaction_id, discount_amount, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, 0, 'active',
+          'paid', 'free', 0, NOW(),
+          $9, 0, NOW()
+        )
+      `, [
+        passId, member.id, product.id,
+        product.total_count, product.total_count,
+        today, expiryDate, today,
+        orderId, // transaction_id 자리에 orderId 기록 (Toss paymentKey 대용)
+      ]);
+
+      // pending_payments도 감사 추적용으로 confirmed 상태로 한 번에 기록.
+      await dbRun(`
+        INSERT INTO pending_payments
+          (order_id, member_id, product_id, amount, status,
+           payment_key, method, confirmed_at, pass_id)
+        VALUES ($1, $2, $3, 0, 'confirmed',
+                $1, 'free', NOW(), $4)
+      `, [orderId, member.id, product.id, passId]);
+
+      // Sheets mirror (best-effort)
+      try {
+        const issuedRow = await dbGet<any>(`
+          SELECT mp.id, mp.member_id, mp.product_id,
+                 mp.total_count, mp.remaining_count,
+                 mp.start_date, mp.expiry_date, mp.issued_date,
+                 mp.price, mp.status, mp.paused_at,
+                 m.name AS member_name,
+                 pp.name AS product_name, pp.category
+          FROM member_passes mp
+          JOIN members m ON mp.member_id = m.id
+          JOIN pass_products pp ON mp.product_id = pp.id
+          WHERE mp.id = $1
+        `, [passId]);
+        if (issuedRow) void safeSync('passes', 'upsert', mapPassRow(issuedRow));
+      } catch { /* swallow */ }
+
+      return NextResponse.json({
+        free: true,
+        orderId,
+        passId,
+        orderName: product.name,
+        amount: 0,
+      });
+    }
+
+    // ── 유료 흐름: 기존과 동일하게 pending row 생성 후 SDK 파라미터 반환 ──
     await dbRun(`
       INSERT INTO pending_payments (order_id, member_id, product_id, amount, status)
       VALUES ($1, $2, $3, $4, 'pending')
     `, [orderId, member.id, product.id, product.price]);
 
     return NextResponse.json({
+      free: false,
       orderId,
       orderName: product.name,
       amount: product.price,
