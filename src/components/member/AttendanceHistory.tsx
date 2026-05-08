@@ -11,7 +11,7 @@ import {
   getMonthlyAttendance,
   calculateWeeklyStreak,
 } from '@/lib/utils';
-import { Flame, TrendingUp, Calendar as CalIcon } from 'lucide-react';
+import { Flame, TrendingUp, Calendar as CalIcon, ClipboardList } from 'lucide-react';
 
 export default function AttendanceHistory() {
   const { reservations, sessions, currentMember } = useApp();
@@ -153,8 +153,14 @@ export default function AttendanceHistory() {
         </div>
 
         {Object.keys(grouped).length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-[13px] text-[var(--color-text-muted)]">출석 기록이 없습니다.</p>
+          <div className="py-16 px-6 text-center">
+            <div className="w-10 h-10 rounded-full bg-[var(--color-bg-subtle)] border border-[var(--color-border)] flex items-center justify-center mx-auto mb-3">
+              <ClipboardList size={18} className="text-[var(--color-text-muted)]" />
+            </div>
+            <p className="text-[13.5px] text-[var(--color-text)] font-medium mb-1">아직 출석 기록이 없어요</p>
+            <p className="text-[12.5px] text-[var(--color-text-muted)] max-w-[400px] mx-auto leading-relaxed">
+              세션에 참여하시면 월별 출석률·연속 출석 주가 자동으로 집계돼요.
+            </p>
           </div>
         ) : (
           <div>

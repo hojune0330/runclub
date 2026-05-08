@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useState } from 'react';
+import { Bell } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig } from '@/lib/config';
 import { formatKoreanDate, cn } from '@/lib/utils';
@@ -40,8 +41,14 @@ export default function Notices() {
       {/* List */}
       <section className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
         {notices.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-[13px] text-[var(--color-text-muted)]">등록된 공지사항이 없습니다.</p>
+          <div className="py-16 px-6 text-center">
+            <div className="w-10 h-10 rounded-full bg-[var(--color-bg-subtle)] border border-[var(--color-border)] flex items-center justify-center mx-auto mb-3">
+              <Bell size={18} className="text-[var(--color-text-muted)]" />
+            </div>
+            <p className="text-[13.5px] text-[var(--color-text)] font-medium mb-1">새 공지가 없어요</p>
+            <p className="text-[12.5px] text-[var(--color-text-muted)] max-w-[400px] mx-auto leading-relaxed">
+              운영진이 공지를 올리면 여기에 표시되고, 첫 줄은 위 알림에서도 볼 수 있어요.
+            </p>
           </div>
         ) : (
           <div className="scroll-x">

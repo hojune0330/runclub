@@ -316,8 +316,11 @@ export default function Overview() {
           <div className="p-3">
             {upcoming.length === 0 ? (
               <div className="py-6 text-center">
-                <p className="text-[13px] text-[var(--color-text-muted)] mb-3">
-                  예정된 예약이 없습니다.
+                <p className="text-[13.5px] text-[var(--color-text)] font-medium mb-1">
+                  예정된 예약이 없어요
+                </p>
+                <p className="text-[12px] text-[var(--color-text-muted)] mb-3">
+                  캘린더에서 원하는 세션을 골라 예약해 보세요.
                 </p>
                 <button
                   onClick={() => navigate('calendar')}
@@ -429,8 +432,11 @@ export default function Overview() {
           <div className="p-3">
             {activePasses.length === 0 ? (
               <div className="py-6 text-center">
-                <p className="text-[13px] text-[var(--color-text-muted)] mb-3">
-                  활성 수강권이 없습니다.
+                <p className="text-[13.5px] text-[var(--color-text)] font-medium mb-1">
+                  활성 수강권이 없어요
+                </p>
+                <p className="text-[12px] text-[var(--color-text-muted)] mb-3">
+                  수강권을 구매하면 세션 예약이 가능해요.
                 </p>
                 <button
                   onClick={() => navigate('passes')}

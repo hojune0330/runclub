@@ -89,12 +89,12 @@ export default function MyReservations() {
               <CalendarDays size={18} className="text-[var(--color-text-muted)]" />
             </div>
             <p className="text-[13.5px] text-[var(--color-text)] font-medium mb-1">
-              {tab === 'upcoming' ? '다가오는 예약이 없습니다' : '지난 예약이 없습니다'}
+              {tab === 'upcoming' ? '다가오는 예약이 없어요' : '지난 예약이 없어요'}
             </p>
             <p className="text-[12.5px] text-[var(--color-text-muted)] mb-4">
               {tab === 'upcoming'
-                ? '세션 일정에서 원하는 세션을 선택해 예약해보세요.'
-                : '아직 참여한 세션이 없습니다.'}
+                ? '세션 일정에서 원하는 세션을 선택해 예약해 보세요.'
+                : '참여한 세션이 쌓이면 여기에 기록이 남아요.'}
             </p>
             {tab === 'upcoming' && (
               <button
