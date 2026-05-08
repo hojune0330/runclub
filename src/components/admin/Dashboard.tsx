@@ -289,7 +289,10 @@ export default function Dashboard() {
           action={todaySessions.length > 0 ? `${todaySessions.length}개 세션` : undefined}
         >
           {todaySessions.length === 0 ? (
-            <EmptyState message="오늘 예정된 세션이 없습니다." />
+            <EmptyState
+              message="오늘은 예정된 세션이 없어요"
+              description="세션 관리에서 새 세션을 추가하거나, 캘린더에서 일정을 확인해 보세요."
+            />
           ) : (
             <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-[13px]">
@@ -397,7 +400,10 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
           <Panel title="최근 가입 회원" action={`${recentMembers.length}명`}>
             {recentMembers.length === 0 ? (
-              <EmptyState message="최근 가입한 회원이 없습니다." />
+              <EmptyState
+                message="최근 가입한 회원이 없어요"
+                description="회원 관리에서 새 회원을 등록하거나 초대 링크를 공유해 보세요."
+              />
             ) : (
               <ul className="divide-y divide-[var(--color-border-subtle)]">
                 {recentMembers.map(m => (
@@ -422,7 +428,10 @@ export default function Dashboard() {
 
           <Panel title="만료 임박 수강권" action="7일 이내">
             {expiringPasses.length === 0 ? (
-              <EmptyState message="만료가 임박한 수강권이 없습니다." />
+              <EmptyState
+                message="만료 임박 수강권이 없어요"
+                description="7일 이내 만료 예정인 수강권이 생기면 여기서 알려드릴게요."
+              />
             ) : (
               <ul className="divide-y divide-[var(--color-border-subtle)]">
                 {expiringPasses.slice(0, 6).map(p => {
@@ -850,10 +859,13 @@ function Panel({ title, action, children, className }: { title: string; action?:
   );
 }
 
-function EmptyState({ message }: { message: string }) {
+function EmptyState({ message, description }: { message: string; description?: string }) {
   return (
     <div className="py-10 text-center">
-      <p className="text-[13px] text-[var(--color-text-muted)]">{message}</p>
+      <p className="text-[13px] text-[var(--color-text-secondary)] font-medium">{message}</p>
+      {description && (
+        <p className="text-[12px] text-[var(--color-text-muted)] mt-1">{description}</p>
+      )}
     </div>
   );
 }
