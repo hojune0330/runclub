@@ -16,6 +16,7 @@
     "sheet:backfill": "node scripts/sheet-sync-backfill.mjs"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
     "@tailwindcss/postcss": "^4",
     "@tosspayments/payment-sdk": "^1.9.2",
     "@types/bcryptjs": "^2.4.6",

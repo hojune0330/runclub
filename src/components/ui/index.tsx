@@ -1,9 +1,15 @@
 'use client';
 
-import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useMemo, type ReactNode } from 'react';
 import { Toaster as SonnerToaster, toast as sonnerToast } from '@/components/ui/shadcn/sonner';
+import {
+  Dialog as RadixDialog,
+  DialogContent as RadixDialogContent,
+  DialogHeader as RadixDialogHeader,
+  DialogTitle as RadixDialogTitle,
+  DialogBody as RadixDialogBody,
+} from '@/components/ui/shadcn/dialog';
 
 // ─── Panel ───
 export function Panel({
@@ -32,7 +38,10 @@ export function Panel({
   );
 }
 
-// ─── Modal ───
+// ─── Modal (Radix Dialog 어댑터) ───
+// 기존 호출부 API(<Modal title onClose>{children}</Modal>)를 그대로 유지하고
+// 내부 구현만 @radix-ui/react-dialog 기반의 shadcn 톤 Dialog로 위임한다.
+// 이 어댑터로 ESC 닫기, focus trap, 스크롤 잠금, aria-* 속성이 자동 적용된다.
 export function Modal({
   title,
   onClose,
@@ -44,22 +53,20 @@ export function Modal({
   children: ReactNode;
   size?: 'sm' | 'md' | 'lg';
 }) {
-  const maxW = size === 'sm' ? 'max-w-[400px]' : size === 'lg' ? 'max-w-[640px]' : 'max-w-[480px]';
   return (
-    <div className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center px-4 animate-fade-in" onClick={onClose}>
-      <div
-        className={cn("bg-white border border-[var(--color-border)] rounded-md shadow-lg w-full animate-slide-up", maxW)}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)]">
-          <h3 className="text-[15px] font-semibold text-[var(--color-text)]">{title}</h3>
-          <button onClick={onClose} className="p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
-            <X size={16} />
-          </button>
-        </div>
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
+    <RadixDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <RadixDialogContent size={size}>
+        <RadixDialogHeader>
+          <RadixDialogTitle>{title}</RadixDialogTitle>
+        </RadixDialogHeader>
+        <RadixDialogBody>{children}</RadixDialogBody>
+      </RadixDialogContent>
+    </RadixDialog>
   );
 }
 
