@@ -8,6 +8,7 @@ import MemberApp from '@/components/member/MemberApp';
 import AdminApp from '@/components/admin/AdminApp';
 import ForcePasswordChange from '@/components/auth/ForcePasswordChange';
 import { ToastProvider, PageSkeleton } from '@/components/ui';
+import InstallPrompt from '@/components/pwa/InstallPrompt';
 import { api } from '@/lib/api';
 
 // 로그인 직후 role을 모르는 짧은 구간에서 보여줄 중립 스켈레톤.
@@ -65,6 +66,12 @@ function AppContent() {
   return (
     <AppProvider>
       <AppLoadingGate role={user.role} />
+      {/*
+        PWA 설치 프롬프트는 로그인 후 앱 진입 시점에만 띄운다.
+        - 로그인 전 랜딩에서 설치 권유는 친밀도/이탈률 측면에서 비효율.
+        - 8초 지연 + 30일 dismiss 메모리는 컴포넌트 내부에서 처리.
+      */}
+      <InstallPrompt />
     </AppProvider>
   );
 }

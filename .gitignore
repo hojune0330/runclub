@@ -47,6 +47,9 @@ next-env.d.ts
 
 # Screenshots and dev artifacts
 *.png
+# PWA / favicon assets under public/ are tracked despite the *.png rule above.
+!public/**/*.png
+!public/*.png
 screenshot-*.js
 check-load.js
 verify-*.js

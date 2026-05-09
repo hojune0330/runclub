@@ -173,8 +173,15 @@ export default function LoginPage() {
           </form>
         </div>
 
-        {/* Demo accounts hint */}
-        {mode === 'login' && (
+        {/*
+          Demo accounts hint — production 빌드에서는 노출하지 않는다.
+          - process.env.NODE_ENV는 빌드 시 정적 치환되므로 production 번들에서는
+            아래 블록 자체가 dead code로 제거되어 계정 정보가 새지 않는다.
+          - NEXT_PUBLIC_SHOW_DEMO_ACCOUNTS=1 로 명시적으로 노출 가능 (스테이징/데모 환경용).
+        */}
+        {mode === 'login' &&
+          (process.env.NODE_ENV !== 'production' ||
+            process.env.NEXT_PUBLIC_SHOW_DEMO_ACCOUNTS === '1') && (
           <details className="mt-4 bg-white border border-[var(--color-border)] rounded-md">
             <summary className="px-4 py-2.5 text-[12.5px] text-[var(--color-text-secondary)] cursor-pointer hover:bg-[var(--color-bg-hover)] rounded-md select-none">
               체험용 계정 보기

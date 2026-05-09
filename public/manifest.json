@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json.schemastore.org/web-manifest-combined.json",
+  "name": "런클럽 매니저",
+  "short_name": "런클럽",
+  "description": "런클럽 세션 예약 · QR 출석 · 수강권 통합 관리",
+  "lang": "ko-KR",
+  "dir": "ltr",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f7f8",
+  "theme_color": "#2563eb",
+  "categories": ["sports", "lifestyle", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "내 예약",
+      "short_name": "예약",
+      "description": "다가오는 예약 확인",
+      "url": "/app?tab=reservations",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "세션 일정",
+      "short_name": "세션",
+      "description": "다가오는 세션 보기",
+      "url": "/app?tab=calendar",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "QR 체크인",
+      "short_name": "체크인",
+      "description": "출석 QR 코드 보기",
+      "url": "/app?tab=qr",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}
