@@ -151,41 +151,14 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
 
       <main className="flex-1">{children}</main>
 
-      {/* 공개 페이지 푸터: 브랜드/링크 + 사업자 정보(BusinessFooter) */}
-      <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
-        <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-6 md:py-8 grid grid-cols-2 md:grid-cols-3 gap-5 md:gap-6">
-          <div className="col-span-2 md:col-span-1">
-            <div className="flex items-center gap-2 mb-2">
-              <div className="w-6 h-6 rounded bg-[var(--color-primary)] flex items-center justify-center">
-                <span className="text-white text-[11px] font-bold">R</span>
-              </div>
-              <span className="text-[13.5px] font-semibold text-[var(--color-text)]">런클럽</span>
-            </div>
-            <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
-              함께 달리는 즐거움.<br />
-              EBW · 슬로우 롱런 · 마라톤 세션을 운영합니다.
-            </p>
-          </div>
-          <div>
-            <p className="text-[11.5px] font-semibold text-[var(--color-text)] mb-2">바로가기</p>
-            <ul className="space-y-1.5 text-[12.5px] text-[var(--color-text-secondary)]">
-              <li><Link href="/sessions" className="hover:text-[var(--color-primary)]">세션 일정</Link></li>
-              <li><Link href="/about" className="hover:text-[var(--color-primary)]">런클럽 소개</Link></li>
-              <li><Link href="/login" className="hover:text-[var(--color-primary)]">로그인·회원가입</Link></li>
-            </ul>
-          </div>
-          <div>
-            <p className="text-[11.5px] font-semibold text-[var(--color-text)] mb-2">고객 문의</p>
-            <ul className="space-y-1.5 text-[12.5px] text-[var(--color-text-secondary)]">
-              <li>전화: <a href="tel:01024282655" className="hover:text-[var(--color-primary)]">010-2428-2655</a></li>
-              <li>이메일: <a href="mailto:hojune0330@gmail.com" className="hover:text-[var(--color-primary)]">hojune0330@gmail.com</a></li>
-              <li>운영시간: 평일 10:00 – 19:00</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* 전자상거래법 제13조·시행령 제10조 — 사업자 정보 의무 표기 (모든 사용자 공통) */}
+      {/*
+        공개 페이지 푸터.
+        - 이전에 있던 "브랜드/바로가기/고객문의" 3-column 블록은 BusinessFooter와
+          전화/이메일이 중복되고, 브랜드 카피·바로가기는 헤더 NAV에 이미 존재해
+          정보 중복이었다. 토스 톤 정리(2025-05) 일환으로 제거.
+        - 사업자 정보(BusinessFooter)는 전자상거래법 제13조에 따른 법적 의무라
+          그대로 유지. 단 BusinessFooter 내부에서도 의무 항목만 남기도록 정리.
+      */}
       <BusinessFooter variant="full" />
     </div>
   );
