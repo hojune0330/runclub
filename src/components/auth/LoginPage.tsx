@@ -25,6 +25,10 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // 회원가입 시 약관 동의 — PG 심사 필수 항목.
+  // 약관과 개인정보처리방침은 「전자상거래법」 + 「개인정보 보호법」상 필수 동의 대상.
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [agreePrivacy, setAgreePrivacy] = useState(false);
 
   const formatPhone = (val: string) => {
     const digits = val.replace(/[^0-9]/g, '');
@@ -42,6 +46,12 @@ export default function LoginPage() {
       await login(phone, password);
     } else {
       if (!name.trim()) {
+        setSubmitting(false);
+        return;
+      }
+      // 약관 동의 가드 — disabled 버튼이 1차 방어선이지만, 키보드/접근성 우회를
+      // 막기 위해 submit 핸들러에서도 한 번 더 확인한다.
+      if (!agreeTerms || !agreePrivacy) {
         setSubmitting(false);
         return;
       }
@@ -158,12 +168,42 @@ export default function LoginPage() {
               </div>
             )}
 
+            {/*
+              회원가입 시 약관 동의 — PG 심사 필수 항목.
+              - 이용약관, 개인정보처리방침 모두 별도 동의 (묶음 동의 X)
+              - 각 약관 텍스트는 새 탭에서 열도록 target="_blank"
+            */}
+            {mode === 'register' && (
+              <div className="space-y-2 pt-1">
+                <AgreementCheckbox
+                  checked={agreeTerms}
+                  onChange={setAgreeTerms}
+                  label="이용약관"
+                  href="/terms"
+                />
+                <AgreementCheckbox
+                  checked={agreePrivacy}
+                  onChange={setAgreePrivacy}
+                  label="개인정보처리방침"
+                  href="/privacy"
+                />
+              </div>
+            )}
+
             <button
               type="submit"
-              disabled={submitting || !phone || !password || (mode === 'register' && !name.trim())}
+              disabled={
+                submitting ||
+                !phone ||
+                !password ||
+                (mode === 'register' && (!name.trim() || !agreeTerms || !agreePrivacy))
+              }
               className={cn(
                 "w-full h-11 sm:h-10 text-[14.5px] sm:text-[14px] font-semibold rounded-md transition-colors",
-                submitting || !phone || !password || (mode === 'register' && !name.trim())
+                submitting ||
+                  !phone ||
+                  !password ||
+                  (mode === 'register' && (!name.trim() || !agreeTerms || !agreePrivacy))
                   ? "bg-[var(--color-bg-hover)] text-[var(--color-text-disabled)]"
                   : "bg-[var(--color-primary)] text-white active:bg-[var(--color-primary-active)] sm:hover:bg-[var(--color-primary-hover)]"
               )}
@@ -259,5 +299,48 @@ function Field({ label, required, hint, children }: { label: string; required?: 
       </label>
       {children}
     </div>
+  );
+}
+
+/**
+ * AgreementCheckbox — 회원가입 시 약관/개인정보 동의 체크박스.
+ *
+ * - 체크박스와 라벨 텍스트는 같은 label로 묶여 어디를 클릭해도 토글된다.
+ * - 약관 본문 링크는 별도 anchor라서 새 탭에서 열리며, 체크 토글과 분리된다.
+ * - 모바일에서 탭 영역 확보를 위해 min-height 11(=44px) 유지.
+ */
+function AgreementCheckbox({
+  checked,
+  onChange,
+  label,
+  href,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  href: string;
+}) {
+  return (
+    <label className="flex items-center gap-2 min-h-11 sm:min-h-0 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={e => onChange(e.target.checked)}
+        className="w-4 h-4 accent-[var(--color-primary)] cursor-pointer"
+      />
+      <span className="text-[13px] text-[var(--color-text-secondary)]">
+        <span className="text-[var(--color-danger)]">[필수]</span>{' '}
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener"
+          className="underline underline-offset-2 hover:text-[var(--color-primary)]"
+          onClick={e => e.stopPropagation()}
+        >
+          {label}
+        </a>
+        에 동의합니다
+      </span>
+    </label>
   );
 }
