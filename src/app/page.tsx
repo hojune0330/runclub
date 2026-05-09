@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { ArrowRight, Calendar, QrCode, MapPin, Clock, Users, LogIn, UserPlus, Sparkles } from 'lucide-react';
+import { ArrowRight, Calendar, MapPin, Clock, Users } from 'lucide-react';
 import PublicLayout from '@/components/public/PublicLayout';
 import { sessionTypeConfig } from '@/lib/config';
 import { formatKoreanDate } from '@/lib/utils';
@@ -61,153 +61,140 @@ export default async function LandingPage() {
 
   return (
     <PublicLayout>
-      {/* ── HERO (compact, app-like) ── */}
-      <section className="relative overflow-hidden bg-gradient-to-br from-[var(--color-primary)] via-[#1d4ed8] to-[#1e3a8a] text-white">
-        <div className="absolute inset-0 opacity-20" aria-hidden>
-          <div className="absolute -top-24 -right-24 w-[320px] h-[320px] rounded-full bg-white/10 blur-3xl" />
-          <div className="absolute -bottom-24 -left-24 w-[380px] h-[380px] rounded-full bg-[#60a5fa]/30 blur-3xl" />
-        </div>
-        <div className="relative max-w-[1200px] mx-auto px-4 md:px-6 py-10 md:py-16">
+      {/*
+        ── HERO ──
+        토스 스타일: 그라디언트/일러스트 없이 화이트 베이스 + 큰 타이포 +
+        단일 primary CTA. 두번째 줄에 인라인 텍스트 링크로 보조 액션 제공.
+        모바일에서 첫 화면에 CTA가 보이도록 px/py 보수적으로 책정.
+      */}
+      <section className="bg-white">
+        <div className="max-w-[1200px] mx-auto px-5 md:px-6 pt-10 md:pt-20 pb-8 md:pb-14">
           <div className="max-w-[640px]">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 text-[11px] md:text-[11.5px] font-medium tracking-wider uppercase backdrop-blur">
-              <Sparkles size={11} /> 런클럽 매니저
-            </span>
-            <h1 className="mt-4 text-[26px] md:text-[40px] font-bold leading-[1.2] tracking-tight">
-              오늘 달릴 세션을
-              <br className="md:hidden" />
-              <span className="text-[#bfdbfe]"> 한 번에 확인.</span>
+            <h1 className="text-[28px] md:text-[44px] font-bold leading-[1.25] tracking-[-0.02em] text-[var(--color-text)]">
+              오늘 달릴 세션,
+              <br />
+              한 번에 정리했어요.
             </h1>
-            <p className="mt-3 text-[13.5px] md:text-[15.5px] text-white/85 leading-relaxed max-w-[520px]">
-              예약 · QR 출석 · 수강권 관리까지. 가입 전에도 일정을 확인할 수 있어요.
+            <p className="mt-4 md:mt-5 text-[14.5px] md:text-[17px] text-[var(--color-text-secondary)] leading-relaxed">
+              예약부터 QR 출석, 수강권까지.
+              <br className="md:hidden" />
+              <span className="hidden md:inline"> </span>
+              필요한 건 다 들어 있어요.
             </p>
 
-            {/* Primary action row — mobile-first, full-width buttons */}
-            <div className="mt-6 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:gap-2.5 max-w-[420px] sm:max-w-none">
-              <Link
-                href="/login"
-                className="inline-flex items-center justify-center gap-1.5 h-11 sm:h-[46px] px-4 sm:px-5 rounded-md text-[14px] font-semibold bg-white text-[var(--color-primary)] active:bg-white/90 sm:hover:bg-white/90 transition-colors"
-              >
-                <LogIn size={15} /> 로그인
-              </Link>
+            <div className="mt-7 md:mt-9 flex flex-col sm:flex-row gap-2.5 sm:items-center">
               <Link
                 href="/login?mode=register"
-                className="inline-flex items-center justify-center gap-1.5 h-11 sm:h-[46px] px-4 sm:px-5 rounded-md text-[14px] font-semibold bg-white/10 sm:hover:bg-white/20 active:bg-white/20 text-white border border-white/30 transition-colors"
+                className="inline-flex items-center justify-center gap-1.5 h-12 sm:h-[52px] px-6 rounded-md text-[15px] font-semibold bg-[var(--color-primary)] text-white active:bg-[var(--color-primary-active)] sm:hover:bg-[var(--color-primary-hover)] transition-colors"
               >
-                <UserPlus size={15} /> 가입하기
+                30초 만에 시작하기 <ArrowRight size={16} />
               </Link>
               <Link
-                href="/sessions"
-                className="col-span-2 sm:col-auto inline-flex items-center justify-center gap-1.5 h-11 sm:h-[46px] px-4 sm:px-5 rounded-md text-[14px] font-medium text-white/90 sm:hover:text-white hover:bg-white/10 transition-colors"
+                href="/login"
+                className="inline-flex items-center justify-center h-12 sm:h-[52px] px-2 sm:px-3 text-[14px] font-medium text-[var(--color-text-secondary)] sm:hover:text-[var(--color-text)]"
               >
-                세션 일정 보기 <ArrowRight size={14} />
+                이미 회원이에요 →
               </Link>
             </div>
-
-            {/* Quick stats row */}
-            {stats && (
-              <div className="mt-7 md:mt-9 grid grid-cols-3 gap-2 md:gap-6 max-w-[520px]">
-                <HeroStat value={stats.activeMembers} suffix="명" label="함께하는 러너" />
-                <HeroStat value={stats.upcomingSessionsThisWeek} suffix="개" label="이번 주 세션" />
-                <HeroStat value={stats.attendedLast30Days} suffix="회" label="30일 출석" />
-              </div>
-            )}
           </div>
         </div>
       </section>
 
-      {/* ── UPCOMING SESSIONS (primary content, app-like list) ── */}
-      <section className="max-w-[1200px] mx-auto px-4 md:px-6 py-8 md:py-12">
-        <div className="flex items-end justify-between gap-3 mb-4 md:mb-5">
-          <div>
-            <h2 className="text-[18px] md:text-[22px] font-bold text-[var(--color-text)] tracking-tight">
+      {/*
+        ── UPCOMING SESSIONS ──
+        랜딩의 진짜 콘텐츠. 가입 전에도 일정·자리를 확인할 수 있다는 가치.
+        섹션 헤더 톤 다운 (서브카피 줄임), 카드 그리드 그대로 유지.
+      */}
+      <section className="bg-white border-t border-[var(--color-border-subtle)]">
+        <div className="max-w-[1200px] mx-auto px-5 md:px-6 py-10 md:py-16">
+          <div className="flex items-end justify-between gap-3 mb-5 md:mb-7">
+            <h2 className="text-[20px] md:text-[26px] font-bold tracking-[-0.01em] text-[var(--color-text)]">
               다가오는 세션
             </h2>
-            <p className="mt-0.5 text-[12px] md:text-[13px] text-[var(--color-text-muted)]">
-              가입 전에도 일정·위치를 확인할 수 있어요
-            </p>
-          </div>
-          <Link
-            href="/sessions"
-            className="shrink-0 text-[12.5px] md:text-[13px] font-medium text-[var(--color-primary)] active:underline sm:hover:underline inline-flex items-center gap-1"
-          >
-            전체 일정 <ArrowRight size={12} />
-          </Link>
-        </div>
-
-        {sessions.length === 0 ? (
-          <div className="border border-dashed border-[var(--color-border)] rounded-md p-8 text-center">
-            <Calendar size={22} className="mx-auto mb-2 text-[var(--color-text-muted)]" />
-            <p className="text-[13.5px] text-[var(--color-text)] font-medium">예정된 세션이 없어요</p>
-            <p className="text-[12px] text-[var(--color-text-muted)] mt-1">
-              곧 새로운 세션이 업데이트될 예정입니다.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3">
-            {sessions.slice(0, 4).map(s => (
-              <SessionPreviewCard key={s.id} session={s} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* ── QUICK ACTIONS (app-launcher style) ── */}
-      <section className="bg-[var(--color-bg-subtle)] border-y border-[var(--color-border)]">
-        <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-8 md:py-12">
-          <h2 className="text-[18px] md:text-[22px] font-bold text-[var(--color-text)] tracking-tight mb-4 md:mb-5">
-            빠른 시작
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 md:gap-3">
-            <QuickLink
+            <Link
               href="/sessions"
-              icon={Calendar}
-              title="세션 일정"
-              description="다가오는 세션 미리보기"
-            />
-            <QuickLink
-              href="/about"
-              icon={MapPin}
-              title="운영 장소"
-              description="러닝 스팟·시간표"
-            />
-            <QuickLink
-              href="/login?mode=register"
-              icon={UserPlus}
-              title="가입하기"
-              description="30초면 완료"
-              highlight
-            />
-            <QuickLink
-              href="/login"
-              icon={QrCode}
-              title="로그인"
-              description="예약·QR 출석·수강권"
-            />
+              className="shrink-0 text-[13px] md:text-[13.5px] font-medium text-[var(--color-primary)] inline-flex items-center gap-1 active:underline sm:hover:underline"
+            >
+              전체 보기 <ArrowRight size={12} />
+            </Link>
           </div>
+
+          {sessions.length === 0 ? (
+            <div className="border border-dashed border-[var(--color-border)] rounded-md p-10 text-center">
+              <Calendar size={22} className="mx-auto mb-2 text-[var(--color-text-muted)]" />
+              <p className="text-[13.5px] text-[var(--color-text)] font-medium">예정된 세션이 없어요</p>
+              <p className="text-[12px] text-[var(--color-text-muted)] mt-1">
+                곧 새 세션이 업데이트됩니다.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3">
+              {sessions.slice(0, 4).map(s => (
+                <SessionPreviewCard key={s.id} session={s} />
+              ))}
+            </div>
+          )}
         </div>
       </section>
 
-      {/* ── Footer CTA (subtle) ── */}
-      <section className="max-w-[1000px] mx-auto px-4 md:px-6 py-10 md:py-14 text-center">
-        <h3 className="text-[18px] md:text-[22px] font-bold text-[var(--color-text)] tracking-tight">
-          오늘, 첫 걸음을 내딛어볼까요?
-        </h3>
-        <p className="mt-2 text-[13px] md:text-[14px] text-[var(--color-text-muted)] max-w-[460px] mx-auto">
-          가입하고 수강권을 등록하면 바로 원하는 세션을 예약할 수 있어요.
-        </p>
-        <div className="mt-5 flex flex-col sm:flex-row gap-2 sm:gap-2.5 justify-center max-w-[320px] sm:max-w-none mx-auto">
-          <Link
-            href="/login?mode=register"
-            className="inline-flex items-center justify-center gap-1.5 h-11 px-5 rounded-md text-[14px] font-semibold bg-[var(--color-primary)] text-white active:opacity-90 sm:hover:bg-[var(--color-primary-hover)] transition-colors"
-          >
-            무료로 가입하기 <ArrowRight size={14} />
-          </Link>
-          <Link
-            href="/login"
-            className="inline-flex items-center justify-center gap-1.5 h-11 px-5 rounded-md text-[14px] font-semibold border border-[var(--color-border)] text-[var(--color-text)] active:bg-[var(--color-bg-hover)] sm:hover:bg-[var(--color-bg-hover)] transition-colors"
-          >
-            이미 회원이에요
-          </Link>
+      {/*
+        ── STATS STRIP ──
+        토스 스타일의 절제된 숫자 한 줄. 자랑성 헤딩 없이 그냥 숫자만.
+        통계가 비어 있으면 섹션 자체를 렌더하지 않는다.
+      */}
+      {stats && (stats.activeMembers > 0 || stats.upcomingSessionsThisWeek > 0) && (
+        <section className="bg-[var(--color-bg-subtle)] border-y border-[var(--color-border-subtle)]">
+          <div className="max-w-[1200px] mx-auto px-5 md:px-6 py-8 md:py-10">
+            <div className="grid grid-cols-3 gap-3 md:gap-10">
+              <Stat value={stats.activeMembers} suffix="명" label="함께하는 러너" />
+              <Stat value={stats.upcomingSessionsThisWeek} suffix="개" label="이번 주 세션" />
+              <Stat value={stats.attendedLast30Days} suffix="회" label="최근 30일 출석" />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/*
+        ── HOW IT WORKS ──
+        "빠른 시작" 4개 카드 → 3-step 절차 안내로 교체.
+        토스 패턴: 굵직한 숫자 + 짧은 헤드라인 + 한 줄 보조 설명.
+        세번째 단계 끝에 단일 CTA로 다시 컨버전 회수.
+      */}
+      <section className="bg-white">
+        <div className="max-w-[1200px] mx-auto px-5 md:px-6 py-12 md:py-20">
+          <h2 className="text-[20px] md:text-[26px] font-bold tracking-[-0.01em] text-[var(--color-text)]">
+            이렇게 사용해요
+          </h2>
+          <p className="mt-2 text-[13.5px] md:text-[14.5px] text-[var(--color-text-muted)]">
+            세 단계면 첫 세션 예약까지 끝나요.
+          </p>
+
+          <ol className="mt-7 md:mt-10 grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-5">
+            <Step
+              n={1}
+              title="가입하고 수강권 등록"
+              desc="휴대폰 번호로 30초 만에 가입하고, 보유한 수강권을 등록해요."
+            />
+            <Step
+              n={2}
+              title="원하는 세션 예약"
+              desc="EBW · 슬로우 롱런 · 마라톤 세션 일정을 보고 자리를 잡아요."
+            />
+            <Step
+              n={3}
+              title="현장에서 QR 출석"
+              desc="입장 시 QR을 스캔하면 출석이 자동 기록돼요."
+            />
+          </ol>
+
+          <div className="mt-8 md:mt-10">
+            <Link
+              href="/login?mode=register"
+              className="inline-flex items-center justify-center gap-1.5 h-12 px-6 rounded-md text-[14.5px] font-semibold bg-[var(--color-primary)] text-white active:bg-[var(--color-primary-active)] sm:hover:bg-[var(--color-primary-hover)] transition-colors"
+            >
+              지금 시작하기 <ArrowRight size={15} />
+            </Link>
+          </div>
         </div>
       </section>
     </PublicLayout>
@@ -221,56 +208,40 @@ export default async function LandingPage() {
 // Prevents "Hydration mismatch" warnings from value.toLocaleString().
 const koNumber = new Intl.NumberFormat('ko-KR');
 
-function HeroStat({ value, suffix, label }: { value: number; suffix: string; label: string }) {
+function Stat({ value, suffix, label }: { value: number; suffix: string; label: string }) {
   return (
     <div>
-      <p className="text-[22px] md:text-[28px] font-bold tabular-nums leading-none">
+      <p className="text-[22px] md:text-[28px] font-bold tabular-nums leading-none text-[var(--color-text)] tracking-[-0.01em]">
         {koNumber.format(value)}
-        <span className="text-[13px] md:text-[15px] font-medium text-white/70 ml-0.5">{suffix}</span>
+        <span className="text-[13px] md:text-[15px] font-medium text-[var(--color-text-muted)] ml-0.5">
+          {suffix}
+        </span>
       </p>
-      <p className="text-[11px] md:text-[12px] text-white/70 mt-1">{label}</p>
+      <p className="text-[11.5px] md:text-[12.5px] text-[var(--color-text-muted)] mt-1.5">{label}</p>
     </div>
   );
 }
 
-function QuickLink({
-  href,
-  icon: Icon,
-  title,
-  description,
-  highlight,
-}: {
-  href: string;
-  icon: typeof Calendar;
-  title: string;
-  description: string;
-  highlight?: boolean;
-}) {
+function Step({ n, title, desc }: { n: number; title: string; desc: string }) {
   return (
-    <Link
-      href={href}
-      className={`group flex items-start gap-2.5 sm:gap-3 p-3 sm:p-4 rounded-lg border transition-all active:scale-[0.98] ${
-        highlight
-          ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white sm:hover:opacity-95'
-          : 'bg-white border-[var(--color-border)] sm:hover:border-[var(--color-primary-border)] sm:hover:shadow-sm'
-      }`}
-    >
-      <div
-        className={`shrink-0 w-9 h-9 sm:w-10 sm:h-10 rounded-md flex items-center justify-center ${
-          highlight ? 'bg-white/15' : 'bg-[var(--color-primary-bg)]'
-        }`}
+    <li className="relative pl-12 md:pl-0 md:pt-0">
+      {/*
+        모바일: 좌측에 큰 숫자, 데스크톱: 위쪽에 큰 숫자.
+        토스 스타일대로 숫자는 컬러풀하게 (primary), 그 외는 무채색.
+      */}
+      <span
+        className="absolute left-0 top-0 md:static md:block w-9 h-9 md:w-auto md:h-auto md:mb-3 rounded-full md:rounded-none bg-[var(--color-primary-bg)] md:bg-transparent text-[var(--color-primary)] inline-flex items-center justify-center md:items-start md:justify-start text-[14px] md:text-[28px] font-bold tabular-nums tracking-tight"
+        aria-hidden
       >
-        <Icon size={16} className={highlight ? 'text-white' : 'text-[var(--color-primary)]'} />
-      </div>
-      <div className="min-w-0">
-        <p className={`text-[13.5px] sm:text-[14px] font-semibold leading-tight ${highlight ? 'text-white' : 'text-[var(--color-text)]'}`}>
-          {title}
-        </p>
-        <p className={`text-[11.5px] sm:text-[12px] mt-0.5 leading-snug ${highlight ? 'text-white/80' : 'text-[var(--color-text-muted)]'}`}>
-          {description}
-        </p>
-      </div>
-    </Link>
+        {n}
+      </span>
+      <p className="text-[15px] md:text-[16px] font-semibold text-[var(--color-text)] leading-tight">
+        {title}
+      </p>
+      <p className="mt-1.5 text-[13px] md:text-[13.5px] text-[var(--color-text-secondary)] leading-relaxed">
+        {desc}
+      </p>
+    </li>
   );
 }
 
