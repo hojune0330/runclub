@@ -57,6 +57,16 @@ services:
         sync: false             # e.g. "장호준 코치"
       - key: SEED_ADMIN_EMAIL
         sync: false             # optional
+      # ── Toss Payments (production payment gateway) ─────────────────
+      # Set live_ck_* / live_sk_* only after Toss review and test payments.
+      # NEXT_PUBLIC_APP_URL must be the public HTTPS origin, e.g.
+      # https://runclub-manager.onrender.com (no trailing slash).
+      - key: NEXT_PUBLIC_TOSS_CLIENT_KEY
+        sync: false
+      - key: TOSS_SECRET_KEY
+        sync: false
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
       # ── Google Sheets sync (manager-friendly mirror) ───────────────
       # When false (default), every sync call is a no-op. Flip to 'true'
       # after running scripts/sheet-init.mjs and inviting the service

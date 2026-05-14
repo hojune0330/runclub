@@ -31,6 +31,23 @@ import { mapPassRow } from '@/lib/sheets-mappers';
 //   재발급을 거절합니다 (무료 무한 발급 차단).
 // ─────────────────────────────────────────────────────────────────────
 
+function resolveAppOrigin(req: NextRequest): string | null {
+  const configured = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, '');
+  if (configured) return configured;
+
+  const forwardedProto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+  const forwardedHost = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
+  const host = forwardedHost || req.headers.get('host')?.trim();
+  if (host) {
+    const proto = forwardedProto || (req.nextUrl.protocol ? req.nextUrl.protocol.replace(':', '') : 'https');
+    return `${proto}://${host}`;
+  }
+
+  return req.nextUrl.origin && req.nextUrl.origin !== 'null'
+    ? req.nextUrl.origin.replace(/\/+$/, '')
+    : null;
+}
+
 export async function POST(req: NextRequest) {
   const auth = await getAuthFromRequest(req);
   if (!auth) return unauthorizedResponse();
@@ -158,7 +175,19 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ── 유료 흐름: 기존과 동일하게 pending row 생성 후 SDK 파라미터 반환 ──
+    // ── 유료 흐름: pending row 생성 후 SDK 파라미터 반환 ──
+    // Toss successUrl/failUrl은 절대 HTTPS URL이어야 하므로 운영 환경 설정을
+    // 먼저 검증한다. NEXT_PUBLIC_APP_URL 미설정 시 프록시 헤더/요청 Host로
+    // 보완하지만, Render 운영에서는 명시 설정하는 것이 심사·운영 안전성이 높다.
+    const tossClientKey = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY?.trim() || null;
+    const appOrigin = resolveAppOrigin(req);
+    if (!tossClientKey || !appOrigin) {
+      return NextResponse.json(
+        { error: '온라인 결제 환경변수가 설정되지 않았습니다. 운영자에게 문의해주세요.' },
+        { status: 500 }
+      );
+    }
+
     await dbRun(`
       INSERT INTO pending_payments (order_id, member_id, product_id, amount, status)
       VALUES ($1, $2, $3, $4, 'pending')
@@ -174,10 +203,10 @@ export async function POST(req: NextRequest) {
       customerMobilePhone: member.phone?.replace(/-/g, '') || undefined,
       // Public client key for Toss SDK init (server passes through so the
       // client doesn't need to read its own env directly).
-      tossClientKey: process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? null,
+      tossClientKey,
       // Convenience redirect URLs the client should use as successUrl / failUrl.
-      successUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/payments/success`,
-      failUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/payments/fail`,
+      successUrl: `${appOrigin}/payments/success`,
+      failUrl: `${appOrigin}/payments/fail`,
     });
   } catch (error: any) {
     console.error('[payments/checkout] error:', error);

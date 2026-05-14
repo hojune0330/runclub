@@ -348,6 +348,14 @@ export async function POST(req: NextRequest) {
   }
 }
 
+function getSessionStartMs(sessionDate: string | null | undefined, startTime: string | null | undefined): number | null {
+  if (!sessionDate) return null;
+  const rawDate = String(sessionDate).slice(0, 10);
+  const rawTime = startTime || '00:00';
+  const ms = new Date(`${rawDate}T${rawTime}:00`).getTime();
+  return Number.isNaN(ms) ? null : ms;
+}
+
 // PUT /api/reservations - Update status (cancel, attend, noshow, restore)
 //
 // PR-D1: 관리자가 모든 상태 전이를 자유롭게 할 수 있도록 확장.
@@ -393,7 +401,9 @@ export async function PUT(req: NextRequest) {
       return forbiddenResponse();
     }
 
-    // Members can only cancel their own (and only from reserved state)
+    // Members can only cancel their own (and only from reserved state) before
+    // the session starts. After start time, use correction requests/admin tools
+    // so refund/no-show handling stays consistent with the public policy.
     if (auth.role !== 'admin') {
       if (status !== 'cancelled') {
         return forbiddenResponse('회원은 예약 취소만 가능합니다');
@@ -401,6 +411,17 @@ export async function PUT(req: NextRequest) {
       if (reservation.status !== 'reserved') {
         return NextResponse.json(
           { error: '예약 상태인 경우에만 취소할 수 있습니다. 그 외엔 정정 요청을 이용해주세요.' },
+          { status: 400 }
+        );
+      }
+      const session = await dbGet<{ date: string; start_time: string | null }>(
+        'SELECT date, start_time FROM sessions WHERE id = $1',
+        [reservation.session_id]
+      );
+      const sessionStartMs = getSessionStartMs(session?.date, session?.start_time);
+      if (sessionStartMs != null && Date.now() >= sessionStartMs) {
+        return NextResponse.json(
+          { error: '세션 시작 이후에는 직접 취소할 수 없습니다. 정정 요청을 이용해주세요.' },
           { status: 400 }
         );
       }
