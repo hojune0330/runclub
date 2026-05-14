@@ -51,6 +51,10 @@ export type AuditAction =
   | 'notice.create'
   | 'notice.delete'
   | 'reservation.update_status'
+  | 'reservation.force_add'
+  | 'reservation.bulk_noshow'
+  | 'correction_request.approve'
+  | 'correction_request.reject'
   | 'qr.generate'
   // PR-C1: 세션 태그 마스터 CRUD
   | 'tag_create'

@@ -534,6 +534,61 @@ async function initSchema(): Promise<void> {
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_audit_admin   ON admin_audit_log(admin_id)`);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_audit_target  ON admin_audit_log(target_type, target_id)`);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_audit_created ON admin_audit_log(created_at DESC)`);
+
+  // ─── PR-D1: 회원 정정 요청 (correction_requests) ───
+  //
+  // 회원이 직접 처리할 수 없는 케이스(이미 출석/노쇼 확정, 마감 시간 경과 등)
+  // 를 위한 셀프-서비스 요청 큐. 관리자 인박스에서 1-클릭 승인/거절.
+  //
+  // reason_code 종류:
+  //   - attended_marked_noshow  : 참석했는데 노쇼로 표시됨
+  //   - noshow_marked_attended  : 참석 안 했는데 출석으로 표시됨
+  //   - want_cancel             : 마감 후이지만 예약 취소 요청
+  //   - swapped_with_other      : 다른 회원과 예약이 바뀜
+  //   - other                   : 기타 (detail 필수)
+  //
+  // SLA 정책(앱 표시용):
+  //   - 세션 시작 +48시간 이내에만 요청 가능 (UI 측 가드)
+  //   - 그 외엔 관리자에게 직접 문의
+  //
+  // 상태 흐름: pending → approved | rejected | withdrawn(회원이 철회)
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS correction_requests (
+      id              TEXT PRIMARY KEY,
+      reservation_id  TEXT NOT NULL REFERENCES reservations(id) ON DELETE CASCADE,
+      member_id       TEXT NOT NULL REFERENCES members(id),
+      session_id      TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+      reason_code     TEXT NOT NULL CHECK (reason_code IN (
+                        'attended_marked_noshow',
+                        'noshow_marked_attended',
+                        'want_cancel',
+                        'swapped_with_other',
+                        'other'
+                      )),
+      detail          TEXT,
+      status          TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','approved','rejected','withdrawn')),
+      resolution_note TEXT,
+      requested_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_at     TIMESTAMPTZ,
+      resolved_by     TEXT REFERENCES members(id),
+      /* 승인 시 어떤 상태로 전환했는지 기록 (rollback / 감사용) */
+      applied_status  TEXT
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_correction_status  ON correction_requests(status)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_correction_member  ON correction_requests(member_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_correction_session ON correction_requests(session_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_correction_pending_created
+                 ON correction_requests(status, requested_at DESC)`);
+
+  // 동일 reservation 에 pending 요청은 1건만 허용 — 회원이 같은 건으로
+  // 여러 번 요청해 인박스가 더러워지는 것 방지.
+  await dbRun(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_correction_pending_per_reservation
+      ON correction_requests(reservation_id)
+      WHERE status = 'pending'
+  `);
 }
 
 /**

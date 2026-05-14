@@ -16,8 +16,39 @@ interface AppState {
   // PR-A: 세션 태그 마스터 (어드민 CRUD + 회원 표시용)
   // 회원 화면도 태그 라벨/색상을 표시하므로 모든 사용자에게 로드.
   sessionTags: SessionTag[];
+  // PR-D1: 정정 요청 — 회원은 본인 요청, 관리자는 전체 인박스.
+  correctionRequests: CorrectionRequestDto[];
   currentMember: Member;
   loading: boolean;
+}
+
+// PR-D1: 정정 요청 DTO (회원/관리자 공용)
+export interface CorrectionRequestDto {
+  id: string;
+  reservationId: string;
+  memberId: string;
+  memberName: string;
+  memberPhone: string | null;
+  sessionId: string;
+  sessionName: string;
+  sessionDate: string;
+  sessionStartTime: string;
+  sessionType: string;
+  reservationStatus: 'reserved' | 'attended' | 'noshow' | 'cancelled';
+  reasonCode:
+    | 'attended_marked_noshow'
+    | 'noshow_marked_attended'
+    | 'want_cancel'
+    | 'swapped_with_other'
+    | 'other';
+  detail: string | null;
+  status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
+  resolutionNote: string | null;
+  appliedStatus: string | null;
+  requestedAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  resolvedByName: string | null;
 }
 
 interface AppActions {
@@ -27,12 +58,29 @@ interface AppActions {
   refreshNotices: () => Promise<void>;
   refreshMembers: () => Promise<void>;
   refreshSessionTags: () => Promise<void>;
+  refreshCorrectionRequests: () => Promise<void>;
   refreshAll: () => Promise<void>;
 
   // PR-A: 태그 마스터 CRUD (어드민 전용 — 서버에서 강제)
   createSessionTag: (data: { id: string; label: string; color?: string; icon?: string; displayOrder?: number }) => Promise<boolean>;
   updateSessionTag: (data: { id: string; label?: string; color?: string | null; icon?: string | null; displayOrder?: number; isActive?: boolean }) => Promise<boolean>;
   deleteSessionTag: (id: string) => Promise<boolean>;
+
+  // PR-D1: 정정 요청 액션
+  createCorrectionRequest: (data: { reservationId: string; reasonCode: string; detail?: string }) => Promise<boolean>;
+  withdrawCorrectionRequest: (id: string) => Promise<boolean>;
+  approveCorrectionRequest: (id: string, params?: { targetStatus?: 'reserved' | 'attended' | 'noshow' | 'cancelled'; note?: string }) => Promise<boolean>;
+  rejectCorrectionRequest: (id: string, note: string) => Promise<boolean>;
+
+  // PR-D1: 관리자 — 예약자 강제 추가 + 노쇼 일괄 처리
+  forceAddReservation: (params: {
+    sessionId: string;
+    memberId: string;
+    force?: boolean;
+    skipPass?: boolean;
+    initialStatus?: 'reserved' | 'attended';
+  }) => Promise<{ ok: boolean; status?: 'reserved' | 'attended' }>;
+  bulkMarkNoshow: (sessionId: string) => Promise<number>;
 
   // PR-C2: 자동 대기 전환을 알리기 위해 결과 객체로 확장.
   // 호출 측은 ok 만 봐도 동작하고, autoWaitlisted=true 면 정원 마감으로
@@ -119,6 +167,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [passProducts, setPassProducts] = useState<PassProduct[]>([]);
   const [sessionTags, setSessionTags] = useState<SessionTag[]>([]);
+  const [correctionRequests, setCorrectionRequests] = useState<CorrectionRequestDto[]>([]);
   const [loading, setLoading] = useState(true);
 
   const currentMember: Member = user ? {
@@ -226,6 +275,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [handleAuthError]);
 
+  // PR-D1: 정정 요청 로드. 회원은 본인 요청만, 관리자는 전체(pending 우선).
+  const refreshCorrectionRequests = useCallback(async () => {
+    try {
+      const userId = userIdRef.current;
+      if (!userId) return;
+      const data = await api.correctionRequests.list();
+      setCorrectionRequests(data?.requests ?? []);
+    } catch (e) {
+      if (!handleAuthError(e)) console.error('Failed to refresh correction requests:', e);
+    }
+  }, [handleAuthError]);
+
   const refreshAll = useCallback(async () => {
     setLoading(true);
     try {
@@ -236,13 +297,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         refreshNotices(),
         refreshMembers(),
         refreshSessionTags(),
+        refreshCorrectionRequests(),
       ]);
     } catch (e) {
       console.error('Failed to refresh data:', e);
     } finally {
       setLoading(false);
     }
-  }, [refreshSessions, refreshReservations, refreshPasses, refreshNotices, refreshMembers, refreshSessionTags]);
+  }, [refreshSessions, refreshReservations, refreshPasses, refreshNotices, refreshMembers, refreshSessionTags, refreshCorrectionRequests]);
 
   // Initial data load — run once per user login
   useEffect(() => {
@@ -579,6 +641,89 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshPasses, handleAuthError]);
 
+  // ─── PR-D1: Correction request actions ───
+  const createCorrectionRequest = useCallback(async (data: { reservationId: string; reasonCode: string; detail?: string }) => {
+    try {
+      await api.correctionRequests.create(data);
+      await refreshCorrectionRequests();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshCorrectionRequests, handleAuthError]);
+
+  const withdrawCorrectionRequest = useCallback(async (id: string) => {
+    try {
+      await api.correctionRequests.withdraw(id);
+      await refreshCorrectionRequests();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshCorrectionRequests, handleAuthError]);
+
+  const approveCorrectionRequest = useCallback(async (
+    id: string,
+    params?: { targetStatus?: 'reserved' | 'attended' | 'noshow' | 'cancelled'; note?: string }
+  ) => {
+    try {
+      await api.correctionRequests.approve(id, params);
+      // 승인 시 reservations / passes 도 같이 갱신
+      await Promise.all([
+        refreshCorrectionRequests(),
+        refreshReservations(),
+        refreshPasses(),
+        refreshSessions(),
+      ]);
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshCorrectionRequests, refreshReservations, refreshPasses, refreshSessions, handleAuthError]);
+
+  const rejectCorrectionRequest = useCallback(async (id: string, note: string) => {
+    try {
+      await api.correctionRequests.reject(id, note);
+      await refreshCorrectionRequests();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshCorrectionRequests, handleAuthError]);
+
+  // ─── PR-D1: 관리자 — 예약자 강제 추가 + 노쇼 일괄 ───
+  const forceAddReservation = useCallback(async (params: {
+    sessionId: string;
+    memberId: string;
+    force?: boolean;
+    skipPass?: boolean;
+    initialStatus?: 'reserved' | 'attended';
+  }) => {
+    try {
+      const res = await api.reservations.forceAdd(params);
+      await Promise.all([refreshSessions(), refreshReservations(), refreshPasses()]);
+      return { ok: true, status: res?.status };
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return { ok: false };
+    }
+  }, [refreshSessions, refreshReservations, refreshPasses, handleAuthError]);
+
+  const bulkMarkNoshow = useCallback(async (sessionId: string) => {
+    try {
+      const res = await api.reservations.bulkNoshow(sessionId);
+      await Promise.all([refreshSessions(), refreshReservations()]);
+      return res?.affected ?? 0;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return 0;
+    }
+  }, [refreshSessions, refreshReservations, handleAuthError]);
+
   // ─── PR-A: Session tag CRUD actions (admin only) ───
   const createSessionTag = useCallback(async (data: {
     id: string; label: string; color?: string; icon?: string; displayOrder?: number;
@@ -619,8 +764,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [refreshSessionTags, handleAuthError]);
 
   const value = {
-    sessions, members, memberPasses, reservations, waitlistEntries, notices, passProducts, sessionTags, currentMember, loading,
-    refreshSessions, refreshReservations, refreshPasses, refreshNotices, refreshMembers, refreshSessionTags, refreshAll,
+    sessions, members, memberPasses, reservations, waitlistEntries, notices, passProducts, sessionTags, correctionRequests, currentMember, loading,
+    refreshSessions, refreshReservations, refreshPasses, refreshNotices, refreshMembers, refreshSessionTags, refreshCorrectionRequests, refreshAll,
     makeReservation, cancelReservation, updateReservationStatus,
     joinWaitlist, leaveWaitlist,
     createSession, updateSession, deleteSession,
@@ -631,6 +776,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     extendMemberPass, adjustMemberPass, setMemberPassPayment, setMemberPassMemo,
     createPassProduct, updatePassProduct, deactivatePassProduct, deletePassProduct,
     createSessionTag, updateSessionTag, deleteSessionTag,
+    createCorrectionRequest, withdrawCorrectionRequest, approveCorrectionRequest, rejectCorrectionRequest,
+    forceAddReservation, bulkMarkNoshow,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

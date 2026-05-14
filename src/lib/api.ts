@@ -118,10 +118,104 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ sessionId, memberId }),
       }),
+    // PR-D1: 관리자 강제 추가 — 정원 초과/수강권 미차감/즉시 출석 가능.
+    forceAdd: (params: {
+      sessionId: string;
+      memberId: string;
+      force?: boolean;
+      skipPass?: boolean;
+      initialStatus?: 'reserved' | 'attended';
+    }) =>
+      request<{
+        id: string;
+        success: boolean;
+        status: 'reserved' | 'attended';
+        forcedByAdmin: boolean;
+      }>('/reservations', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      }),
     updateStatus: (reservationId: string, status: string) =>
-      request<any>('/reservations', {
+      request<{
+        success: boolean;
+        previousStatus?: string;
+        status?: string;
+        passDelta?: number;
+        noop?: boolean;
+      }>('/reservations', {
         method: 'PUT',
         body: JSON.stringify({ reservationId, status }),
+      }),
+    // PR-D1: 세션의 남은 reserved 전원 → noshow.
+    bulkNoshow: (sessionId: string) =>
+      request<{ success: boolean; affected: number }>('/reservations/bulk-noshow', {
+        method: 'POST',
+        body: JSON.stringify({ sessionId }),
+      }),
+  },
+
+  // PR-D1: 회원 정정 요청 (correction requests).
+  // 회원: 본인 요청 생성/조회/철회
+  // 관리자: 전체 인박스 + 승인/거절
+  correctionRequests: {
+    list: (params?: { status?: 'pending' | 'approved' | 'rejected' | 'withdrawn'; limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.status) q.set('status', params.status);
+      if (params?.limit) q.set('limit', String(params.limit));
+      const qs = q.toString() ? `?${q.toString()}` : '';
+      return request<{
+        requests: Array<{
+          id: string;
+          reservationId: string;
+          memberId: string;
+          memberName: string;
+          memberPhone: string | null;
+          sessionId: string;
+          sessionName: string;
+          sessionDate: string;
+          sessionStartTime: string;
+          sessionType: string;
+          reservationStatus: 'reserved' | 'attended' | 'noshow' | 'cancelled';
+          reasonCode:
+            | 'attended_marked_noshow'
+            | 'noshow_marked_attended'
+            | 'want_cancel'
+            | 'swapped_with_other'
+            | 'other';
+          detail: string | null;
+          status: 'pending' | 'approved' | 'rejected' | 'withdrawn';
+          resolutionNote: string | null;
+          appliedStatus: string | null;
+          requestedAt: string;
+          resolvedAt: string | null;
+          resolvedBy: string | null;
+          resolvedByName: string | null;
+        }>;
+        pendingCount: number;
+      }>(`/correction-requests${qs}`);
+    },
+    create: (data: { reservationId: string; reasonCode: string; detail?: string }) =>
+      request<{ id: string; success: boolean }>('/correction-requests', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    approve: (id: string, params?: { targetStatus?: 'reserved' | 'attended' | 'noshow' | 'cancelled'; note?: string }) =>
+      request<{ success: boolean; previousStatus?: string; status?: string; passDelta?: number; noop?: boolean }>(
+        '/correction-requests',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ id, action: 'approve', ...(params || {}) }),
+        }
+      ),
+    reject: (id: string, note: string) =>
+      request<{ success: boolean }>('/correction-requests', {
+        method: 'PATCH',
+        body: JSON.stringify({ id, action: 'reject', note }),
+      }),
+    withdraw: (id: string) =>
+      request<{ success: boolean }>('/correction-requests', {
+        method: 'PATCH',
+        body: JSON.stringify({ id, action: 'withdraw' }),
       }),
   },
 

@@ -4,12 +4,13 @@ import { useState, useMemo, useEffect } from 'react';
 import {
   Plus, X, Search, Calendar, Clock, MapPin, Users, Trash2, CalendarRange,
   Pencil, Link as LinkIcon, Camera, MessageCircle, Image as ImageIcon, Sparkles, Info,
+  UserPlus, AlertTriangle, Inbox, ChevronRight, Check, Ban,
 } from 'lucide-react';
-import { useApp } from '@/store/AppContext';
+import { useApp, type CorrectionRequestDto } from '@/store/AppContext';
 import { sessionTypeConfig, reservationStatusConfig } from '@/lib/config';
 import { formatKoreanDate, cn, format, isSessionFull } from '@/lib/utils';
 import { Modal, FormField, useToast } from '@/components/ui';
-import type { Session, SessionType, SessionRibbon } from '@/types';
+import type { Session, SessionType, SessionRibbon, ReservationStatus } from '@/types';
 
 // ─── Ribbon presets shared between admin editor and member view ──────────
 // Keeping these in one place ensures the badges members see are exactly the
@@ -32,9 +33,12 @@ const ribbonEmoji = (id?: SessionRibbon | null) =>
 
 export default function SessionManagement() {
   const {
-    sessions, reservations,
+    sessions, reservations, members,
+    correctionRequests,
     createSession, updateSession, deleteSession,
-    updateReservationStatus, cancelReservation, refreshSessions,
+    updateReservationStatus, refreshSessions,
+    forceAddReservation, bulkMarkNoshow,
+    approveCorrectionRequest, rejectCorrectionRequest,
   } = useApp();
   const toast = useToast();
 
@@ -47,6 +51,10 @@ export default function SessionManagement() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [showBulkForm, setShowBulkForm] = useState(false);
+  // 정정 요청 인박스 / 예약자 강제 추가 / 노쇼 일괄 처리 — Phase A 관리자 도구
+  const [showCorrectionInbox, setShowCorrectionInbox] = useState(false);
+  const [showForceAdd, setShowForceAdd] = useState(false);
+  const [bulkNoshowBusy, setBulkNoshowBusy] = useState(false);
   const [bulkFrom, setBulkFrom] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [bulkTo, setBulkTo] = useState(format(new Date(Date.now() + 60 * 86400000), 'yyyy-MM-dd'));
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -82,12 +90,35 @@ export default function SessionManagement() {
 
   const liveSession = selectedSession ? sessions.find(s => s.id === selectedSession.id) : null;
 
+  // PR-SM1: 'cancelled' 도 노출한다 — 관리자가 취소된 예약을 다시 살릴 수
+  // 있어야 하므로(수강생 정정 요청을 받아 reserved → cancelled 로 잘못 처리한
+  // 경우 등) 4-state 토글의 대상이 되어야 한다. 단 정렬에서 활성 상태를
+  // 위로 올려, 취소된 줄이 시야 맨 위를 차지하지 않도록 한다.
   const sessionReservations = useMemo(() => {
     if (!liveSession) return [];
+    const order: Record<ReservationStatus, number> = {
+      reserved: 0, attended: 1, noshow: 2, cancelled: 3,
+    };
     return reservations
-      .filter(r => r.sessionId === liveSession.id && r.status !== 'cancelled')
-      .sort((a, b) => a.memberName.localeCompare(b.memberName));
+      .filter(r => r.sessionId === liveSession.id)
+      .sort((a, b) => {
+        const o = (order[a.status] ?? 9) - (order[b.status] ?? 9);
+        if (o !== 0) return o;
+        return a.memberName.localeCompare(b.memberName);
+      });
   }, [liveSession, reservations]);
+
+  // 정정 요청 카운트 — 인박스 진입점 배지에서 사용.
+  const pendingCorrectionsTotal = useMemo(
+    () => correctionRequests.filter(c => c.status === 'pending').length,
+    [correctionRequests],
+  );
+  const pendingCorrectionsForSession = useMemo(() => {
+    if (!liveSession) return 0;
+    return correctionRequests.filter(
+      c => c.status === 'pending' && c.sessionId === liveSession.id,
+    ).length;
+  }, [correctionRequests, liveSession]);
 
   const handleCreate = async () => {
     const names: Record<SessionType, string> = {
@@ -121,6 +152,68 @@ export default function SessionManagement() {
     if (liveSession && confirm(`[${liveSession.name}] 세션을 삭제하시겠습니까?\n예약자가 있다면 함께 취소됩니다.`)) {
       await deleteSession(liveSession.id);
       setSelectedSession(null);
+    }
+  };
+
+  // PR-SM1: 4-state 토글 핸들러 — 동일 상태 클릭은 무시, 위험 전환(출석→취소)
+  // 은 confirm 다이얼로그. 자동 환원/차감은 서버(PUT /api/reservations)가
+  // 책임지며, 토스트에 passDelta 를 노출해 관리자가 바로 인지하게 한다.
+  const handleReservationStatusChange = async (
+    reservationId: string,
+    next: ReservationStatus,
+    current: ReservationStatus,
+    memberName: string,
+  ) => {
+    if (next === current) return;
+
+    // 위험도가 높은 전환은 명시적 확인
+    const dangerous =
+      (current === 'attended' && next === 'cancelled') ||
+      (current === 'attended' && next === 'noshow') ||
+      (next === 'cancelled' && current !== 'cancelled');
+
+    if (dangerous) {
+      const labels: Record<ReservationStatus, string> = {
+        reserved: '예약완료', attended: '출석', noshow: '노쇼', cancelled: '취소',
+      };
+      if (!confirm(`${memberName} — ${labels[current]} → ${labels[next]} 로 변경하시겠습니까?`)) return;
+    }
+
+    try {
+      const res = await updateReservationStatus(reservationId, next);
+      const passDelta = (res as any)?.passDelta as number | undefined;
+      const noop = (res as any)?.noop as boolean | undefined;
+      if (noop) return;
+      let extra = '';
+      if (passDelta === 1) extra = ' (수강권 +1 환원)';
+      else if (passDelta === -1) extra = ' (수강권 -1 차감)';
+      toast.success('예약 상태가 변경되었습니다', `${memberName}${extra}`);
+    } catch (e: any) {
+      toast.error('상태 변경 실패', e?.message || '잠시 후 다시 시도해주세요.');
+    }
+  };
+
+  const handleBulkNoshow = async () => {
+    if (!liveSession) return;
+    const reservedCount = reservations.filter(
+      r => r.sessionId === liveSession.id && r.status === 'reserved',
+    ).length;
+    if (reservedCount === 0) {
+      toast.info('대상이 없습니다', '예약 상태인 회원이 없습니다.');
+      return;
+    }
+    if (!confirm(
+      `현재 [예약완료] 상태인 ${reservedCount}명을 모두 [노쇼] 처리합니다.\n` +
+      `※ 노쇼는 패널티이므로 수강권은 환원되지 않습니다.\n계속하시겠습니까?`,
+    )) return;
+    setBulkNoshowBusy(true);
+    try {
+      const n = await bulkMarkNoshow(liveSession.id);
+      toast.success('노쇼 일괄 처리 완료', `${n}명을 노쇼 처리했습니다.`);
+    } catch (e: any) {
+      toast.error('일괄 처리 실패', e?.message || '오류가 발생했습니다.');
+    } finally {
+      setBulkNoshowBusy(false);
     }
   };
 
@@ -163,6 +256,20 @@ export default function SessionManagement() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* PR-SM1: 정정 요청 인박스 — 전체 pending 카운트 배지로 즉시 인지 */}
+          <button
+            onClick={() => setShowCorrectionInbox(true)}
+            className="relative flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium text-[var(--color-text-secondary)] bg-white border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-hover)] hover:border-[var(--color-border-strong)] transition-colors"
+            title="회원이 보낸 출석/예약 정정 요청"
+          >
+            <Inbox size={15} />
+            정정 요청
+            {pendingCorrectionsTotal > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 text-[11px] font-semibold text-white bg-[var(--color-danger)] rounded-full tabular-nums">
+                {pendingCorrectionsTotal}
+              </span>
+            )}
+          </button>
           <button
             onClick={() => {
               setBulkResult(null);
@@ -477,10 +584,39 @@ export default function SessionManagement() {
 
             {/* Reservations */}
             <div className="col-span-2 p-5">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
                 <h3 className="text-[14px] font-semibold text-[var(--color-text)]">
                   예약자 목록 <span className="text-[var(--color-text-muted)] font-normal ml-1">{sessionReservations.length}명</span>
+                  {pendingCorrectionsForSession > 0 && (
+                    <button
+                      onClick={() => setShowCorrectionInbox(true)}
+                      className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium text-[var(--color-danger)] bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] hover:opacity-80"
+                      title="이 세션의 정정 요청 보기"
+                    >
+                      <AlertTriangle size={11} />
+                      정정 요청 {pendingCorrectionsForSession}건
+                    </button>
+                  )}
                 </h3>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setShowForceAdd(true)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[12px] text-[var(--color-primary)] border border-[var(--color-primary)]/30 rounded hover:bg-[var(--color-primary)]/10 transition-colors"
+                    title="관리자가 회원을 직접 예약자로 추가"
+                  >
+                    <UserPlus size={12} />
+                    예약자 추가
+                  </button>
+                  <button
+                    onClick={handleBulkNoshow}
+                    disabled={bulkNoshowBusy}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-[12px] text-[var(--color-danger)] border border-[var(--color-danger-border)] rounded hover:bg-[var(--color-danger-bg)] transition-colors disabled:opacity-50"
+                    title="예약완료 → 노쇼로 일괄 변경 (수강권 환원 없음)"
+                  >
+                    <Ban size={12} />
+                    {bulkNoshowBusy ? '처리 중…' : '노쇼 일괄'}
+                  </button>
+                </div>
               </div>
 
               {sessionReservations.length === 0 ? (
@@ -510,23 +646,13 @@ export default function SessionManagement() {
                               {formatKoreanDate(r.reservedAt, 'M.d HH:mm')}
                             </span>
                           </div>
-                          <div className="flex items-center justify-end gap-1 mt-1.5">
-                            {r.status === 'reserved' && (
-                              <>
-                                <button
-                                  onClick={() => updateReservationStatus(r.id, 'attended')}
-                                  className="px-2.5 py-1 text-[12px] text-[var(--color-success)] border border-[var(--color-success-border)] rounded hover:bg-[var(--color-success-bg)]"
-                                >출석</button>
-                                <button
-                                  onClick={() => updateReservationStatus(r.id, 'noshow')}
-                                  className="px-2.5 py-1 text-[12px] text-[var(--color-danger)] border border-[var(--color-danger-border)] rounded hover:bg-[var(--color-danger-bg)]"
-                                >노쇼</button>
-                              </>
-                            )}
-                            <button
-                              onClick={() => { if (confirm('이 예약을 취소하시겠습니까?')) cancelReservation(r.id); }}
-                              className="px-2.5 py-1 text-[12px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text)]"
-                            >취소</button>
+                          {/* PR-SM1: 4-state 토글. 모든 상태에서 어느 방향으로든 전환 가능 */}
+                          <div className="mt-1.5">
+                            <StatusToggle
+                              current={r.status}
+                              size="sm"
+                              onChange={(next) => handleReservationStatusChange(r.id, next, r.status, r.memberName)}
+                            />
                           </div>
                         </li>
                       );
@@ -541,47 +667,33 @@ export default function SessionManagement() {
                           <th className="text-left font-medium px-3 py-2 w-[40px]">#</th>
                           <th className="text-left font-medium px-3 py-2">이름</th>
                           <th className="text-left font-medium px-3 py-2 w-[140px]">예약일시</th>
-                          <th className="text-left font-medium px-3 py-2 w-[90px]">상태</th>
-                          <th className="text-right font-medium px-3 py-2 w-[180px]">처리</th>
+                          <th className="text-left font-medium px-3 py-2">출석 상태 (클릭으로 변경)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {sessionReservations.map((r, i) => {
-                          const statusConf = reservationStatusConfig[r.status];
+                          const isCancelled = r.status === 'cancelled';
                           return (
-                            <tr key={r.id} className="border-b border-[var(--color-border-subtle)] last:border-0 hover:bg-[var(--color-bg-subtle)]">
+                            <tr
+                              key={r.id}
+                              className={cn(
+                                "border-b border-[var(--color-border-subtle)] last:border-0 hover:bg-[var(--color-bg-subtle)]",
+                                isCancelled && "opacity-60",
+                              )}
+                            >
                               <td className="px-3 py-2 text-[var(--color-text-muted)] tabular-nums">{i + 1}</td>
                               <td className="px-3 py-2 text-[var(--color-text)] font-medium">{r.memberName}</td>
                               <td className="px-3 py-2 text-[var(--color-text-secondary)] tabular-nums">
                                 {formatKoreanDate(r.reservedAt, 'M.d HH:mm')}
                               </td>
                               <td className="px-3 py-2">
-                                <span
-                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium"
-                                  style={{ backgroundColor: statusConf.bgColor, color: statusConf.color }}
-                                >
-                                  {statusConf.label}
-                                </span>
-                              </td>
-                              <td className="px-3 py-2 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  {r.status === 'reserved' && (
-                                    <>
-                                      <button
-                                        onClick={() => updateReservationStatus(r.id, 'attended')}
-                                        className="px-2 py-0.5 text-[11px] text-[var(--color-success)] border border-[var(--color-success-border)] rounded hover:bg-[var(--color-success-bg)] transition-colors"
-                                      >출석</button>
-                                      <button
-                                        onClick={() => updateReservationStatus(r.id, 'noshow')}
-                                        className="px-2 py-0.5 text-[11px] text-[var(--color-danger)] border border-[var(--color-danger-border)] rounded hover:bg-[var(--color-danger-bg)] transition-colors"
-                                      >노쇼</button>
-                                    </>
-                                  )}
-                                  <button
-                                    onClick={() => { if (confirm('이 예약을 취소하시겠습니까?')) cancelReservation(r.id); }}
-                                    className="px-2 py-0.5 text-[11px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text)] transition-colors"
-                                  >취소</button>
-                                </div>
+                                {/* PR-SM1: 4-state 토글. 현재 상태는 채움(filled),
+                                    나머지는 윤곽선만 — 한 줄에 모든 전환을 제공한다. */}
+                                <StatusToggle
+                                  current={r.status}
+                                  size="md"
+                                  onChange={(next) => handleReservationStatusChange(r.id, next, r.status, r.memberName)}
+                                />
                               </td>
                             </tr>
                           );
@@ -594,6 +706,66 @@ export default function SessionManagement() {
             </div>
           </div>
         </section>
+      )}
+
+      {/* PR-SM1: 예약자 강제 추가 모달 — 관리자 권한으로 결제/수강권 검증 우회 */}
+      {showForceAdd && liveSession && (
+        <ForceAddReservationModal
+          session={liveSession}
+          members={members}
+          existingMemberIds={
+            reservations
+              .filter(r => r.sessionId === liveSession.id && (r.status === 'reserved' || r.status === 'attended'))
+              .map(r => r.memberId)
+          }
+          onClose={() => setShowForceAdd(false)}
+          onSubmit={async (params) => {
+            try {
+              await forceAddReservation({
+                sessionId: liveSession.id,
+                memberId: params.memberId,
+                skipPass: params.skipPass,
+                initialStatus: params.initialStatus,
+              });
+              toast.success('예약자가 추가되었습니다', params.skipPass ? '수강권 차감 없이 추가됨' : '수강권 -1 차감');
+              setShowForceAdd(false);
+              return true;
+            } catch (e: any) {
+              toast.error('추가 실패', e?.message || '잠시 후 다시 시도해주세요.');
+              return false;
+            }
+          }}
+        />
+      )}
+
+      {/* PR-SM1: 정정 요청 인박스 — 회원의 요청을 1-클릭 승인/반려 */}
+      {showCorrectionInbox && (
+        <CorrectionInbox
+          requests={correctionRequests}
+          sessions={sessions}
+          focusSessionId={liveSession?.id ?? null}
+          onClose={() => setShowCorrectionInbox(false)}
+          onApprove={async (id, params) => {
+            try {
+              await approveCorrectionRequest(id, params);
+              toast.success('정정 요청을 승인했습니다');
+              return true;
+            } catch (e: any) {
+              toast.error('승인 실패', e?.message || '잠시 후 다시 시도해주세요.');
+              return false;
+            }
+          }}
+          onReject={async (id, note) => {
+            try {
+              await rejectCorrectionRequest(id, note);
+              toast.success('정정 요청을 반려했습니다');
+              return true;
+            } catch (e: any) {
+              toast.error('반려 실패', e?.message || '잠시 후 다시 시도해주세요.');
+              return false;
+            }
+          }}
+        />
       )}
 
       {/* Edit Modal — PR-7: full session edit incl. pre-registration info */}
@@ -750,6 +922,557 @@ export default function SessionManagement() {
 
 function Divider() {
   return <div className="h-4 w-px bg-[var(--color-border)]" />;
+}
+
+// ─── 4-state 토글 pill (PR-SM1) ───────────────────────────────────────────
+//
+// 모든 예약 상태(reserved/attended/noshow/cancelled)간 자유로운 전환을
+// 한 줄에 노출. 현재 상태는 채움(filled), 나머지는 윤곽선만. 동일 상태
+// 클릭은 부모(onChange)에서 무시한다.
+const STATUS_PILL_ORDER: ReservationStatus[] = ['reserved', 'attended', 'noshow', 'cancelled'];
+
+function StatusToggle({
+  current,
+  size = 'md',
+  onChange,
+}: {
+  current: ReservationStatus;
+  size?: 'sm' | 'md';
+  onChange: (next: ReservationStatus) => void;
+}) {
+  const padX = size === 'sm' ? 'px-2' : 'px-2.5';
+  const padY = size === 'sm' ? 'py-0.5' : 'py-1';
+  const fontSize = size === 'sm' ? 'text-[11px]' : 'text-[12px]';
+  return (
+    <div className="inline-flex items-center gap-1 flex-wrap">
+      {STATUS_PILL_ORDER.map(s => {
+        const conf = reservationStatusConfig[s];
+        const isActive = s === current;
+        return (
+          <button
+            key={s}
+            type="button"
+            onClick={() => onChange(s)}
+            aria-pressed={isActive}
+            className={cn(
+              'inline-flex items-center rounded border transition-colors font-medium whitespace-nowrap',
+              padX, padY, fontSize,
+              isActive
+                ? 'shadow-sm'
+                : 'bg-white hover:opacity-80',
+            )}
+            style={
+              isActive
+                ? { backgroundColor: conf.color, color: '#fff', borderColor: conf.color }
+                : { backgroundColor: conf.bgColor, color: conf.color, borderColor: conf.color + '55' }
+            }
+            title={`${conf.label} 로 변경`}
+          >
+            {conf.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── 예약자 강제 추가 모달 (PR-SM1) ───────────────────────────────────────
+//
+// 관리자 권한 전용. 결제/수강권 검증을 건너뛰고 즉시 예약자로 등록한다.
+// 옵션:
+//  - skipPass: 수강권 차감 없이 추가(예: 무료 초대, 강사 본인)
+//  - initialStatus: 처음부터 '출석'으로 기록(소급 처리)
+function ForceAddReservationModal({
+  session,
+  members,
+  existingMemberIds,
+  onClose,
+  onSubmit,
+}: {
+  session: Session;
+  members: { id: string; name: string; phone?: string; isActive?: boolean }[];
+  existingMemberIds: string[];
+  onClose: () => void;
+  onSubmit: (params: {
+    memberId: string;
+    skipPass: boolean;
+    initialStatus: 'reserved' | 'attended';
+  }) => Promise<boolean>;
+}) {
+  const [query, setQuery] = useState('');
+  const [memberId, setMemberId] = useState<string>('');
+  const [skipPass, setSkipPass] = useState(false);
+  const [initialStatus, setInitialStatus] = useState<'reserved' | 'attended'>('reserved');
+  const [busy, setBusy] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return members
+      .filter(m => m.isActive !== false)
+      .filter(m => !existingMemberIds.includes(m.id))
+      .filter(m =>
+        !q ||
+        m.name.toLowerCase().includes(q) ||
+        (m.phone || '').toLowerCase().includes(q),
+      )
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 50);
+  }, [members, existingMemberIds, query]);
+
+  const selectedName = members.find(m => m.id === memberId)?.name ?? '';
+
+  const handleSubmit = async () => {
+    if (!memberId) return;
+    setBusy(true);
+    try {
+      await onSubmit({ memberId, skipPass, initialStatus });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="예약자 추가 (관리자)" onClose={onClose}>
+      <div className="space-y-4">
+        <div className="text-[12px] text-[var(--color-text-secondary)] bg-[var(--color-bg-subtle)] border border-[var(--color-border-subtle)] rounded px-3 py-2 leading-relaxed">
+          <b>{session.name}</b> · {formatKoreanDate(session.date, 'M.d (EEE)')} {session.startTime}
+          <br />
+          현재 예약 {session.currentReservations} / {session.maxCapacity}명
+          <br />
+          <span className="text-[var(--color-text-muted)]">
+            ※ 결제/수강권 검증을 건너뛰고 즉시 등록합니다. 감사 로그에 기록됩니다.
+          </span>
+        </div>
+
+        <FormField label="회원 검색" required>
+          <div className="relative">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+            <input
+              autoFocus
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="이름 또는 전화번호 일부"
+              className="form-input pl-8"
+            />
+          </div>
+        </FormField>
+
+        <div className="border border-[var(--color-border)] rounded max-h-[260px] overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-6 text-center text-[12.5px] text-[var(--color-text-muted)]">
+              해당 회원이 없습니다.
+            </div>
+          ) : (
+            <ul className="divide-y divide-[var(--color-border-subtle)]">
+              {filtered.map(m => {
+                const selected = memberId === m.id;
+                return (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      onClick={() => setMemberId(m.id)}
+                      className={cn(
+                        'w-full px-3 py-2 flex items-center justify-between text-left transition-colors',
+                        selected
+                          ? 'bg-[var(--color-primary-bg)]'
+                          : 'hover:bg-[var(--color-bg-hover)]',
+                      )}
+                    >
+                      <span className="text-[13px] text-[var(--color-text)] font-medium">
+                        {m.name}
+                      </span>
+                      <span className="text-[11.5px] text-[var(--color-text-muted)] tabular-nums">
+                        {m.phone || ''}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <FormField label="초기 상태">
+            <div className="flex items-center gap-1.5">
+              {(['reserved', 'attended'] as const).map(s => {
+                const conf = reservationStatusConfig[s];
+                const active = initialStatus === s;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setInitialStatus(s)}
+                    className={cn(
+                      'px-2.5 py-1 text-[12px] rounded border transition-colors font-medium',
+                      active ? 'shadow-sm' : 'bg-white',
+                    )}
+                    style={
+                      active
+                        ? { backgroundColor: conf.color, color: '#fff', borderColor: conf.color }
+                        : { color: conf.color, borderColor: conf.color + '55' }
+                    }
+                  >
+                    {conf.label}
+                  </button>
+                );
+              })}
+            </div>
+          </FormField>
+
+          <label className="inline-flex items-center gap-2 text-[12.5px] text-[var(--color-text-secondary)]">
+            <input
+              type="checkbox"
+              checked={skipPass}
+              onChange={e => setSkipPass(e.target.checked)}
+            />
+            수강권 차감 없이 추가 (무료 초대 / 강사·게스트 등)
+          </label>
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="flex-1 py-2 text-[13px] text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-hover)] transition-colors disabled:opacity-50"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={busy || !memberId}
+            className="flex-1 py-2 text-[13px] text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)] transition-colors disabled:opacity-50"
+          >
+            {busy ? '추가 중…' : selectedName ? `${selectedName} 추가` : '회원 선택'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── 정정 요청 인박스 (PR-SM1) ─────────────────────────────────────────────
+//
+// 회원의 정정 요청을 1-클릭으로 승인/반려한다. 사유 코드별로 권장 대상
+// 상태가 자동 매핑되어 있으나(예: attended_marked_noshow → 'attended'),
+// '기타'/'다른 사람과 바뀜'은 관리자가 명시적으로 대상 상태를 골라야 한다.
+const REASON_LABEL: Record<string, string> = {
+  attended_marked_noshow: '출석했는데 노쇼 처리됨',
+  noshow_marked_attended: '안 갔는데 출석 처리됨',
+  want_cancel: '취소하고 싶었음',
+  swapped_with_other: '다른 사람과 바뀜',
+  other: '기타',
+};
+const REASON_AUTO_STATUS: Record<string, ReservationStatus | null> = {
+  attended_marked_noshow: 'attended',
+  noshow_marked_attended: 'noshow',
+  want_cancel: 'cancelled',
+  swapped_with_other: null,
+  other: null,
+};
+
+function CorrectionInbox({
+  requests,
+  sessions,
+  focusSessionId,
+  onClose,
+  onApprove,
+  onReject,
+}: {
+  requests: CorrectionRequestDto[];
+  sessions: Session[];
+  focusSessionId: string | null;
+  onClose: () => void;
+  onApprove: (id: string, params?: { targetStatus?: ReservationStatus; note?: string }) => Promise<boolean>;
+  onReject: (id: string, note: string) => Promise<boolean>;
+}) {
+  const [filter, setFilter] = useState<'pending' | 'all'>('pending');
+  const [scope, setScope] = useState<'session' | 'all'>(focusSessionId ? 'session' : 'all');
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const list = useMemo(() => {
+    return requests
+      .filter(r => filter === 'all' || r.status === 'pending')
+      .filter(r => scope === 'all' || !focusSessionId || r.sessionId === focusSessionId)
+      .sort((a, b) => {
+        // pending 우선, 그 안에서 최신 요청이 위로
+        const sa = a.status === 'pending' ? 0 : 1;
+        const sb = b.status === 'pending' ? 0 : 1;
+        if (sa !== sb) return sa - sb;
+        return (b.requestedAt || '').localeCompare(a.requestedAt || '');
+      });
+  }, [requests, filter, scope, focusSessionId]);
+
+  return (
+    <Modal title={`정정 요청 인박스 (${list.length})`} onClose={onClose}>
+      <div className="space-y-3">
+        {/* 필터 */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="inline-flex rounded border border-[var(--color-border)] overflow-hidden">
+            <button
+              onClick={() => setFilter('pending')}
+              className={cn(
+                'px-2.5 py-1 text-[12px]',
+                filter === 'pending'
+                  ? 'bg-[var(--color-text)] text-white'
+                  : 'bg-white text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]',
+              )}
+            >
+              대기 중
+            </button>
+            <button
+              onClick={() => setFilter('all')}
+              className={cn(
+                'px-2.5 py-1 text-[12px] border-l border-[var(--color-border)]',
+                filter === 'all'
+                  ? 'bg-[var(--color-text)] text-white'
+                  : 'bg-white text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]',
+              )}
+            >
+              전체
+            </button>
+          </div>
+          {focusSessionId && (
+            <div className="inline-flex rounded border border-[var(--color-border)] overflow-hidden">
+              <button
+                onClick={() => setScope('session')}
+                className={cn(
+                  'px-2.5 py-1 text-[12px]',
+                  scope === 'session'
+                    ? 'bg-[var(--color-text)] text-white'
+                    : 'bg-white text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]',
+                )}
+              >
+                이 세션
+              </button>
+              <button
+                onClick={() => setScope('all')}
+                className={cn(
+                  'px-2.5 py-1 text-[12px] border-l border-[var(--color-border)]',
+                  scope === 'all'
+                    ? 'bg-[var(--color-text)] text-white'
+                    : 'bg-white text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]',
+                )}
+              >
+                전체 세션
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 목록 */}
+        {list.length === 0 ? (
+          <div className="py-10 text-center border border-dashed border-[var(--color-border)] rounded text-[13px] text-[var(--color-text-muted)]">
+            처리할 정정 요청이 없습니다.
+          </div>
+        ) : (
+          <ul className="space-y-2 max-h-[60vh] overflow-y-auto">
+            {list.map(r => {
+              const sess = sessions.find(s => s.id === r.sessionId);
+              const expanded = expandedId === r.id;
+              const isPending = r.status === 'pending';
+              const autoTarget = REASON_AUTO_STATUS[r.reasonCode] ?? null;
+              return (
+                <li
+                  key={r.id}
+                  className={cn(
+                    'border border-[var(--color-border)] rounded transition-colors',
+                    isPending ? 'bg-white' : 'bg-[var(--color-bg-subtle)] opacity-80',
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(expanded ? null : r.id)}
+                    className="w-full flex items-start justify-between gap-2 px-3 py-2.5 text-left hover:bg-[var(--color-bg-hover)]"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[13px] font-semibold text-[var(--color-text)]">
+                          {r.memberName}
+                        </span>
+                        <span className="text-[11px] text-[var(--color-text-muted)]">
+                          {sess
+                            ? `${formatKoreanDate(sess.date, 'M.d (EEE)')} ${sess.startTime} · ${sess.name}`
+                            : '세션 정보 없음'}
+                        </span>
+                        <span
+                          className={cn(
+                            'inline-flex items-center px-1.5 py-0.5 rounded text-[10.5px] font-medium',
+                            isPending
+                              ? 'bg-[var(--color-danger-bg)] text-[var(--color-danger)] border border-[var(--color-danger-border)]'
+                              : r.status === 'approved'
+                                ? 'bg-[var(--color-success-bg)] text-[var(--color-success)]'
+                                : r.status === 'rejected'
+                                  ? 'bg-[var(--color-bg-hover)] text-[var(--color-text-muted)]'
+                                  : 'bg-[var(--color-bg-hover)] text-[var(--color-text-muted)]',
+                          )}
+                        >
+                          {isPending ? '대기 중'
+                            : r.status === 'approved' ? '승인됨'
+                              : r.status === 'rejected' ? '반려됨'
+                                : '철회됨'}
+                        </span>
+                      </div>
+                      <p className="text-[12px] text-[var(--color-text-secondary)] mt-0.5 truncate">
+                        사유: <b>{REASON_LABEL[r.reasonCode] ?? r.reasonCode}</b>
+                        {r.detail ? ` — ${r.detail}` : ''}
+                      </p>
+                      <p className="text-[11px] text-[var(--color-text-muted)] tabular-nums mt-0.5">
+                        {formatKoreanDate(r.requestedAt, 'M.d HH:mm')} 요청
+                      </p>
+                    </div>
+                    <ChevronRight
+                      size={14}
+                      className={cn(
+                        'mt-1 text-[var(--color-text-muted)] shrink-0 transition-transform',
+                        expanded && 'rotate-90',
+                      )}
+                    />
+                  </button>
+
+                  {expanded && (
+                    <div className="px-3 pb-3 border-t border-[var(--color-border-subtle)] pt-2">
+                      {r.detail && (
+                        <div className="text-[12.5px] text-[var(--color-text)] bg-[var(--color-bg-subtle)] rounded px-2.5 py-2 leading-relaxed whitespace-pre-wrap mb-2">
+                          {r.detail}
+                        </div>
+                      )}
+                      {!isPending ? (
+                        <div className="text-[12px] text-[var(--color-text-muted)]">
+                          {r.resolutionNote ? `메모: ${r.resolutionNote}` : '처리 완료'}
+                          {r.resolvedAt && ` · ${formatKoreanDate(r.resolvedAt, 'M.d HH:mm')}`}
+                        </div>
+                      ) : (
+                        <CorrectionDecideRow
+                          autoTarget={autoTarget}
+                          busy={busyId === r.id}
+                          onApprove={async (targetStatus, note) => {
+                            setBusyId(r.id);
+                            const ok = await onApprove(r.id, { targetStatus, note });
+                            setBusyId(null);
+                            if (ok) setExpandedId(null);
+                          }}
+                          onReject={async (note) => {
+                            if (!note.trim()) return;
+                            setBusyId(r.id);
+                            const ok = await onReject(r.id, note.trim());
+                            setBusyId(null);
+                            if (ok) setExpandedId(null);
+                          }}
+                        />
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// 정정 요청 1건의 승인/반려 입력 — 자동 매핑이 있는 사유는 그대로 승인,
+// 없으면(other / swapped_with_other) 관리자가 대상 상태를 선택해야 한다.
+function CorrectionDecideRow({
+  autoTarget,
+  busy,
+  onApprove,
+  onReject,
+}: {
+  autoTarget: ReservationStatus | null;
+  busy: boolean;
+  onApprove: (targetStatus: ReservationStatus | undefined, note: string) => Promise<void>;
+  onReject: (note: string) => Promise<void>;
+}) {
+  const [manualTarget, setManualTarget] = useState<ReservationStatus | null>(autoTarget);
+  const [note, setNote] = useState('');
+  const [mode, setMode] = useState<'approve' | 'reject' | null>(null);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[12px] text-[var(--color-text-muted)]">대상 상태:</span>
+        {autoTarget ? (
+          <span
+            className="inline-flex items-center px-2 py-0.5 rounded text-[11.5px] font-medium border"
+            style={{
+              backgroundColor: reservationStatusConfig[autoTarget].color,
+              color: '#fff',
+              borderColor: reservationStatusConfig[autoTarget].color,
+            }}
+          >
+            {reservationStatusConfig[autoTarget].label} (자동)
+          </span>
+        ) : (
+          <div className="inline-flex items-center gap-1">
+            {STATUS_PILL_ORDER.map(s => {
+              const conf = reservationStatusConfig[s];
+              const active = manualTarget === s;
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setManualTarget(s)}
+                  className={cn(
+                    'px-2 py-0.5 rounded text-[11px] border transition-colors',
+                    active ? 'shadow-sm' : 'bg-white hover:opacity-80',
+                  )}
+                  style={
+                    active
+                      ? { backgroundColor: conf.color, color: '#fff', borderColor: conf.color }
+                      : { color: conf.color, borderColor: conf.color + '55' }
+                  }
+                >
+                  {conf.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <FormField label="관리자 메모 (선택, 반려 시 필수)">
+        <input
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          placeholder="예: 출석 명단 재확인하여 정정 처리"
+          className="form-input"
+          maxLength={500}
+        />
+      </FormField>
+
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          type="button"
+          disabled={busy || (!autoTarget && !manualTarget)}
+          onClick={() => {
+            setMode('approve');
+            onApprove(autoTarget ?? manualTarget ?? undefined, note);
+          }}
+          className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 text-[12px] text-white bg-[var(--color-success)] rounded hover:opacity-90 transition disabled:opacity-50"
+        >
+          <Check size={13} /> {busy && mode === 'approve' ? '승인 중…' : '승인'}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !note.trim()}
+          onClick={() => {
+            setMode('reject');
+            onReject(note);
+          }}
+          className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 text-[12px] text-[var(--color-danger)] border border-[var(--color-danger-border)] bg-white rounded hover:bg-[var(--color-danger-bg)] transition disabled:opacity-50"
+          title={!note.trim() ? '반려 사유 메모를 입력하세요' : ''}
+        >
+          <X size={13} /> {busy && mode === 'reject' ? '반려 중…' : '반려'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function StatusBadge({ status, full }: { status: Session['status']; full: boolean }) {

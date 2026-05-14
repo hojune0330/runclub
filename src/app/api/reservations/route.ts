@@ -134,8 +134,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { sessionId, memberId } = await req.json();
+    // PR-D1: `force=true` (관리자 전용) — 정원 초과 + 수강권 없음 우회.
+    // `skipPass=true` (관리자 전용) — 수강권 차감 없이 무료/관리자 메모 처리.
+    // `initialStatus` (관리자 전용) — 'reserved' | 'attended' 즉시 출석 표시 가능.
+    const { sessionId, memberId, force, skipPass, initialStatus } = await req.json();
     const targetMemberId = auth.role === 'admin' && memberId ? memberId : auth.memberId;
+    const isAdminForce = auth.role === 'admin' && (force === true);
+    const isAdminSkipPass = auth.role === 'admin' && (skipPass === true);
+    const startStatus: 'reserved' | 'attended' =
+      auth.role === 'admin' && initialStatus === 'attended' ? 'attended' : 'reserved';
 
 
     // Get session — overbook_ratio 포함
@@ -146,10 +153,17 @@ export async function POST(req: NextRequest) {
     `, [sessionId]);
 
     if (!session) return NextResponse.json({ error: '세션을 찾을 수 없습니다' }, { status: 404 });
-    if (session.status === 'cancelled') return NextResponse.json({ error: '취소된 세션입니다' }, { status: 400 });
+    if (session.status === 'cancelled' && !isAdminForce) {
+      return NextResponse.json({ error: '취소된 세션입니다' }, { status: 400 });
+    }
 
-    // Check duplicate (예약/대기 모두 검사)
-    const existing = await dbGet('SELECT id FROM reservations WHERE member_id = $1 AND session_id = $2 AND status = \'reserved\'', [targetMemberId, sessionId]);
+    // Check duplicate (예약/대기 모두 검사) — 단, 취소/노쇼 이력은 OK
+    const existing = await dbGet(
+      `SELECT id FROM reservations
+        WHERE member_id = $1 AND session_id = $2
+          AND status IN ('reserved','attended')`,
+      [targetMemberId, sessionId]
+    );
     if (existing) return NextResponse.json({ error: '이미 예약되어 있습니다' }, { status: 409 });
     const existingWait = await dbGet(
       "SELECT id FROM waitlist WHERE member_id = $1 AND session_id = $2 AND status = 'waiting'",
@@ -168,8 +182,8 @@ export async function POST(req: NextRequest) {
     const currentCount = Number(session.current_reservations) || 0;
     const isFull = currentCount >= effectiveCapacity;
 
-    // 정원 + 오버부킹 모두 차면 자동 대기 전환
-    if (isFull) {
+    // 정원 + 오버부킹 모두 차면 자동 대기 전환 — 단, 관리자 force 면 강제 추가
+    if (isFull && !isAdminForce) {
       // Auto-waitlist: insert into waitlist, do not deduct pass.
       const maxPos = await dbGet<{ pos: number | null }>(
         "SELECT MAX(position) as pos FROM waitlist WHERE session_id = $1 AND status = 'waiting'",
@@ -237,19 +251,29 @@ export async function POST(req: NextRequest) {
       LIMIT 1
     `, [targetMemberId, `%${session.type}%`, todayStr, sessionId]);
 
+    // 수강권 검증 — 관리자가 skipPass=true 면 무시.
     if (!pass && auth.role !== 'admin') {
       return NextResponse.json({ error: '사용 가능한 수강권이 없습니다' }, { status: 400 });
     }
+    // 관리자 force 인데 skipPass 미명시 + pass 없음 → 차감할 패스 없음 (무료 처리로 간주).
+    const usePass = !isAdminSkipPass && pass ? pass : null;
 
     const id = genId('r');
     await dbRun(`
-      INSERT INTO reservations (id, member_id, session_id, status, reserved_at, pass_id)
-      VALUES ($1, $2, $3, 'reserved', NOW(), $4)
-    `, [id, targetMemberId, sessionId, pass?.id || null]);
+      INSERT INTO reservations (id, member_id, session_id, status, reserved_at, checked_in_at, pass_id)
+      VALUES ($1, $2, $3, $4, NOW(), $5, $6)
+    `, [
+      id,
+      targetMemberId,
+      sessionId,
+      startStatus,
+      startStatus === 'attended' ? new Date().toISOString() : null,
+      usePass?.id || null,
+    ]);
 
     // Deduct pass count if count-based
-    if (pass && pass.category === 'count') {
-      await dbRun('UPDATE member_passes SET remaining_count = remaining_count - 1 WHERE id = $1', [pass.id]);
+    if (usePass && usePass.category === 'count') {
+      await dbRun('UPDATE member_passes SET remaining_count = remaining_count - 1 WHERE id = $1', [usePass.id]);
 
       // Sheets mirror — re-read the pass row so 잔여횟수(G) reflects deduction.
       try {
@@ -264,7 +288,7 @@ export async function POST(req: NextRequest) {
           JOIN members m       ON mp.member_id = m.id
           JOIN pass_products pp ON mp.product_id = pp.id
           WHERE mp.id = $1
-        `, [pass.id]);
+        `, [usePass.id]);
         if (updatedPass) {
           void safeSync('passes', 'upsert', mapPassRow(updatedPass));
         }
@@ -279,13 +303,40 @@ export async function POST(req: NextRequest) {
       await dbRun("UPDATE sessions SET status = 'closed' WHERE id = $1", [sessionId]);
     }
 
+    // PR-D1: 관리자 강제 추가는 audit log 기록 (자기 예약은 routine action 이라 패스)
+    if (auth.role === 'admin' && targetMemberId !== auth.memberId) {
+      try {
+        const target = await dbGet<any>(
+          'SELECT name FROM members WHERE id = $1',
+          [targetMemberId]
+        );
+        void logAdminAction(req, auth.memberId, {
+          action: 'reservation.force_add',
+          targetType: 'reservation',
+          targetId: id,
+          targetName: session.name,
+          summary: `${target?.name ?? '?'} 회원을 ${session.name}(${session.date}) 에 ${startStatus === 'attended' ? '출석' : '예약'}으로 추가${isAdminForce ? ' (정원 초과 강제)' : ''}${isAdminSkipPass ? ' (수강권 미차감)' : ''}`,
+          afterValue: {
+            memberId: targetMemberId,
+            sessionId,
+            status: startStatus,
+            force: isAdminForce,
+            skipPass: isAdminSkipPass,
+            passId: usePass?.id ?? null,
+          },
+        });
+      } catch { /* swallow */ }
+    }
+
     return NextResponse.json(
       {
         id,
         success: true,
+        status: startStatus,
         // PR-C2: 클라이언트가 "정원 넘었지만 오버부킹 슬롯으로 들어감" UX
         // 를 띄울 수 있도록 슬롯 사용 여부를 알려준다.
         usedOverbookSlot: currentCount >= maxCapacity,
+        forcedByAdmin: isAdminForce,
         effectiveCapacity,
         maxCapacity,
       },
@@ -297,7 +348,28 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PUT /api/reservations - Update status (cancel, attend, noshow)
+// PUT /api/reservations - Update status (cancel, attend, noshow, restore)
+//
+// PR-D1: 관리자가 모든 상태 전이를 자유롭게 할 수 있도록 확장.
+// 회원은 여전히 본인 예약을 reserved → cancelled 만 가능.
+// 관리자는 전이 행렬:
+//
+//     to →   reserved   attended   noshow   cancelled
+//   from
+//   reserved   —         OK         OK        OK
+//   attended   OK*       —          OK        OK*
+//   noshow     OK*       OK         —         OK
+//   cancelled  OK*       OK*        OK*       —
+//
+//   * = 수강권 자동 환원/차감 발생 (count 형 패스만)
+//
+// 수강권 환원 규칙 (사용자 결정사항):
+//   - 출석/예약 상태(=수강권 차감된 상태) → 비차감 상태(noshow/cancelled): +1 환원
+//   - 비차감 상태(noshow/cancelled) → 출석/예약 상태: -1 차감 (잔여 0이면 거부)
+//
+// 비차감 카테고리: noshow / cancelled  (노쇼는 패널티성. 회원이 셀프 정정
+//   요청해서 출석으로 바꾸면 그때 -1 차감되는 게 맞음)
+// 차감 카테고리: reserved / attended
 export async function PUT(req: NextRequest) {
   const auth = await getAuthFromRequest(req);
   if (!auth) return unauthorizedResponse();
@@ -308,7 +380,12 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'reservationId와 status가 필요합니다' }, { status: 400 });
     }
 
-    const reservation = await dbGet('SELECT * FROM reservations WHERE id = $1', [reservationId]);
+    const validStatuses = ['reserved', 'attended', 'noshow', 'cancelled'];
+    if (!validStatuses.includes(status)) {
+      return NextResponse.json({ error: '유효하지 않은 상태입니다' }, { status: 400 });
+    }
+
+    const reservation = await dbGet<any>('SELECT * FROM reservations WHERE id = $1', [reservationId]);
     if (!reservation) return NextResponse.json({ error: '예약을 찾을 수 없습니다' }, { status: 404 });
 
     // Permission check
@@ -316,60 +393,140 @@ export async function PUT(req: NextRequest) {
       return forbiddenResponse();
     }
 
-    // Members can only cancel their own
-    if (auth.role !== 'admin' && status !== 'cancelled') {
-      return forbiddenResponse('회원은 예약 취소만 가능합니다');
+    // Members can only cancel their own (and only from reserved state)
+    if (auth.role !== 'admin') {
+      if (status !== 'cancelled') {
+        return forbiddenResponse('회원은 예약 취소만 가능합니다');
+      }
+      if (reservation.status !== 'reserved') {
+        return NextResponse.json(
+          { error: '예약 상태인 경우에만 취소할 수 있습니다. 그 외엔 정정 요청을 이용해주세요.' },
+          { status: 400 }
+        );
+      }
     }
 
-    if (status === 'cancelled' && reservation.status !== 'reserved') {
-      return NextResponse.json({ error: '예약 상태인 경우에만 취소할 수 있습니다' }, { status: 400 });
+    // 변경 없음 — no-op
+    if (reservation.status === status) {
+      return NextResponse.json({ success: true, noop: true });
     }
 
-    const updates: Record<string, any> = { status };
-    if (status === 'cancelled') updates.cancelled_at = new Date().toISOString();
-    if (status === 'attended') updates.checked_in_at = new Date().toISOString();
+    const prevStatus = reservation.status as 'reserved' | 'attended' | 'noshow' | 'cancelled';
+    const nextStatus = status as 'reserved' | 'attended' | 'noshow' | 'cancelled';
 
-    await dbRun(`
-      UPDATE reservations SET status = $1, cancelled_at = $2, checked_in_at = $3 WHERE id = $4
-    `, [status, updates.cancelled_at || null, updates.checked_in_at || reservation.checked_in_at, reservationId]);
+    // 패스 차감 카테고리 정의
+    const isDeducting = (s: string) => s === 'reserved' || s === 'attended';
+    const wasDeducting = isDeducting(prevStatus);
+    const willDeduct = isDeducting(nextStatus);
 
-    // If cancelled, restore pass count and re-open session
-    if (status === 'cancelled' && reservation.pass_id) {
-      const pass = await dbGet('SELECT * FROM member_passes WHERE id = $1', [reservation.pass_id]);
-      if (pass) {
-        const product = await dbGet('SELECT category FROM pass_products WHERE id = $1', [pass.product_id]);
-        if (product?.category === 'count') {
-          await dbRun('UPDATE member_passes SET remaining_count = remaining_count + 1 WHERE id = $1', [reservation.pass_id]);
+    // 차감 방향으로 전이할 때(=수강권 -1), 잔여횟수 사전 검증.
+    let needCharge = !wasDeducting && willDeduct;
+    let needRestore = wasDeducting && !willDeduct;
 
-          // Sheets mirror — pass restored
-          try {
-            const restored = await dbGet<any>(`
-              SELECT mp.id, mp.member_id, mp.product_id,
-                     mp.total_count, mp.remaining_count,
-                     mp.start_date, mp.expiry_date, mp.issued_date,
-                     mp.price, mp.status, mp.paused_at,
-                     m.name AS member_name,
-                     pp.name AS product_name, pp.category
-              FROM member_passes mp
-              JOIN members m       ON mp.member_id = m.id
-              JOIN pass_products pp ON mp.product_id = pp.id
-              WHERE mp.id = $1
-            `, [reservation.pass_id]);
-            if (restored) {
-              void safeSync('passes', 'upsert', mapPassRow(restored));
-            }
-          } catch { /* swallow */ }
+    if (needCharge && reservation.pass_id) {
+      const pass = await dbGet<any>(
+        `SELECT mp.*, pp.category
+           FROM member_passes mp
+           JOIN pass_products pp ON mp.product_id = pp.id
+          WHERE mp.id = $1`,
+        [reservation.pass_id]
+      );
+      if (pass && pass.category === 'count' && (pass.remaining_count ?? 0) <= 0) {
+        return NextResponse.json(
+          {
+            error: '수강권 잔여횟수가 부족합니다. 관리자에게 문의해 수강권을 연장/조정해주세요.',
+            code: 'NO_REMAINING_COUNT',
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // UPDATE — checked_in_at / cancelled_at 도 맥락에 맞게 갱신
+    const nowIso = new Date().toISOString();
+    const checkedInAt =
+      nextStatus === 'attended'
+        ? (reservation.checked_in_at || nowIso)
+        : reservation.checked_in_at; // 다른 상태로 가도 기존 값 보존(이력 가치)
+    const cancelledAt =
+      nextStatus === 'cancelled'
+        ? nowIso
+        : (nextStatus === 'reserved' ? null : reservation.cancelled_at);
+
+    await dbRun(
+      `UPDATE reservations
+          SET status = $1,
+              cancelled_at = $2,
+              checked_in_at = $3
+        WHERE id = $4`,
+      [nextStatus, cancelledAt, checkedInAt, reservationId]
+    );
+
+    // 수강권 환원/차감 (count 형 패스만)
+    if ((needCharge || needRestore) && reservation.pass_id) {
+      const pass = await dbGet<any>(
+        `SELECT mp.*, pp.category
+           FROM member_passes mp
+           JOIN pass_products pp ON mp.product_id = pp.id
+          WHERE mp.id = $1`,
+        [reservation.pass_id]
+      );
+      if (pass && pass.category === 'count') {
+        const delta = needRestore ? 1 : -1;
+        await dbRun(
+          'UPDATE member_passes SET remaining_count = remaining_count + $1 WHERE id = $2',
+          [delta, reservation.pass_id]
+        );
+
+        // Sheets mirror — 잔여횟수 변동
+        try {
+          const updatedPass = await dbGet<any>(
+            `SELECT mp.id, mp.member_id, mp.product_id,
+                    mp.total_count, mp.remaining_count,
+                    mp.start_date, mp.expiry_date, mp.issued_date,
+                    mp.price, mp.status, mp.paused_at,
+                    m.name AS member_name,
+                    pp.name AS product_name, pp.category
+               FROM member_passes mp
+               JOIN members m       ON mp.member_id = m.id
+               JOIN pass_products pp ON mp.product_id = pp.id
+              WHERE mp.id = $1`,
+            [reservation.pass_id]
+          );
+          if (updatedPass) {
+            void safeSync('passes', 'upsert', mapPassRow(updatedPass));
+          }
+        } catch { /* swallow */ }
+      }
+    }
+
+    // 세션 마감/재오픈 자동 처리
+    // - 차감 상태 → 비차감: 정원에서 1슬롯 비워졌으므로 closed → open 으로 복귀
+    // - 비차감 → 차감 상태: 정원 다시 차오를 수 있음. 정원 도달했으면 closed.
+    if (needRestore) {
+      await dbRun(
+        "UPDATE sessions SET status = 'open' WHERE id = $1 AND status = 'closed'",
+        [reservation.session_id]
+      );
+    } else if (needCharge) {
+      const sess = await dbGet<any>(
+        `SELECT s.max_capacity, s.overbook_ratio,
+                (SELECT COUNT(*) FROM reservations r
+                  WHERE r.session_id = s.id AND r.status IN ('reserved','attended'))::int AS cnt
+           FROM sessions s WHERE s.id = $1`,
+        [reservation.session_id]
+      );
+      if (sess) {
+        const maxCap = Number(sess.max_capacity) || 0;
+        const ratio = sess.overbook_ratio != null ? Number(sess.overbook_ratio) : 0.10;
+        const eff = maxCap + Math.ceil(maxCap * Math.max(0, Math.min(0.5, ratio)));
+        if (sess.cnt >= eff) {
+          await dbRun("UPDATE sessions SET status = 'closed' WHERE id = $1", [reservation.session_id]);
         }
       }
     }
 
-    // Re-open session if cancellation freed a spot
-    if (status === 'cancelled') {
-      await dbRun("UPDATE sessions SET status = 'open' WHERE id = $1 AND status = 'closed'", [reservation.session_id]);
-    }
-
-    // Sheets mirror — log this status change as an Attendance event (append-only).
-    // Captures cancellations + admin-driven attendance/no-show updates.
+    // Sheets mirror — 모든 상태 변동을 attendance 이벤트로 append
     let enrichedRow: any = null;
     try {
       enrichedRow = await dbGet<any>(`
@@ -388,21 +545,28 @@ export async function PUT(req: NextRequest) {
       }
     } catch { /* swallow */ }
 
-    // Audit log only for admin-driven status changes. Member self-cancellations
-    // are routine actions and would just clutter the audit ledger.
+    // Audit log only for admin-driven status changes.
     if (auth.role === 'admin') {
       void logAdminAction(req, auth.memberId, {
         action: 'reservation.update_status',
         targetType: 'reservation',
         targetId: reservationId,
         targetName: enrichedRow?.session_name ?? null,
-        summary: `예약 상태 변경 → ${status} (회원: ${enrichedRow?.member_name ?? '?'})`,
-        beforeValue: { status: reservation.status },
-        afterValue: { status },
+        summary: `예약 상태 변경 ${prevStatus} → ${nextStatus} (회원: ${enrichedRow?.member_name ?? '?'})`,
+        beforeValue: { status: prevStatus },
+        afterValue: {
+          status: nextStatus,
+          passDelta: needRestore ? +1 : needCharge ? -1 : 0,
+        },
       });
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      previousStatus: prevStatus,
+      status: nextStatus,
+      passDelta: needRestore ? +1 : needCharge ? -1 : 0,
+    });
   } catch (error: any) {
     console.error('[reservations PUT] error:', error);
     return NextResponse.json({ error: '예약 상태 변경 중 오류가 발생했습니다' }, { status: 500 });

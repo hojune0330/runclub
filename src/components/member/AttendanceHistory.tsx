@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '@/store/AppContext';
 import { reservationStatusConfig, sessionTypeConfig } from '@/lib/config';
 import {
@@ -11,10 +11,35 @@ import {
   getMonthlyAttendance,
   calculateWeeklyStreak,
 } from '@/lib/utils';
-import { Flame, TrendingUp, Calendar as CalIcon, ClipboardList } from 'lucide-react';
+import { Flame, TrendingUp, Calendar as CalIcon, ClipboardList, MessageSquareWarning } from 'lucide-react';
+import CorrectionRequestSheet from './CorrectionRequestSheet';
+import type { Reservation, Session } from '@/types';
+
+// 정정 요청 기한 — 서버(api/correction-requests)와 동일하게 48h.
+const CORRECTION_WINDOW_HOURS = 48;
+
+function withinCorrectionWindow(session: Session | undefined): boolean {
+  if (!session) return false;
+  const t = new Date(`${session.date}T${session.startTime || '00:00'}:00`).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() <= t + CORRECTION_WINDOW_HOURS * 3600_000;
+}
 
 export default function AttendanceHistory() {
-  const { reservations, sessions, currentMember } = useApp();
+  const { reservations, sessions, currentMember, correctionRequests } = useApp();
+  // 정정 요청 시트 — 어느 출석 기록을 대상으로 띄울지
+  const [correctionTarget, setCorrectionTarget] = useState<{ reservation: Reservation; session: Session } | null>(null);
+
+  // 이 예약에 이미 pending 정정 요청이 있는가?
+  const pendingByReservation = useMemo(() => {
+    const map: Record<string, true> = {};
+    (correctionRequests || []).forEach(c => {
+      if (c.memberId === currentMember.id && c.status === 'pending') {
+        map[c.reservationId] = true;
+      }
+    });
+    return map;
+  }, [correctionRequests, currentMember.id]);
 
   const myHistory = useMemo(() => {
     return reservations
@@ -188,6 +213,8 @@ export default function AttendanceHistory() {
                       if (!r.session) return null;
                       const config = sessionTypeConfig[r.session.type];
                       const statusConf = reservationStatusConfig[r.status];
+                      const sess = r.session;
+                      const canCorrect = withinCorrectionWindow(sess) && !pendingByReservation[r.id];
                       return (
                         <li key={r.id} className="px-4 py-2.5">
                           <div className="flex items-start justify-between gap-2 mb-0.5">
@@ -203,7 +230,7 @@ export default function AttendanceHistory() {
                                 {config.label}
                               </span>
                               <p className="text-[13px] text-[var(--color-text)] truncate">
-                                {r.session.name}
+                                {sess.name}
                               </p>
                             </div>
                             <span
@@ -216,8 +243,26 @@ export default function AttendanceHistory() {
                               {statusConf.label}
                             </span>
                           </div>
-                          <div className="text-[12px] text-[var(--color-text-muted)] tabular-nums">
-                            {formatKoreanDate(r.session.date, 'M월 d일 (EEE)')} · {r.session.startTime}
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="text-[12px] text-[var(--color-text-muted)] tabular-nums">
+                              {formatKoreanDate(sess.date, 'M월 d일 (EEE)')} · {sess.startTime}
+                            </div>
+                            {canCorrect && (
+                              <button
+                                type="button"
+                                onClick={() => setCorrectionTarget({ reservation: r, session: sess })}
+                                className="text-[11.5px] text-[var(--color-primary)] hover:underline inline-flex items-center gap-0.5 shrink-0"
+                                title="48시간 이내에 한해 출석 결과를 정정 요청할 수 있습니다"
+                              >
+                                <MessageSquareWarning size={11} />
+                                수정 요청
+                              </button>
+                            )}
+                            {pendingByReservation[r.id] && (
+                              <span className="text-[11px] text-[var(--color-primary)] shrink-0">
+                                요청 처리 중
+                              </span>
+                            )}
                           </div>
                         </li>
                       );
@@ -233,7 +278,7 @@ export default function AttendanceHistory() {
                         <th className="text-left font-medium px-4 py-2 w-[80px]">시간</th>
                         <th className="text-left font-medium px-4 py-2 w-[120px]">유형</th>
                         <th className="text-left font-medium px-4 py-2">세션명</th>
-                        <th className="text-right font-medium px-4 py-2 w-[100px]">상태</th>
+                        <th className="text-right font-medium px-4 py-2 w-[160px]">상태</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -241,16 +286,18 @@ export default function AttendanceHistory() {
                         if (!r.session) return null;
                         const config = sessionTypeConfig[r.session.type];
                         const statusConf = reservationStatusConfig[r.status];
+                        const sess = r.session;
+                        const canCorrect = withinCorrectionWindow(sess) && !pendingByReservation[r.id];
                         return (
                           <tr
                             key={r.id}
                             className="border-b border-[var(--color-border-subtle)] last:border-0 hover:bg-[var(--color-bg-subtle)] transition-colors"
                           >
                             <td className="px-4 py-3 text-[var(--color-text)] tabular-nums">
-                              {formatKoreanDate(r.session.date, 'M월 d일 (EEE)')}
+                              {formatKoreanDate(sess.date, 'M월 d일 (EEE)')}
                             </td>
                             <td className="px-4 py-3 text-[var(--color-text-secondary)] tabular-nums">
-                              {r.session.startTime}
+                              {sess.startTime}
                             </td>
                             <td className="px-4 py-3">
                               <span
@@ -264,17 +311,35 @@ export default function AttendanceHistory() {
                                 {config.label}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-[var(--color-text)]">{r.session.name}</td>
+                            <td className="px-4 py-3 text-[var(--color-text)]">{sess.name}</td>
                             <td className="px-4 py-3 text-right">
-                              <span
-                                className="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-medium"
-                                style={{
-                                  backgroundColor: statusConf.bgColor,
-                                  color: statusConf.color,
-                                }}
-                              >
-                                {statusConf.label}
-                              </span>
+                              <div className="inline-flex items-center gap-2 justify-end">
+                                <span
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-[12px] font-medium"
+                                  style={{
+                                    backgroundColor: statusConf.bgColor,
+                                    color: statusConf.color,
+                                  }}
+                                >
+                                  {statusConf.label}
+                                </span>
+                                {canCorrect && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCorrectionTarget({ reservation: r, session: sess })}
+                                    className="text-[11.5px] text-[var(--color-primary)] hover:underline inline-flex items-center gap-0.5"
+                                    title="48시간 이내에 한해 출석 결과를 정정 요청할 수 있습니다"
+                                  >
+                                    <MessageSquareWarning size={11} />
+                                    수정 요청
+                                  </button>
+                                )}
+                                {pendingByReservation[r.id] && (
+                                  <span className="text-[11px] text-[var(--color-primary)]">
+                                    요청 처리 중
+                                  </span>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -288,6 +353,15 @@ export default function AttendanceHistory() {
           </div>
         )}
       </section>
+
+      {/* PR-MR1: 정정 요청 작성 시트 — 출석/노쇼 행에서 진입 */}
+      {correctionTarget && (
+        <CorrectionRequestSheet
+          reservation={correctionTarget.reservation}
+          session={correctionTarget.session}
+          onClose={() => setCorrectionTarget(null)}
+        />
+      )}
     </div>
   );
 }
