@@ -32,8 +32,11 @@ function originOf(url: string | null): string | null {
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // Only enforce on API mutations.
+  // Only enforce on API mutations. Toss Payments webhooks are
+  // server-to-server callbacks and do not include browser Origin/Referer
+  // headers, so they must bypass CSRF and validate payloads in the route.
   if (!pathname.startsWith('/api/')) return NextResponse.next();
+  if (pathname === '/api/payments/webhook') return NextResponse.next();
   if (SAFE_METHODS.has(req.method)) return NextResponse.next();
 
   // Build the set of acceptable origins. We trust the request's own host
