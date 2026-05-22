@@ -11,8 +11,9 @@ export async function POST(req: NextRequest) {
   if (!auth) return unauthorizedResponse();
 
   // EXT-C2: Rate-limit verify attempts (replay/brute mitigation).
-  // 20 attempts per IP per minute is far above legitimate usage.
-  const rl = rateLimit(req, 'qr-verify', { windowMs: 60_000, max: 20 });
+  // Field check-in often happens from one venue Wi-Fi/IP, so allow enough
+  // legitimate scans while still blocking brute-force/replay loops.
+  const rl = rateLimit(req, 'qr-verify', { windowMs: 60_000, max: 60 });
   if (!rl.ok) {
     return NextResponse.json(
       { error: `요청이 너무 많습니다. ${rl.retryAfterSec}초 후 다시 시도해주세요.` },
@@ -63,15 +64,16 @@ export async function POST(req: NextRequest) {
     // local date + start_time in Asia/Seoul for the gym.
     const nowKst = new Date(Date.now() + 9 * 60 * 60_000); // shift to KST clock
     const todayKst = nowKst.toISOString().slice(0, 10);
-    if (session.date !== todayKst) {
+    const sessionDate = String(session.date).slice(0, 10);
+    if (sessionDate !== todayKst) {
       return NextResponse.json(
         { error: '오늘 세션의 QR이 아닙니다' },
         { status: 400 }
       );
     }
-    const sessionStart = new Date(`${session.date}T${session.start_time}:00+09:00`);
+    const sessionStart = new Date(`${sessionDate}T${session.start_time}:00+09:00`);
     const sessionEnd = session.end_time
-      ? new Date(`${session.date}T${session.end_time}:00+09:00`)
+      ? new Date(`${sessionDate}T${session.end_time}:00+09:00`)
       : new Date(sessionStart.getTime() + 90 * 60_000);
     const checkInOpen = sessionStart.getTime() - 60 * 60_000;
     const checkInClose = sessionEnd.getTime() + 60 * 60_000;

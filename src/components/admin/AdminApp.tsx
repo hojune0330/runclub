@@ -30,7 +30,7 @@ const navGroups: { label: string; items: { id: AdminTab; label: string; icon: ty
     label: '운영',
     items: [
       { id: 'sessions', label: '세션 관리', icon: Calendar },
-      { id: 'qr', label: '출석 QR', icon: QrCode },
+      { id: 'qr', label: '출석 체크', icon: QrCode },
       { id: 'notices', label: '공지사항', icon: Megaphone },
       { id: 'tags', label: '세션 태그', icon: Tag },
     ],
@@ -60,7 +60,7 @@ const navGroups: { label: string; items: { id: AdminTab; label: string; icon: ty
 const bottomNav: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'dashboard', label: '홈', icon: LayoutDashboard },
   { id: 'sessions', label: '세션', icon: Calendar },
-  { id: 'qr', label: 'QR', icon: QrCode },
+  { id: 'qr', label: '출석', icon: QrCode },
   { id: 'members', label: '회원', icon: Users },
   { id: 'stats', label: '통계', icon: BarChart3 },
 ];

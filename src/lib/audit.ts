@@ -53,6 +53,7 @@ export type AuditAction =
   | 'reservation.update_status'
   | 'reservation.force_add'
   | 'reservation.bulk_noshow'
+  | 'attendance.field_checkin'
   | 'correction_request.approve'
   | 'correction_request.reject'
   | 'qr.generate'
@@ -63,7 +64,7 @@ export type AuditAction =
 
 export interface AuditEntry {
   action: AuditAction;
-  targetType?: 'member' | 'session' | 'pass' | 'pass_product' | 'notice' | 'reservation' | 'qr' | 'tag';
+  targetType?: 'member' | 'session' | 'pass' | 'pass_product' | 'notice' | 'reservation' | 'qr' | 'tag' | 'attendance';
   targetId?: string | null;
   targetName?: string | null;
   summary?: string | null;

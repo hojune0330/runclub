@@ -453,14 +453,38 @@ export const api = {
 
   qr: {
     generate: (sessionId: string) =>
-      request<{ token: string; expiresAt: string; qrDataUrl: string }>('/qr/generate', {
+      request<{ token: string; expiresAt: string; qrDataUrl: string; checkinUrl?: string; ttlSec?: number }>('/qr/generate', {
         method: 'POST',
         body: JSON.stringify({ sessionId }),
       }),
     verify: (sessionId: string, token: string) =>
-      request<{ success: boolean; message: string; sessionName: string; sessionTime: string }>('/qr/verify', {
+      request<{ success: boolean; message: string; sessionName: string; sessionTime: string; alreadyAttended?: boolean }>('/qr/verify', {
         method: 'POST',
         body: JSON.stringify({ sessionId, token }),
+      }),
+  },
+
+  attendance: {
+    fieldCheckIn: (data: {
+      sessionId: string;
+      name: string;
+      phone: string;
+      allowWalkIn?: boolean;
+      skipPass?: boolean;
+    }) =>
+      request<{
+        success: boolean;
+        alreadyAttended?: boolean;
+        source: string;
+        passDelta: number;
+        message: string;
+        member: { id: string; name: string; phone: string };
+        session: { id: string; name: string; date: string; startTime: string };
+        reservationId: string;
+        checkedInAt: string;
+      }>('/attendance/checkin', {
+        method: 'POST',
+        body: JSON.stringify(data),
       }),
   },
 

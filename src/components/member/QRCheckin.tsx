@@ -5,7 +5,7 @@ import { Check, Camera, X, AlertCircle, Info, RefreshCw, UserCheck } from 'lucid
 import { useApp } from '@/store/AppContext';
 import { useToast } from '@/components/ui';
 import { sessionTypeConfig } from '@/lib/config';
-import { format, canUsePassForSession } from '@/lib/utils';
+import { format } from '@/lib/utils';
 import { api } from '@/lib/api';
 
 export default function QRCheckin() {
@@ -63,6 +63,12 @@ export default function QRCheckin() {
   const startScanning = async () => {
     setError('');
     setScanned(false);
+
+    if (detectorSupported === false) {
+      setError('이 브라우저는 앱 내 QR 자동 스캔을 지원하지 않습니다. 휴대폰 기본 카메라로 QR을 열거나 코치에게 현장 출석 처리를 요청해주세요.');
+      return;
+    }
+
     setScanning(true);
 
     try {
@@ -110,13 +116,28 @@ export default function QRCheckin() {
     }
   };
 
+  const parseQRCodePayload = (data: string): { sessionId: string; token: string } => {
+    const raw = data.trim();
+    try {
+      const url = new URL(raw);
+      const sessionId = url.searchParams.get('sessionId') || '';
+      const token = url.searchParams.get('token') || '';
+      if (sessionId && token) return { sessionId, token };
+    } catch {
+      // Not a URL; try legacy JSON below.
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed.sessionId || !parsed.token) {
+      throw new Error('QR 코드 형식이 올바르지 않습니다.');
+    }
+    return { sessionId: parsed.sessionId, token: parsed.token };
+  };
+
   const handleQRData = async (data: string) => {
     stopCamera();
     try {
-      const parsed = JSON.parse(data);
-      if (!parsed.sessionId || !parsed.token) {
-        throw new Error('QR 코드 형식이 올바르지 않습니다.');
-      }
+      const parsed = parseQRCodePayload(data);
       const result = await api.qr.verify(parsed.sessionId, parsed.token);
       setScannedSession(`${result.sessionName} · ${result.sessionTime}`);
       setScanned(true);
@@ -148,7 +169,7 @@ export default function QRCheckin() {
       <div>
         <h1 className="page-title">QR 체크인</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
-          세션 시작 30분 전부터 코치가 제시하는 QR 코드를 스캔하여 출석할 수 있습니다.
+          세션 시작 60분 전부터 코치가 제시하는 QR 코드를 스캔하여 출석할 수 있습니다. 기본 카메라로 QR을 열어도 체크인됩니다.
         </p>
       </div>
 
@@ -261,7 +282,7 @@ export default function QRCheckin() {
               ) : (
                 <button
                   onClick={startScanning}
-                  disabled={!cameraSupported}
+                  disabled={!cameraSupported || detectorSupported === false}
                   className="w-full h-full flex flex-col items-center justify-center gap-3 border-2 border-dashed border-[var(--color-border-strong)] rounded-md bg-[var(--color-bg-subtle)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-bg)]/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-[var(--color-border-strong)] disabled:hover:bg-[var(--color-bg-subtle)]"
                 >
                   <div className="w-12 h-12 rounded-full bg-white border border-[var(--color-border)] flex items-center justify-center">
@@ -291,7 +312,7 @@ export default function QRCheckin() {
                       setError('');
                       startScanning();
                     }}
-                    disabled={!cameraSupported}
+                    disabled={!cameraSupported || detectorSupported === false}
                     className="mt-2 inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-danger)] hover:underline disabled:opacity-50"
                   >
                     <RefreshCw size={11} />
@@ -387,10 +408,10 @@ export default function QRCheckin() {
             </div>
             <ol className="px-4 py-3 space-y-2">
               {[
-                '세션 시작 30분 전부터 체크인 가능합니다.',
-                '코치가 띄워놓은 QR 코드를 카메라로 스캔합니다.',
-                'QR 코드는 30초마다 자동 갱신됩니다 (암호화 토큰).',
-                '스캔이 어려운 경우 코치에게 직접 출석을 요청하세요.',
+                '세션 시작 60분 전부터 종료 60분 후까지 체크인 가능합니다.',
+                '앱 내 스캐너 또는 휴대폰 기본 카메라로 코치 QR을 엽니다.',
+                'QR은 30초마다 새로 표시되지만, 스캔 실패를 줄이기 위해 2분간 유효합니다.',
+                '스캔이 어려운 경우 코치의 현장 태블릿에서 이름/연락처로 출석할 수 있습니다.',
               ].map((text, i) => (
                 <li
                   key={i}
