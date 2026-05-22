@@ -18,7 +18,7 @@ import bcrypt from 'bcryptjs';
 //    같은 NAT (런클럽 단톡방, 카페·학원·체육관 와이파이, 통신사 CGN)
 //    뒤에서 회원 A 가 5번 시도하면 회원 B,C,D 까지 60분 차단되던 문제.
 //    phone 별로 카운터를 분리하면 200명이 같은 IP 라도 서로 안 막힘.
-//    봇 방어는 UA + 허니팟 + IP 단일 burst (10/min) 로 유지.
+//    봇 방어는 UA + 허니팟 + 높은 IP flood guard 로 유지.
 //
 // 3) 23505 (unique_violation) 명시적 처리
 //    SELECT-then-INSERT race 시 generic 500 → 친절한 400.
@@ -69,10 +69,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '잘못된 요청입니다' }, { status: 400 });
   }
 
-  // ── 1. IP 단일 burst 가드 (10/분). 봇·악의적 스팸 방지용 최후 보루. ──
-  // 같은 IP 가 1분 안에 11번 가입 폼을 찌르면 차단. 200명 단톡방이라도
-  // 같은 IP 뒤 11명이 정확히 같은 분에 누를 확률은 매우 낮음.
-  const rlBurst = rateLimit(req, 'register-burst', { windowMs: 60_000, max: 10 });
+  // ── 1. IP flood 가드. 봇·악의적 스팸 방지용 최후 보루. ──
+  // 현장/단체 가입은 같은 Wi-Fi/통신사 NAT 뒤에서 100명 이상이 동시에
+  // 들어올 수 있으므로 낮은 IP 단일 cap은 정상 가입자를 막는다. 대신
+  // phone-bound limiter와 UA/honeypot 검증으로 개별 남용을 제어한다.
+  const rlBurst = rateLimit(req, 'register-burst', { windowMs: 60_000, max: 300 });
   if (!rlBurst.ok) {
     console.warn(`[auth/register] reject reason=ratelimit_burst ip=${ip} retry=${rlBurst.retryAfterSec}s`);
     return NextResponse.json(
@@ -159,8 +160,8 @@ export async function POST(req: NextRequest) {
     if (existing) {
       console.warn(`[auth/register] reject reason=duplicate_phone ip=${ip} phone=${maskPhone(phone)}`);
       return NextResponse.json(
-        { error: '입력하신 정보로 가입할 수 없습니다. 이미 가입한 적이 있다면 로그인해 주세요.' },
-        { status: 400 }
+        { error: '이미 가입된 연락처입니다. 로그인 탭에서 로그인해 주세요.', code: 'DUPLICATE_PHONE' },
+        { status: 409 }
       );
     }
 
@@ -180,8 +181,8 @@ export async function POST(req: NextRequest) {
       if (insertErr?.code === '23505') {
         console.warn(`[auth/register] reject reason=race_duplicate ip=${ip} phone=${maskPhone(phone)}`);
         return NextResponse.json(
-          { error: '입력하신 정보로 가입할 수 없습니다. 이미 가입한 적이 있다면 로그인해 주세요.' },
-          { status: 400 }
+          { error: '이미 가입된 연락처입니다. 로그인 탭에서 로그인해 주세요.', code: 'DUPLICATE_PHONE' },
+          { status: 409 }
         );
       }
       throw insertErr;

@@ -9,6 +9,15 @@ class AuthExpiredError extends Error {
   }
 }
 
+function isAuthExpiredResponse(status: number, data: any): boolean {
+  if (status !== 401) return false;
+  const message = String(data?.error || '');
+  // Only true auth/session failures should force a logout. Other 401 responses
+  // such as wrong login password or profile re-auth mismatch must surface their
+  // own message instead of being mislabeled as "인증 만료".
+  return !message || message.includes('인증이 필요') || message.includes('인증이 만료');
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   // Authentication is handled via httpOnly cookies only.
   // We intentionally do NOT read tokens from localStorage to avoid XSS token theft.
@@ -28,23 +37,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error('네트워크 오류가 발생했습니다');
   }
 
-  if (res.status === 401) {
-    // Don't redirect — let the auth context handle it
-    throw new AuthExpiredError();
-  }
-
-  // For 403, don't treat as auth error — just return the error message
   let data: any;
   try {
     data = await res.json();
   } catch {
     if (!res.ok) {
+      if (res.status === 401) throw new AuthExpiredError();
       throw new Error(`요청 실패 (${res.status})`);
     }
     return {} as T;
   }
 
   if (!res.ok) {
+    if (isAuthExpiredResponse(res.status, data)) {
+      throw new AuthExpiredError();
+    }
     throw new Error(data.error || `요청에 실패했습니다 (${res.status})`);
   }
 

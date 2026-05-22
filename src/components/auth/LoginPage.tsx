@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/store/AuthContext';
 import { Eye, EyeOff } from 'lucide-react';
@@ -25,6 +25,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const submitInFlightRef = useRef(false);
   // 회원가입 시 약관 동의 — PG 심사 필수 항목.
   // 약관과 개인정보처리방침은 「전자상거래법」 + 「개인정보 보호법」상 필수 동의 대상.
   const [agreeTerms, setAgreeTerms] = useState(false);
@@ -39,25 +40,25 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitInFlightRef.current) return;
     clearError();
+    submitInFlightRef.current = true;
     setSubmitting(true);
 
-    if (mode === 'login') {
-      await login(phone, password);
-    } else {
-      if (!name.trim()) {
-        setSubmitting(false);
-        return;
+    try {
+      if (mode === 'login') {
+        await login(phone, password);
+      } else {
+        if (!name.trim()) return;
+        // 약관 동의 가드 — disabled 버튼이 1차 방어선이지만, 키보드/접근성 우회를
+        // 막기 위해 submit 핸들러에서도 한 번 더 확인한다.
+        if (!agreeTerms || !agreePrivacy) return;
+        await register({ name: name.trim(), phone, password, email: email || undefined });
       }
-      // 약관 동의 가드 — disabled 버튼이 1차 방어선이지만, 키보드/접근성 우회를
-      // 막기 위해 submit 핸들러에서도 한 번 더 확인한다.
-      if (!agreeTerms || !agreePrivacy) {
-        setSubmitting(false);
-        return;
-      }
-      await register({ name: name.trim(), phone, password, email: email || undefined });
+    } finally {
+      submitInFlightRef.current = false;
+      setSubmitting(false);
     }
-    setSubmitting(false);
   };
 
   const switchMode = () => {
@@ -145,9 +146,9 @@ export default function LoginPage() {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder={mode === 'register' ? '4자 이상 입력' : '비밀번호'}
+                  placeholder={mode === 'register' ? '영문+숫자 8자 이상' : '비밀번호'}
                   required
-                  minLength={4}
+                  minLength={mode === 'register' ? 8 : 4}
                   autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
                   className="input pr-10"
                 />
@@ -163,8 +164,20 @@ export default function LoginPage() {
             </Field>
 
             {error && (
-              <div className="text-[13px] text-[var(--color-danger)] bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-3 py-2 rounded">
-                {error}
+              <div className="text-[13px] text-[var(--color-danger)] bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-3 py-2 rounded space-y-2">
+                <p>{error}</p>
+                {mode === 'register' && error.includes('이미 가입') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('login');
+                      clearError();
+                    }}
+                    className="text-[12.5px] font-medium underline underline-offset-2"
+                  >
+                    로그인으로 이동
+                  </button>
+                )}
               </div>
             )}
 
