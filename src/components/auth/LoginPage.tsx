@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/store/AuthContext';
-import { Eye, EyeOff } from 'lucide-react';
+import { api } from '@/lib/api';
+import { Eye, EyeOff, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export default function LoginPage() {
@@ -26,6 +27,13 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submitInFlightRef = useRef(false);
+  const [showResetRequest, setShowResetRequest] = useState(false);
+  const [resetName, setResetName] = useState('');
+  const [resetPhone, setResetPhone] = useState('');
+  const [resetNote, setResetNote] = useState('');
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetMessage, setResetMessage] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
   // 회원가입 시 약관 동의 — PG 심사 필수 항목.
   // 약관과 개인정보처리방침은 「전자상거래법」 + 「개인정보 보호법」상 필수 동의 대상.
   const [agreeTerms, setAgreeTerms] = useState(false);
@@ -64,6 +72,35 @@ export default function LoginPage() {
   const switchMode = () => {
     setMode(prev => (prev === 'login' ? 'register' : 'login'));
     clearError();
+  };
+
+  const openResetRequest = () => {
+    setResetName(name.trim());
+    setResetPhone(phone);
+    setResetNote('');
+    setResetMessage(null);
+    setResetError(null);
+    setShowResetRequest(true);
+  };
+
+  const submitResetRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (resetSubmitting) return;
+    setResetSubmitting(true);
+    setResetError(null);
+    setResetMessage(null);
+    try {
+      const res = await api.auth.requestPasswordReset({
+        name: resetName.trim(),
+        phone: resetPhone,
+        note: resetNote.trim() || undefined,
+      });
+      setResetMessage(res.message || '요청이 접수되었습니다. 관리자가 확인 후 안내드립니다.');
+    } catch (err: any) {
+      setResetError(err?.message || '요청 접수 중 오류가 발생했습니다');
+    } finally {
+      setResetSubmitting(false);
+    }
   };
 
   return (
@@ -203,6 +240,21 @@ export default function LoginPage() {
               </div>
             )}
 
+            {mode === 'login' && (
+              <div className="flex items-start justify-between gap-3 rounded border border-[var(--color-border-subtle)] bg-[var(--color-bg-subtle)] px-3 py-2 text-[12.5px] text-[var(--color-text-secondary)] leading-relaxed">
+                <p>
+                  비밀번호를 잊었거나 임시 비밀번호 안내가 필요하면 재설정 요청을 남겨주세요.
+                </p>
+                <button
+                  type="button"
+                  onClick={openResetRequest}
+                  className="shrink-0 font-medium text-[var(--color-primary)] underline underline-offset-2"
+                >
+                  요청하기
+                </button>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={
@@ -225,6 +277,98 @@ export default function LoginPage() {
             </button>
           </form>
         </div>
+
+        {showResetRequest && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4" role="dialog" aria-modal="true">
+            <div className="w-full max-w-[380px] bg-white border border-[var(--color-border)] rounded-md shadow-lg animate-fade-in">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+                <div>
+                  <h2 className="text-[15px] font-semibold text-[var(--color-text)]">비밀번호 재설정 요청</h2>
+                  <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">가입한 이름과 휴대폰 번호를 입력해 주세요.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowResetRequest(false)}
+                  className="p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                  aria-label="닫기"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <form onSubmit={submitResetRequest} className="p-4 space-y-3.5">
+                <Field label="이름" required>
+                  <input
+                    type="text"
+                    value={resetName}
+                    onChange={e => setResetName(e.target.value)}
+                    placeholder="홍길동"
+                    required
+                    className="input"
+                  />
+                </Field>
+                <Field label="휴대폰 번호" required>
+                  <input
+                    type="tel"
+                    value={resetPhone}
+                    onChange={e => setResetPhone(formatPhone(e.target.value))}
+                    placeholder="010-0000-0000"
+                    required
+                    maxLength={13}
+                    className="input"
+                  />
+                </Field>
+                <Field label="요청 메모" hint="선택">
+                  <textarea
+                    value={resetNote}
+                    onChange={e => setResetNote(e.target.value)}
+                    placeholder="예: 임시 비밀번호를 문자로 안내받고 싶어요"
+                    maxLength={300}
+                    rows={3}
+                    className="input resize-none"
+                  />
+                </Field>
+
+                <div className="text-[12px] text-[var(--color-text-muted)] leading-relaxed bg-[var(--color-bg-subtle)] border border-[var(--color-border-subtle)] rounded px-3 py-2">
+                  보안을 위해 가입 여부는 화면에 표시하지 않습니다. 정보가 확인되면 관리자가 임시 비밀번호를 발급하고, 첫 로그인 시 새 비밀번호 변경이 강제됩니다.
+                </div>
+
+                {resetError && (
+                  <div className="text-[13px] text-[var(--color-danger)] bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-3 py-2 rounded">
+                    {resetError}
+                  </div>
+                )}
+                {resetMessage && (
+                  <div className="text-[13px] text-[var(--color-success)] bg-[var(--color-success-bg)] border border-[var(--color-success-border)] px-3 py-2 rounded">
+                    {resetMessage}
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowResetRequest(false)}
+                    className="flex-1 h-10 text-[13px] text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-hover)]"
+                  >
+                    닫기
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={resetSubmitting || !resetName.trim() || !resetPhone}
+                    className={cn(
+                      "flex-1 h-10 text-[13px] font-medium rounded transition-colors",
+                      resetSubmitting || !resetName.trim() || !resetPhone
+                        ? "bg-[var(--color-bg-hover)] text-[var(--color-text-disabled)] cursor-not-allowed"
+                        : "bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)]"
+                    )}
+                  >
+                    {resetSubmitting ? '접수 중…' : '요청 접수'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/*
           Demo accounts hint — production 빌드에서는 노출하지 않는다.

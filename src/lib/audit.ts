@@ -56,6 +56,8 @@ export type AuditAction =
   | 'attendance.field_checkin'
   | 'correction_request.approve'
   | 'correction_request.reject'
+  | 'password_reset_request.approve'
+  | 'password_reset_request.reject'
   | 'qr.generate'
   // PR-C1: 세션 태그 마스터 CRUD
   | 'tag_create'

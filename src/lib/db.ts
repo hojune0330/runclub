@@ -589,6 +589,35 @@ async function initSchema(): Promise<void> {
       ON correction_requests(reservation_id)
       WHERE status = 'pending'
   `);
+
+  // ─── PR-D2: 비로그인 비밀번호 재설정 요청 큐 ─────────────────────────────
+  // 로그인할 수 없는 회원이 로그인 화면에서 이름+휴대폰으로 도움을 요청하면,
+  // 관리자 인박스에서 확인 후 기존 임시 비밀번호 발급 플로우로 처리한다.
+  // 공개 POST 응답은 계정 존재 여부를 노출하지 않으며, pending 은 회원당 1건만 유지.
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS password_reset_requests (
+      id              TEXT PRIMARY KEY,
+      member_id       TEXT NOT NULL REFERENCES members(id),
+      request_name    TEXT NOT NULL,
+      request_phone   TEXT NOT NULL,
+      requester_note  TEXT,
+      status          TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','approved','rejected')),
+      requested_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      resolved_at     TIMESTAMPTZ,
+      resolved_by     TEXT REFERENCES members(id),
+      resolution_note TEXT
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_password_reset_status ON password_reset_requests(status)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_password_reset_member ON password_reset_requests(member_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_password_reset_pending_created
+                 ON password_reset_requests(status, requested_at DESC)`);
+  await dbRun(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_password_reset_pending_per_member
+      ON password_reset_requests(member_id)
+      WHERE status = 'pending'
+  `);
 }
 
 /**

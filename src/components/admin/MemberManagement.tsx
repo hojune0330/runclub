@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Search, Plus, X, Phone, Mail, Calendar as CalIcon,
   KeyRound, UserX, UserCheck, ShieldCheck, ShieldOff, Trash2, Copy,
 } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { useAuth } from '@/store/AuthContext';
+import { api, type PasswordResetRequestDto } from '@/lib/api';
 import { sessionTypeConfig, reservationStatusConfig, passStatusConfig } from '@/lib/config';
 import { formatKoreanDate, cn, getDaysUntilExpiry } from '@/lib/utils';
 import { Modal, FormField, Badge, useToast } from '@/components/ui';
@@ -27,6 +28,9 @@ export default function MemberManagement() {
   // Admin action busy/result state
   const [actionBusy, setActionBusy] = useState(false);
   const [tempPwInfo, setTempPwInfo] = useState<{ memberName: string; tempPassword: string } | null>(null);
+  const [resetRequests, setResetRequests] = useState<PasswordResetRequestDto[]>([]);
+  const [resetRequestsLoading, setResetRequestsLoading] = useState(false);
+  const [resetRequestBusyId, setResetRequestBusyId] = useState<string | null>(null);
 
   // Add form
   const [formName, setFormName] = useState('');
@@ -43,6 +47,28 @@ export default function MemberManagement() {
       })
       .sort((a, b) => b.joinDate.localeCompare(a.joinDate));
   }, [members, search, filter]);
+
+  const pendingResetRequests = useMemo(
+    () => resetRequests.filter(r => r.status === 'pending'),
+    [resetRequests]
+  );
+
+  const loadResetRequests = async () => {
+    setResetRequestsLoading(true);
+    try {
+      const res = await api.passwordResetRequests.list({ status: 'pending', limit: 50 });
+      setResetRequests(res.requests ?? []);
+    } catch (err: any) {
+      toast.error('비밀번호 재설정 요청을 불러오지 못했어요', err?.message);
+    } finally {
+      setResetRequestsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadResetRequests();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const memberDetail = useMemo(() => {
     if (!selectedMember) return null;
@@ -161,6 +187,40 @@ export default function MemberManagement() {
     }
   };
 
+  const handleApproveResetRequest = async (request: PasswordResetRequestDto) => {
+    if (resetRequestBusyId) return;
+    if (currentUser?.id === request.memberId) {
+      toast.warning('본인 계정은 요청함에서 초기화할 수 없어요', '마이페이지의 비밀번호 변경 메뉴를 사용해 주세요.');
+      return;
+    }
+    if (!confirm(`'${request.memberName}' 회원에게 임시 비밀번호를 발급할까요?\n\n기존 로그인 세션은 즉시 만료되고, 첫 로그인 시 비밀번호 변경이 강제됩니다.`)) return;
+    setResetRequestBusyId(request.id);
+    try {
+      const res = await api.passwordResetRequests.approve(request.id);
+      setTempPwInfo({ memberName: res.memberName, tempPassword: res.tempPassword });
+      await loadResetRequests();
+    } catch (err: any) {
+      toast.error('재설정 요청 처리에 실패했어요', err?.message);
+    } finally {
+      setResetRequestBusyId(null);
+    }
+  };
+
+  const handleRejectResetRequest = async (request: PasswordResetRequestDto) => {
+    if (resetRequestBusyId) return;
+    const note = prompt(`'${request.memberName}' 회원의 비밀번호 재설정 요청을 거절/닫기 처리할까요?\n메모를 남기려면 입력하세요.`, '관리자 확인 후 요청 종료');
+    if (note === null) return;
+    setResetRequestBusyId(request.id);
+    try {
+      await api.passwordResetRequests.reject(request.id, note.trim() || undefined);
+      await loadResetRequests();
+    } catch (err: any) {
+      toast.error('요청 닫기에 실패했어요', err?.message);
+    } finally {
+      setResetRequestBusyId(null);
+    }
+  };
+
   const copyTempPassword = async () => {
     if (!tempPwInfo) return;
     try {
@@ -214,6 +274,92 @@ export default function MemberManagement() {
           회원 등록
         </button>
       </div>
+
+      {/* Password reset request inbox */}
+      <section className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
+        <div className="px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-[14px] font-semibold text-[var(--color-text)] flex items-center gap-1.5">
+              <KeyRound size={14} />
+              비밀번호 재설정 요청
+              {pendingResetRequests.length > 0 && <Badge tone="warning">{pendingResetRequests.length}건 대기</Badge>}
+            </h2>
+            <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">
+              회원이 로그인 화면에서 요청하면 여기서 임시 비밀번호를 발급하고 전달합니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={loadResetRequests}
+            disabled={resetRequestsLoading}
+            className="h-8 px-3 text-[12px] rounded border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)] disabled:text-[var(--color-text-disabled)]"
+          >
+            {resetRequestsLoading ? '불러오는 중…' : '새로고침'}
+          </button>
+        </div>
+
+        {pendingResetRequests.length === 0 ? (
+          <div className="px-4 py-5 text-[13px] text-[var(--color-text-muted)]">
+            {resetRequestsLoading ? '요청을 불러오는 중입니다.' : '대기 중인 비밀번호 재설정 요청이 없습니다.'}
+          </div>
+        ) : (
+          <ul className="divide-y divide-[var(--color-border-subtle)]">
+            {pendingResetRequests.map(req => {
+              const busy = resetRequestBusyId === req.id;
+              const member = members.find(m => m.id === req.memberId);
+              return (
+                <li key={req.id} className="px-4 py-3 flex flex-col md:flex-row md:items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13.5px] font-semibold text-[var(--color-text)]">{req.memberName}</span>
+                      <span className="text-[12px] text-[var(--color-text-muted)] tabular-nums">{req.memberPhone}</span>
+                      {!req.memberIsActive && <Badge tone="muted">비활성</Badge>}
+                    </div>
+                    <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">
+                      요청 입력값: {req.requestName} · {req.requestPhone} · {formatKoreanDate(String(req.requestedAt).slice(0, 10), 'yy.M.d')}
+                    </p>
+                    {req.requesterNote && (
+                      <p className="text-[12.5px] text-[var(--color-text-secondary)] mt-1 truncate">“{req.requesterNote}”</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (member) setSelectedMember(member);
+                      }}
+                      className="h-8 px-2.5 text-[12px] rounded border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)]"
+                    >
+                      회원 보기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRejectResetRequest(req)}
+                      disabled={!!resetRequestBusyId}
+                      className="h-8 px-2.5 text-[12px] rounded border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:text-[var(--color-danger)] disabled:text-[var(--color-text-disabled)]"
+                    >
+                      닫기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApproveResetRequest(req)}
+                      disabled={!!resetRequestBusyId || currentUser?.id === req.memberId || !req.memberIsActive}
+                      className={cn(
+                        "h-8 px-3 text-[12px] font-medium rounded transition-colors",
+                        !!resetRequestBusyId || currentUser?.id === req.memberId || !req.memberIsActive
+                          ? "bg-[var(--color-bg-hover)] text-[var(--color-text-disabled)] cursor-not-allowed"
+                          : "bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)]"
+                      )}
+                    >
+                      {busy ? '처리 중…' : '임시 비밀번호 발급'}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       {/* Filter bar */}
       <div className="bg-white border border-[var(--color-border)] rounded-md px-3 md:px-4 py-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-3 md:flex-wrap">

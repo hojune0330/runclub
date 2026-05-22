@@ -60,6 +60,24 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export { AuthExpiredError };
 
+export interface PasswordResetRequestDto {
+  id: string;
+  memberId: string;
+  memberName: string;
+  memberPhone: string;
+  memberRole: 'member' | 'admin';
+  memberIsActive: boolean;
+  requestName: string;
+  requestPhone: string;
+  requesterNote: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  requestedAt: string;
+  resolvedAt: string | null;
+  resolvedBy: string | null;
+  resolvedByName: string | null;
+  resolutionNote: string | null;
+}
+
 // ─── Auth ───
 export const api = {
   auth: {
@@ -79,6 +97,31 @@ export const api = {
       request<any>('/auth/password', {
         method: 'PUT',
         body: JSON.stringify({ currentPassword, newPassword }),
+      }),
+    requestPasswordReset: (data: { name: string; phone: string; note?: string }) =>
+      request<{ success: boolean; message: string }>('/auth/password-reset-requests', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+  },
+
+  passwordResetRequests: {
+    list: (params?: { status?: 'pending' | 'approved' | 'rejected'; limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.status) q.set('status', params.status);
+      if (params?.limit) q.set('limit', String(params.limit));
+      const qs = q.toString() ? `?${q.toString()}` : '';
+      return request<{ requests: PasswordResetRequestDto[]; pendingCount: number }>(`/auth/password-reset-requests${qs}`);
+    },
+    approve: (id: string, note?: string) =>
+      request<{ success: boolean; tempPassword: string; memberName: string; message: string }>(
+        '/auth/password-reset-requests',
+        { method: 'PATCH', body: JSON.stringify({ id, action: 'approve', note }) }
+      ),
+    reject: (id: string, note?: string) =>
+      request<{ success: boolean }>('/auth/password-reset-requests', {
+        method: 'PATCH',
+        body: JSON.stringify({ id, action: 'reject', note }),
       }),
   },
 
