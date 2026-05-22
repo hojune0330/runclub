@@ -37,7 +37,7 @@ export default function QRCheckin() {
     p => p.memberId === currentMember.id && p.status === 'active'
   );
   // Any pass usable for any session type
-  const canCheckIn = todayReserved.length > 0; // must have today's reservation to check in
+  const canCheckIn = todayReserved.length > 0 || hasAnyActivePass; // 예약자 또는 사용 가능한 수강권 보유자는 현장 QR 체크인 가능
 
   // Detect browser support on mount
   useEffect(() => {
@@ -147,8 +147,10 @@ export default function QRCheckin() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       const msg = e?.message || '';
-      if (msg.includes('예약')) {
-        setError('이 세션에 예약이 없습니다. 먼저 세션을 예약해주세요.');
+      if (msg.includes('수강권')) {
+        setError('예약이 없고 이 세션에 사용할 수 있는 수강권도 없습니다. 코치에게 현장 확인을 요청해주세요.');
+      } else if (msg.includes('예약')) {
+        setError('예약 없이 체크인하려면 이 세션에 사용할 수 있는 수강권이 필요합니다.');
       } else if (msg.includes('만료') || msg.includes('유효')) {
         setError('QR 코드가 만료되었습니다. 코치에게 새 QR 코드를 요청 후 다시 스캔해주세요.');
       } else if (msg.includes('형식')) {
@@ -180,7 +182,7 @@ export default function QRCheckin() {
           <div className="flex-1 text-[13px]">
             <p className="font-medium text-[var(--color-text)]">사용 가능한 수강권이 없습니다</p>
             <p className="text-[var(--color-text-secondary)] mt-0.5">
-              수강권이 있어야 세션을 예약하고 출석할 수 있습니다. 현장에서 코치에게 문의하거나 프로필의 "문의하기"를 이용해주세요.
+              수강권이 있어야 예약 또는 현장 QR 출석이 가능합니다. 현장에서 코치에게 문의하거나 프로필의 "문의하기"를 이용해주세요.
             </p>
           </div>
           <button
@@ -192,13 +194,13 @@ export default function QRCheckin() {
         </div>
       )}
 
-      {hasAnyActivePass && !canCheckIn && (
+      {hasAnyActivePass && todayReserved.length === 0 && (
         <div className="flex items-start gap-2.5 bg-[var(--color-bg-subtle)] border border-[var(--color-border)] rounded-md px-4 py-3">
           <Info size={16} className="text-[var(--color-text-muted)] shrink-0 mt-0.5" />
           <div className="flex-1 text-[13px]">
-            <p className="font-medium text-[var(--color-text)]">오늘 예약된 세션이 없습니다</p>
+            <p className="font-medium text-[var(--color-text)]">예약 없이도 현장 출석이 가능합니다</p>
             <p className="text-[var(--color-text-secondary)] mt-0.5">
-              QR 체크인을 하려면 먼저 해당 세션을 예약해야 합니다.
+              사용 가능한 수강권이 있으면 코치가 띄운 QR로 즉시 출석 처리됩니다. 단, 해당 세션에 적용 가능한 수강권이어야 합니다.
             </p>
           </div>
           <button
@@ -293,9 +295,11 @@ export default function QRCheckin() {
                       클릭하여 스캔 시작
                     </p>
                     <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">
-                      {canCheckIn
+                      {todayReserved.length > 0
                         ? `오늘 ${todayReserved.length}개 예약 · 카메라로 코치 QR을 비춰주세요`
-                        : '카메라로 코치 QR을 비춰주세요'}
+                        : hasAnyActivePass
+                          ? '예약 없이도 수강권으로 현장 QR 출석 가능'
+                          : '카메라로 코치 QR을 비춰주세요'}
                     </p>
                   </div>
                 </button>
@@ -410,6 +414,7 @@ export default function QRCheckin() {
               {[
                 '세션 시작 60분 전부터 종료 60분 후까지 체크인 가능합니다.',
                 '앱 내 스캐너 또는 휴대폰 기본 카메라로 코치 QR을 엽니다.',
+                '예약이 없어도 해당 세션에 사용할 수 있는 수강권이 있으면 즉시 출석 처리됩니다.',
                 'QR은 30초마다 새로 표시되지만, 스캔 실패를 줄이기 위해 2분간 유효합니다.',
                 '스캔이 어려운 경우 코치의 현장 태블릿에서 이름/연락처로 출석할 수 있습니다.',
               ].map((text, i) => (

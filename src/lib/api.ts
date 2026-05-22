@@ -458,7 +458,7 @@ export const api = {
         body: JSON.stringify({ sessionId }),
       }),
     verify: (sessionId: string, token: string) =>
-      request<{ success: boolean; message: string; sessionName: string; sessionTime: string; alreadyAttended?: boolean }>('/qr/verify', {
+      request<{ success: boolean; message: string; sessionName: string; sessionTime: string; alreadyAttended?: boolean; walkIn?: boolean; passDelta?: number }>('/qr/verify', {
         method: 'POST',
         body: JSON.stringify({ sessionId, token }),
       }),

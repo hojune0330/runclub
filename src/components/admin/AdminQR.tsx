@@ -159,7 +159,7 @@ export default function AdminQR() {
       <div>
         <h1 className="page-title">출석 체크</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
-          현장 태블릿 출석을 기본으로 사용하고, QR은 보조 수단으로 운영합니다. QR은 기본 카메라로 열 수 있는 링크형으로 개선되었습니다.
+          현장 태블릿 출석을 기본으로 사용하고, QR도 수강권이 있으면 예약 없이 바로 출석 처리됩니다. 기본 카메라로 열 수 있는 링크형 QR입니다.
         </p>
       </div>
 
@@ -292,7 +292,7 @@ export default function AdminQR() {
                             onChange={e => setAllowWalkIn(e.target.checked)}
                             className="mt-0.5"
                           />
-                          예약이 없는 회원도 현장 추가 허용 (사용 가능한 수강권이 있으면 자동 차감)
+                          예약이 없는 회원도 현장 추가 허용 (사용 가능한 수강권이 있으면 자동 차감, 기본 권장)
                         </label>
                         <label className="flex items-start gap-2 text-[12.5px] text-[var(--color-text-secondary)]">
                           <input
@@ -373,7 +373,7 @@ export default function AdminQR() {
                       />
                     </div>
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-[12px] text-[var(--color-text-muted)]">화면은 30초마다 갱신, QR은 2분간 유효</span>
+                      <span className="text-[12px] text-[var(--color-text-muted)]">예약 없이도 수강권 있으면 출석 · QR은 2분 유효</span>
                       <span className={cn('text-[13px] tabular-nums font-medium', timeLeft <= 5 ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-secondary)]')}>
                         {timeLeft}초
                       </span>
