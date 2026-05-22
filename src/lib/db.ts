@@ -296,6 +296,21 @@ async function initSchema(): Promise<void> {
       ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ
   `);
 
+  // ─── Sheets member metadata import columns ───────────────────────────────
+  // Members sheet J~O are intentionally manager-editable. Core profile fields
+  // still belong to the DB/web app, but these safe CRM-style metadata columns
+  // can be reviewed and imported back into the web admin view.
+  await dbRun(`
+    ALTER TABLE members
+      ADD COLUMN IF NOT EXISTS sheet_manager_memo       TEXT,
+      ADD COLUMN IF NOT EXISTS sheet_tag                TEXT,
+      ADD COLUMN IF NOT EXISTS sheet_member_grade       TEXT,
+      ADD COLUMN IF NOT EXISTS sheet_acquisition_source TEXT,
+      ADD COLUMN IF NOT EXISTS sheet_next_contact_date  TEXT,
+      ADD COLUMN IF NOT EXISTS sheet_assigned_manager   TEXT,
+      ADD COLUMN IF NOT EXISTS sheet_meta_synced_at     TIMESTAMPTZ
+  `);
+
   // ─── PR-6: Pass catalog & checkout columns ───
   //
   // pass_products gets richer "merchant catalog" fields so the future
@@ -508,6 +523,21 @@ async function initSchema(): Promise<void> {
   `);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_sheet_sync_queue_attempts ON sheet_sync_queue(attempts)`);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_sheet_sync_log_created    ON sheet_sync_log(created_at DESC)`);
+
+  // Sheet → web member metadata import log. Stores the full preview snapshot
+  // before applying so an accidental sheet edit can be inspected/replayed.
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS sheet_member_import_log (
+      id            BIGSERIAL PRIMARY KEY,
+      admin_id      TEXT NOT NULL,
+      mode          TEXT NOT NULL DEFAULT 'manager_metadata',
+      applied_count INTEGER NOT NULL DEFAULT 0,
+      warning_count INTEGER NOT NULL DEFAULT 0,
+      snapshot_json JSONB NOT NULL,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_sheet_member_import_log_created ON sheet_member_import_log(created_at DESC)`);
 
   // ─── Admin audit log (PR-5) ───
   // Append-only ledger of every admin-initiated state change. The cached

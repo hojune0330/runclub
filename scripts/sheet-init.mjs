@@ -7,7 +7,7 @@
  *     node scripts/sheet-init.mjs
  *
  * What it does (idempotent — safe to re-run):
- *   1. Creates the 4 tabs if missing: Members / Passes / Attendance / Sessions
+ *   1. Creates the tabs if missing: Members / Passes / Attendance / Sessions / AdminLog / PassProducts
  *   2. Writes header rows (row 1) with bold + frozen
  *   3. Adds drop-down validation on Members columns K (태그), L (등급), M (유입경로)
  *   4. Locks the DB-owned column ranges so only the Service Account can edit
@@ -38,6 +38,7 @@ const TABS = {
   attendance: process.env.GOOGLE_SHEET_TAB_ATTENDANCE ?? 'Attendance',
   sessions:   process.env.GOOGLE_SHEET_TAB_SESSIONS   ?? 'Sessions',
   adminLog:   process.env.GOOGLE_SHEET_TAB_ADMIN_LOG  ?? 'AdminLog',
+  passProducts: process.env.GOOGLE_SHEET_TAB_PASS_PRODUCTS ?? 'PassProducts',
 };
 
 const HEADERS = {
@@ -49,8 +50,9 @@ const HEADERS = {
   passes: [
     '수강권ID', '회원ID', '회원이름', '상품명', '카테고리',
     '총횟수', '잔여횟수', '시작일', '만료일', '발급일',
-    '상태', '일시정지시각', '가격', '최종동기화',
-    '매니저메모',
+    '상태', '일시정지시각', '가격', '결제상태', '결제수단',
+    '실수령액', '결제시각', '거래번호', '할인금액', '할인사유',
+    '최종동기화', '매니저메모',
   ],
   attendance: [
     '출석ID', '회원ID', '회원이름', '세션ID', '세션명',
@@ -66,15 +68,21 @@ const HEADERS = {
     '시각', '관리자ID', '관리자이름', '행동', '대상유형',
     '대상ID', '대상이름', '변경요약', 'IP',
   ],
+  passProducts: [
+    '상품ID', '상품명', '분류', '적용세션', '총횟수', '기간(일)',
+    '정가', '판매가', '추천', '판매중', '정렬', '최종동기화',
+    '매니저메모', '태그', '할인코드', '내부분류',
+  ],
 };
 
 // DB-owned column count (1-based last column index that the server overwrites)
 const DB_COL_COUNT = {
   members:    9,   // A..I
-  passes:     14,  // A..N
+  passes:     21,  // A..U
   attendance: 11,  // A..K  (append-only, fully owned)
   sessions:   13,  // A..M
   adminLog:   9,   // A..I  (append-only audit log)
+  passProducts: 12, // A..L
 };
 
 const DROPDOWNS = {
@@ -228,7 +236,7 @@ async function applyDropdowns(sheets, meta) {
 async function applyProtections(sheets, meta, creds) {
   // Lock the DB-owned column range of each tab so that only the Service
   // Account itself can edit those cells. The manager-editable columns
-  // (Members J/L..O, Passes O, Sessions N) stay open for everyone with
+  // (Members J..O, Passes V, Sessions N, PassProducts M..P) stay open for everyone with
   // edit access on the spreadsheet.
   //
   // We split Members into two protected ranges so that column J (매니저메모)
@@ -251,7 +259,7 @@ async function applyProtections(sheets, meta, creds) {
       },
     },
   });
-  // Passes: protect A..N
+  // Passes: protect A..U
   requests.push({
     addProtectedRange: {
       protectedRange: {
@@ -259,7 +267,7 @@ async function applyProtections(sheets, meta, creds) {
           sheetId: findSheetId(meta, TABS.passes),
           startRowIndex: 1, startColumnIndex: 0, endColumnIndex: DB_COL_COUNT.passes,
         },
-        description: 'DB-owned (A~N). Do not edit by hand.',
+        description: 'DB-owned (A~U). Do not edit by hand.',
         warningOnly: false,
         editors,
       },
@@ -307,6 +315,20 @@ async function applyProtections(sheets, meta, creds) {
       },
     },
   });
+  // PassProducts: protect A..L
+  requests.push({
+    addProtectedRange: {
+      protectedRange: {
+        range: {
+          sheetId: findSheetId(meta, TABS.passProducts),
+          startRowIndex: 1, startColumnIndex: 0, endColumnIndex: DB_COL_COUNT.passProducts,
+        },
+        description: 'DB-owned (A~L). Do not edit by hand.',
+        warningOnly: false,
+        editors,
+      },
+    },
+  });
 
   // Idempotency: if protections already exist on these ranges, skip silently.
   // The Sheets API returns 400 'duplicate' — we tolerate it.
@@ -315,7 +337,7 @@ async function applyProtections(sheets, meta, creds) {
       spreadsheetId: SHEET_ID,
       requestBody: { requests },
     });
-    console.log('[init] protections applied (5 ranges)');
+    console.log('[init] protections applied (6 ranges)');
   } catch (err) {
     const msg = err?.message ?? String(err);
     if (/already|duplicate/i.test(msg)) {

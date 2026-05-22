@@ -78,6 +78,47 @@ export interface PasswordResetRequestDto {
   resolutionNote: string | null;
 }
 
+export interface MemberSheetMetadata {
+  sheetManagerMemo: string | null;
+  sheetTag: string | null;
+  sheetMemberGrade: string | null;
+  sheetAcquisitionSource: string | null;
+  sheetNextContactDate: string | null;
+  sheetAssignedManager: string | null;
+}
+
+export interface MemberSheetImportChange {
+  rowNumber: number;
+  memberId: string;
+  memberName: string;
+  phone: string;
+  before: MemberSheetMetadata;
+  after: MemberSheetMetadata;
+  changedFields: Array<keyof MemberSheetMetadata>;
+  coreWarnings: string[];
+}
+
+export interface MemberSheetImportWarning {
+  rowNumber: number;
+  level: 'warning' | 'blocked';
+  message: string;
+}
+
+export interface MemberSheetImportPreview {
+  enabled: boolean;
+  generatedAt: string;
+  stats: {
+    sheetRows: number;
+    matchedRows: number;
+    changes: number;
+    blockedRows: number;
+    warnings: number;
+  };
+  changes: MemberSheetImportChange[];
+  warnings: MemberSheetImportWarning[];
+  applied?: number;
+}
+
 // ─── Auth ───
 export const api = {
   auth: {
@@ -293,6 +334,11 @@ export const api = {
         `/members/${encodeURIComponent(id)}/role`,
         { method: 'PATCH', body: JSON.stringify({ role }) }
       ),
+  },
+
+  sheetMemberImport: {
+    preview: () => request<MemberSheetImportPreview>('/sheets/members/import'),
+    apply: () => request<MemberSheetImportPreview & { applied: number }>('/sheets/members/import', { method: 'POST' }),
   },
 
   audit: {

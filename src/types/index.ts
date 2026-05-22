@@ -218,6 +218,14 @@ export interface Member {
   isActive: boolean;
   memo?: string;
   profileImage?: string;
+  /** Google Sheets Members J~O manager-maintained metadata imported by admin review. */
+  sheetManagerMemo?: string | null;
+  sheetTag?: string | null;
+  sheetMemberGrade?: string | null;
+  sheetAcquisitionSource?: string | null;
+  sheetNextContactDate?: string | null;
+  sheetAssignedManager?: string | null;
+  sheetMetaSyncedAt?: string | null;
 }
 
 // ─── Notice Types ───
