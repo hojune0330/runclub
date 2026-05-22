@@ -12,23 +12,16 @@ import bcrypt from 'bcryptjs';
 // numbers by status code or message.
 const GENERIC_LOGIN_FAIL = '연락처 또는 비밀번호가 올바르지 않습니다';
 
-// EXT-I8: Per-account lockout policy. Per-IP rate limiting (10/5min) already
-// stops a single host from spraying; this layer stops a *distributed* attack
-// (rotating IPs, all targeting the same account). Numbers are deliberately
-// generous so legitimate fat-finger users aren't kicked out.
+// EXT-I8: Per-account lockout policy. Login rate limiting is split into:
+//   1) a very high per-IP flood guard, so 100+ legitimate members behind the
+//      same venue/NAT IP can still log in at once;
+//   2) a per-IP+phone limiter, so brute-force attempts against one account are
+//      still contained even when many users share the same network.
+// Numbers are deliberately generous so large classes/events don't lock out.
 const LOCKOUT_FAIL_THRESHOLD = 7;
 const LOCKOUT_WINDOW_MS = 15 * 60_000;
 
 export async function POST(req: NextRequest) {
-  // Rate limit: 10 attempts per 5 minutes per IP.
-  const rl = rateLimit(req, 'login', { windowMs: 5 * 60_000, max: 10 });
-  if (!rl.ok) {
-    return NextResponse.json(
-      { error: `로그인 시도가 너무 많습니다. ${rl.retryAfterSec}초 후 다시 시도해주세요.` },
-      { status: 429, headers: { 'Retry-After': String(rl.retryAfterSec) } }
-    );
-  }
-
   try {
     let body: any;
     try {
@@ -44,6 +37,17 @@ export async function POST(req: NextRequest) {
     }
     const { phone: phoneRaw, password } = body as Record<string, unknown>;
 
+    // Large on-site events can put 100+ members behind the same NAT/carrier IP.
+    // Do NOT use a low per-IP login cap. Instead, keep only a high flood guard
+    // plus a per-account guard below.
+    const flood = rateLimit(req, 'login-flood', { windowMs: 60_000, max: 600 });
+    if (!flood.ok) {
+      return NextResponse.json(
+        { error: `로그인 요청이 일시적으로 많습니다. ${flood.retryAfterSec}초 후 다시 시도해주세요.` },
+        { status: 429, headers: { 'Retry-After': String(flood.retryAfterSec) } }
+      );
+    }
+
     if (typeof phoneRaw !== 'string' || typeof password !== 'string' || !phoneRaw || !password) {
       return NextResponse.json({ error: '연락처와 비밀번호를 입력해주세요' }, { status: 400 });
     }
@@ -54,9 +58,28 @@ export async function POST(req: NextRequest) {
     }
     const phone = normalizePhone(phoneRaw);
     if (!phone) {
+      const invalidRl = rateLimit(req, 'login-invalid-phone', { windowMs: 60_000, max: 120 });
+      if (!invalidRl.ok) {
+        return NextResponse.json(
+          { error: `로그인 시도가 너무 많습니다. ${invalidRl.retryAfterSec}초 후 다시 시도해주세요.` },
+          { status: 429, headers: { 'Retry-After': String(invalidRl.retryAfterSec) } }
+        );
+      }
       // Still return the generic message — don't reveal whether the format
       // was even valid (helps against scripted enum).
       return NextResponse.json({ error: GENERIC_LOGIN_FAIL }, { status: 401 });
+    }
+
+    const accountRl = rateLimit(req, 'login-account', {
+      windowMs: 5 * 60_000,
+      max: 30,
+      extraKey: phone,
+    });
+    if (!accountRl.ok) {
+      return NextResponse.json(
+        { error: `로그인 시도가 너무 많습니다. ${accountRl.retryAfterSec}초 후 다시 시도해주세요.` },
+        { status: 429, headers: { 'Retry-After': String(accountRl.retryAfterSec) } }
+      );
     }
 
     const member = await dbGet<any>(`
