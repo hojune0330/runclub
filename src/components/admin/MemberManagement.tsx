@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Search, Plus, X, Phone, Mail, Calendar as CalIcon,
   KeyRound, UserX, UserCheck, ShieldCheck, ShieldOff, Trash2, Copy,
+  FileSpreadsheet, RefreshCw, AlertTriangle,
 } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { useAuth } from '@/store/AuthContext';
-import { api, type PasswordResetRequestDto } from '@/lib/api';
+import { api, type PasswordResetRequestDto, type MemberSheetImportPreview } from '@/lib/api';
 import { sessionTypeConfig, reservationStatusConfig, passStatusConfig } from '@/lib/config';
 import { formatKoreanDate, cn, getDaysUntilExpiry } from '@/lib/utils';
 import { Modal, FormField, Badge, useToast } from '@/components/ui';
@@ -16,7 +17,7 @@ import type { Member } from '@/types';
 export default function MemberManagement() {
   const {
     members, memberPasses, reservations, sessions, addMember,
-    resetMemberPassword, deleteMember, setMemberActive, setMemberRole,
+    resetMemberPassword, deleteMember, setMemberActive, setMemberRole, refreshMembers,
   } = useApp();
   const { user: currentUser } = useAuth();
   const toast = useToast();
@@ -31,6 +32,9 @@ export default function MemberManagement() {
   const [resetRequests, setResetRequests] = useState<PasswordResetRequestDto[]>([]);
   const [resetRequestsLoading, setResetRequestsLoading] = useState(false);
   const [resetRequestBusyId, setResetRequestBusyId] = useState<string | null>(null);
+  const [sheetPreview, setSheetPreview] = useState<MemberSheetImportPreview | null>(null);
+  const [sheetPreviewLoading, setSheetPreviewLoading] = useState(false);
+  const [sheetApplyLoading, setSheetApplyLoading] = useState(false);
 
   // Add form
   const [formName, setFormName] = useState('');
@@ -53,6 +57,15 @@ export default function MemberManagement() {
     [resetRequests]
   );
 
+  const sheetFieldLabels: Record<string, string> = {
+    sheetManagerMemo: '매니저메모',
+    sheetTag: '태그',
+    sheetMemberGrade: '회원등급',
+    sheetAcquisitionSource: '유입경로',
+    sheetNextContactDate: '다음컨택예정일',
+    sheetAssignedManager: '담당매니저',
+  };
+
   const loadResetRequests = async () => {
     setResetRequestsLoading(true);
     try {
@@ -69,6 +82,41 @@ export default function MemberManagement() {
     void loadResetRequests();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleSheetPreview = async () => {
+    setSheetPreviewLoading(true);
+    try {
+      const res = await api.sheetMemberImport.preview();
+      setSheetPreview(res);
+      if (!res.enabled) {
+        toast.warning('시트 가져오기가 비활성화되어 있어요', res.warnings[0]?.message);
+      } else if (res.stats.changes === 0) {
+        toast.success('가져올 시트 메타데이터 변경분이 없습니다');
+      } else {
+        toast.success(`시트 변경 ${res.stats.changes}건을 찾았어요`, '적용 전 아래 미리보기를 확인하세요.');
+      }
+    } catch (err: any) {
+      toast.error('시트 변경사항 미리보기에 실패했어요', err?.message);
+    } finally {
+      setSheetPreviewLoading(false);
+    }
+  };
+
+  const handleSheetApply = async () => {
+    if (!sheetPreview || sheetPreview.stats.changes === 0 || sheetApplyLoading) return;
+    if (!confirm(`Google Sheets Members 탭의 J~O 메타데이터 ${sheetPreview.stats.changes}건을 웹 회원 관리에 반영할까요?\n\n이 작업은 이름/연락처/권한/활성여부 같은 핵심 정보는 변경하지 않습니다.`)) return;
+    setSheetApplyLoading(true);
+    try {
+      const res = await api.sheetMemberImport.apply();
+      setSheetPreview(res);
+      await refreshMembers();
+      toast.success(`시트 메타데이터 ${res.applied ?? 0}건을 반영했어요`);
+    } catch (err: any) {
+      toast.error('시트 변경사항 적용에 실패했어요', err?.message);
+    } finally {
+      setSheetApplyLoading(false);
+    }
+  };
 
   const memberDetail = useMemo(() => {
     if (!selectedMember) return null;
@@ -361,6 +409,101 @@ export default function MemberManagement() {
         )}
       </section>
 
+      {/* Google Sheets metadata import */}
+      <section className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
+        <div className="px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <h2 className="text-[14px] font-semibold text-[var(--color-text)] flex items-center gap-1.5">
+              <FileSpreadsheet size={14} />
+              Google Sheets 메타데이터 가져오기
+              {sheetPreview?.enabled && sheetPreview.stats.changes > 0 && <Badge tone="primary">{sheetPreview.stats.changes}건 변경</Badge>}
+            </h2>
+            <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">
+              Members 탭의 J~O(매니저 메모·태그·등급·유입경로·컨택일·담당자)만 웹으로 가져옵니다. A~I 핵심 정보는 웹 DB 기준으로 유지됩니다.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleSheetPreview}
+              disabled={sheetPreviewLoading || sheetApplyLoading}
+              className="h-9 px-3 text-[12.5px] rounded border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)] disabled:text-[var(--color-text-disabled)] inline-flex items-center gap-1.5"
+            >
+              <RefreshCw size={13} className={sheetPreviewLoading ? 'animate-spin' : ''} />
+              {sheetPreviewLoading ? '확인 중…' : '변경 미리보기'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSheetApply}
+              disabled={!sheetPreview?.enabled || !sheetPreview.stats.changes || sheetPreviewLoading || sheetApplyLoading}
+              className={cn(
+                "h-9 px-3 text-[12.5px] font-medium rounded transition-colors",
+                !sheetPreview?.enabled || !sheetPreview.stats.changes || sheetPreviewLoading || sheetApplyLoading
+                  ? "bg-[var(--color-bg-hover)] text-[var(--color-text-disabled)] cursor-not-allowed"
+                  : "bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)]"
+              )}
+            >
+              {sheetApplyLoading ? '적용 중…' : '미리보기 적용'}
+            </button>
+          </div>
+        </div>
+
+        {sheetPreview ? (
+          <div className="px-4 py-3 space-y-3">
+            <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-[var(--color-text-secondary)]">
+              <span>시트 행 {sheetPreview.stats.sheetRows}개</span>
+              <span>· 매칭 {sheetPreview.stats.matchedRows}개</span>
+              <span>· 변경 {sheetPreview.stats.changes}개</span>
+              {sheetPreview.stats.blockedRows > 0 && <span className="text-[var(--color-danger)]">· 보류 {sheetPreview.stats.blockedRows}개</span>}
+              {sheetPreview.applied !== undefined && <Badge tone="success">최근 적용 {sheetPreview.applied}건</Badge>}
+            </div>
+
+            {sheetPreview.warnings.length > 0 && (
+              <div className="rounded border border-amber-200 bg-amber-50 p-3">
+                <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-amber-800 mb-1">
+                  <AlertTriangle size={13} /> 확인 필요 {sheetPreview.warnings.length}건
+                </div>
+                <ul className="space-y-1 text-[12px] text-amber-800 max-h-28 overflow-y-auto">
+                  {sheetPreview.warnings.slice(0, 8).map((w, idx) => (
+                    <li key={`${w.rowNumber}-${idx}`}>행 {w.rowNumber || '-'} · {w.message}</li>
+                  ))}
+                  {sheetPreview.warnings.length > 8 && <li>외 {sheetPreview.warnings.length - 8}건 더 있음</li>}
+                </ul>
+              </div>
+            )}
+
+            {sheetPreview.changes.length > 0 ? (
+              <div className="border border-[var(--color-border)] rounded overflow-hidden">
+                <div className="px-3 py-2 bg-[var(--color-bg-subtle)] text-[12px] text-[var(--color-text-muted)] border-b border-[var(--color-border)]">
+                  적용 예정 변경 미리보기 (최대 5건 표시)
+                </div>
+                <ul className="divide-y divide-[var(--color-border-subtle)]">
+                  {sheetPreview.changes.slice(0, 5).map(change => (
+                    <li key={`${change.memberId}-${change.rowNumber}`} className="px-3 py-2 text-[12.5px]">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-[var(--color-text)]">{change.memberName}</span>
+                        <span className="text-[var(--color-text-muted)] tabular-nums">행 {change.rowNumber} · {change.phone}</span>
+                      </div>
+                      <p className="text-[12px] text-[var(--color-text-secondary)] mt-0.5">
+                        {change.changedFields.map(f => sheetFieldLabels[f] || f).join(', ')} 변경
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="text-[12.5px] text-[var(--color-text-muted)]">
+                {sheetPreview.enabled ? '시트에서 가져올 매니저 메타데이터 변경분이 없습니다.' : '환경변수 설정 후 사용할 수 있습니다.'}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="px-4 py-3 text-[12.5px] text-[var(--color-text-muted)]">
+            먼저 “변경 미리보기”로 시트와 웹 DB의 차이를 확인하세요. 시트 행 삭제나 A~I 수정은 자동 반영하지 않습니다.
+          </div>
+        )}
+      </section>
+
       {/* Filter bar */}
       <div className="bg-white border border-[var(--color-border)] rounded-md px-3 md:px-4 py-3 flex flex-col md:flex-row md:items-center gap-2 md:gap-3 md:flex-wrap">
         <div className="relative w-full md:w-auto">
@@ -646,6 +789,20 @@ export default function MemberManagement() {
                 <div className="mt-4 p-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border-subtle)] rounded text-[12.5px] text-[var(--color-text-secondary)] leading-relaxed">
                   <p className="text-[11px] text-[var(--color-text-muted)] mb-1">메모</p>
                   {selectedMember.memo}
+                </div>
+              )}
+
+              {(selectedMember.sheetManagerMemo || selectedMember.sheetTag || selectedMember.sheetMemberGrade || selectedMember.sheetAcquisitionSource || selectedMember.sheetNextContactDate || selectedMember.sheetAssignedManager) && (
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded text-[12.5px] text-blue-900 leading-relaxed">
+                  <p className="text-[11px] text-blue-600 mb-2">Google Sheets 매니저 메타데이터</p>
+                  <dl className="space-y-1.5">
+                    {selectedMember.sheetTag && <div><dt className="inline text-blue-600">태그: </dt><dd className="inline">{selectedMember.sheetTag}</dd></div>}
+                    {selectedMember.sheetMemberGrade && <div><dt className="inline text-blue-600">등급: </dt><dd className="inline">{selectedMember.sheetMemberGrade}</dd></div>}
+                    {selectedMember.sheetAcquisitionSource && <div><dt className="inline text-blue-600">유입: </dt><dd className="inline">{selectedMember.sheetAcquisitionSource}</dd></div>}
+                    {selectedMember.sheetNextContactDate && <div><dt className="inline text-blue-600">다음 컨택: </dt><dd className="inline">{selectedMember.sheetNextContactDate}</dd></div>}
+                    {selectedMember.sheetAssignedManager && <div><dt className="inline text-blue-600">담당: </dt><dd className="inline">{selectedMember.sheetAssignedManager}</dd></div>}
+                    {selectedMember.sheetManagerMemo && <div><dt className="block text-blue-600 mb-0.5">매니저 메모</dt><dd className="whitespace-pre-wrap">{selectedMember.sheetManagerMemo}</dd></div>}
+                  </dl>
                 </div>
               )}
             </div>

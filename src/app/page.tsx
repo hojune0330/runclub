@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { ArrowRight, Calendar, MapPin, Clock, Users } from 'lucide-react';
+import { ArrowRight, Calendar, MapPin, Clock, Users, Ticket } from 'lucide-react';
 import PublicLayout from '@/components/public/PublicLayout';
+import PublicProductCard from '@/components/public/PublicProductCard';
 import { sessionTypeConfig } from '@/lib/config';
 import { formatKoreanDate } from '@/lib/utils';
 import { verifyToken } from '@/lib/auth';
@@ -153,6 +154,29 @@ export default async function LandingPage() {
           </div>
         </section>
       )}
+
+      {/*
+        ── PRODUCT PREVIEW ──
+        통계 숫자로 신뢰를 쌓은 직후, "어떤 상품이 있는지" 가격 투명성을
+        보여준다. compact 모드로 공간을 적게 차지하면서도 3종 대표 상품 노출.
+        마케팅 목적: "가격이 이렇구나" → 가입 장벽 ↓
+      */}
+      <section className="bg-white border-b border-[var(--color-border-subtle)]">
+        <div className="max-w-[1200px] mx-auto px-5 md:px-6 py-10 md:py-14">
+          <div className="flex items-end justify-between gap-3 mb-5 md:mb-7">
+            <h2 className="text-[20px] md:text-[26px] font-bold tracking-[-0.01em] text-[var(--color-text)]">
+              이런 상품이 있어요
+            </h2>
+            <Link
+              href="/sessions#products"
+              className="shrink-0 text-[13px] md:text-[13.5px] font-medium text-[var(--color-primary)] inline-flex items-center gap-1 active:underline sm:hover:underline"
+            >
+              <Ticket size={13} /> 전체 보기
+            </Link>
+          </div>
+          <PublicProductCard variant="card" compact max={3} />
+        </div>
+      </section>
 
       {/*
         ── HOW IT WORKS ──

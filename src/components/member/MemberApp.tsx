@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, ClipboardList, Ticket, QrCode, User, LogOut, Bell, Megaphone, History, ChevronDown, HelpCircle, LayoutDashboard, Menu, X, Home, ShoppingBag } from 'lucide-react';
+import { Calendar, ClipboardList, Ticket, QrCode, User, LogOut, Bell, Megaphone, History, ChevronDown, HelpCircle, LayoutDashboard, Menu, X, Home, ShoppingBag, Info } from 'lucide-react';
 import Overview from './Overview';
 import CalendarView from './CalendarView';
 import MyReservations from './MyReservations';
@@ -14,13 +14,14 @@ import Profile from './Profile';
 import Help from './Help';
 import ClubHub from './ClubHub';
 import ClubHome from './ClubHome';
+import SlowRunMembership from './SlowRunMembership';
 import { useAuth } from '@/store/AuthContext';
 import { useApp } from '@/store/AppContext';
 import { cn } from '@/lib/utils';
 import BusinessFooter from '@/components/public/BusinessFooter';
 import type { SessionType } from '@/types';
 
-type Tab = 'home' | 'overview' | 'calendar' | 'reservations' | 'passes' | 'catalog' | 'attendance' | 'qr' | 'notices' | 'profile' | 'help';
+type Tab = 'home' | 'overview' | 'calendar' | 'reservations' | 'passes' | 'catalog' | 'attendance' | 'qr' | 'notices' | 'profile' | 'help' | 'membership';
 
 const navGroups: { label: string; items: { id: Tab; label: string; icon: typeof Calendar }[] }[] = [
   {
@@ -42,6 +43,7 @@ const navGroups: { label: string; items: { id: Tab; label: string; icon: typeof 
     items: [
       { id: 'passes', label: '내 수강권', icon: Ticket },
       { id: 'catalog', label: '수강권 구매', icon: ShoppingBag },
+      { id: 'membership', label: '슬로우 롱런 멤버십', icon: Info },
       { id: 'attendance', label: '출석 이력', icon: History },
       { id: 'qr', label: 'QR 체크인', icon: QrCode },
     ],
@@ -137,6 +139,7 @@ export default function MemberApp() {
       case 'notices': return <Notices />;
       case 'profile': return <Profile />;
       case 'help': return <Help />;
+      case 'membership': return <SlowRunMembership />;
     }
   };
 

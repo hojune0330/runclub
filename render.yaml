@@ -73,6 +73,8 @@ services:
       # account as an Editor on the spreadsheet.
       - key: SHEET_SYNC_ENABLED
         value: 'false'
+      - key: SHEET_MEMBER_IMPORT_ENABLED
+        value: 'false'
       - key: GOOGLE_SHEET_ID
         sync: false             # set manually after creating the sheet
       - key: GOOGLE_SERVICE_ACCOUNT_JSON
@@ -85,6 +87,10 @@ services:
         value: Attendance
       - key: GOOGLE_SHEET_TAB_SESSIONS
         value: Sessions
+      - key: GOOGLE_SHEET_TAB_ADMIN_LOG
+        value: AdminLog
+      - key: GOOGLE_SHEET_TAB_PASS_PRODUCTS
+        value: PassProducts
       # Shared secret used by the sheet-sync-retry cron job. Generate once
       # (≥ 32 chars). The cron uses Authorization: Bearer <CRON_SECRET>.
       - key: CRON_SECRET

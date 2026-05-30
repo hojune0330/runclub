@@ -282,7 +282,7 @@ export default function MyReservations() {
                 <th className="text-left font-medium px-4 py-2.5 w-[140px]">날짜</th>
                 <th className="text-left font-medium px-4 py-2.5 w-[80px]">시간</th>
                 <th className="text-left font-medium px-4 py-2.5 w-[120px]">유형</th>
-                <th className="text-left font-medium px-4 py-2.5">세션명</th>
+                <th className="text-left font-medium px-4 py-2.5 w-[160px]">세션명</th>
                 <th className="text-left font-medium px-4 py-2.5 w-[160px]">장소</th>
                 <th className="text-left font-medium px-4 py-2.5 w-[100px]">상태</th>
                 <th className="text-right font-medium px-4 py-2.5 w-[100px]"></th>
@@ -320,12 +320,12 @@ export default function MyReservations() {
                         {config.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-[var(--color-text)] font-medium">{session.name}</td>
-                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">
+                    <td className="px-4 py-3 text-[var(--color-text)] font-medium max-w-[160px] truncate" title={session.name}>{session.name}</td>
+                    <td className="px-4 py-3 text-[var(--color-text-secondary)] max-w-[160px] truncate" title={session.location || undefined}>
                       {session.location ? (
                         <div className="flex items-center gap-1">
-                          <MapPin size={12} className="text-[var(--color-text-muted)]" />
-                          {session.location}
+                          <MapPin size={12} className="text-[var(--color-text-muted)] shrink-0" />
+                          <span className="truncate">{session.location}</span>
                         </div>
                       ) : (
                         '—'

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
-import { Star, Check, X, ShoppingBag, AlertCircle, Loader2, Tag, FlaskConical } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Star, ShoppingBag, AlertCircle, Loader2, Tag, FlaskConical } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig } from '@/lib/config';
 import { formatPrice, cn } from '@/lib/utils';
@@ -23,11 +23,30 @@ import type { PassProduct, SessionType } from '@/types';
 const passCategoryLabel = (c: PassProduct['category']) =>
   c === 'count' ? '횟수권' : c === 'season' ? '시즌권' : '월권';
 
+/** SKILL:slowrun-catalog-filter
+ *  SlowRunMembership CTA → 이쪽으로 이동할 때 sessionStorage 에 저장된
+ *  필터를 읽어 slowrun 태그 상품만 보여준다. 읽자마자 삭제하므로 다른 경로로
+ *  진입할 때는 영향을 주지 않는다.
+ */
+const CATALOG_FILTER_KEY = 'slowrun:catalogFilter';
+
 export default function PassCatalog() {
   const { passProducts } = useApp();
   const [detail, setDetail] = useState<PassProduct | null>(null);
+  // slowrun CTA 필터: 마운트 시 sessionStorage 읽고 즉시 제거
+  const [tagFilter, setTagFilter] = useState<string | null>(() => {
+    try {
+      const v = sessionStorage.getItem(CATALOG_FILTER_KEY);
+      if (v) sessionStorage.removeItem(CATALOG_FILTER_KEY);
+      return v;
+    } catch { return null; }
+  });
 
-  const onSale = useMemo(() => passProducts.filter(p => p.isActive), [passProducts]);
+  const onSale = useMemo(() => {
+    const active = passProducts.filter(p => p.isActive);
+    if (tagFilter) return active.filter(p => p.tags && p.tags.includes(tagFilter));
+    return active;
+  }, [passProducts, tagFilter]);
 
   const grouped = useMemo(() => {
     const buckets: Record<PassProduct['category'], PassProduct[]> = { count: [], season: [], monthly: [] };
@@ -52,6 +71,22 @@ export default function PassCatalog() {
           판매중인 상품 {total}건 — 카드를 눌러 상세 정보를 확인하고 결제할 수 있습니다.
         </p>
       </div>
+
+      {/* ── Tag filter indicator ── */}
+      {tagFilter && (
+        <div className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-slowrun-bg)] border border-[var(--color-slowrun)]/20 rounded text-[13px] text-[var(--color-text)] animate-slide-up">
+          <Tag size={14} className="text-[var(--color-slowrun)] shrink-0" />
+          <span className="flex-1">
+            <strong>슬로우 롱런</strong> 멤버십 전용 상품만 표시 중입니다.
+          </span>
+          <button
+            onClick={() => setTagFilter(null)}
+            className="text-[12px] text-[var(--color-primary)] font-medium hover:underline shrink-0"
+          >
+            전체 보기
+          </button>
+        </div>
+      )}
 
       <TestModeBanner />
 

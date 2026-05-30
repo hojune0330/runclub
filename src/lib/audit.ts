@@ -33,6 +33,7 @@ export type AuditAction =
   | 'member.deactivate'
   | 'member.reset_password'
   | 'member.role_change'
+  | 'member.sheet_import'
   | 'session.create'
   | 'session.update'
   | 'session.delete'

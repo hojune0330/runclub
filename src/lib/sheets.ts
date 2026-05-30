@@ -2,8 +2,10 @@
  * Google Sheets sync infrastructure.
  *
  * Design principles:
- *  - One-way mirror only: PostgreSQL is the source of truth, Sheets is a
- *    downstream read-only mirror with a few manager-editable columns.
+ *  - PostgreSQL remains the source of truth for core business fields. Sheets is
+ *    a downstream mirror plus explicit manager-editable metadata columns.
+ *  - Sheet → DB imports are opt-in/admin-reviewed and limited to safe metadata
+ *    unless a future reviewed migration explicitly expands the policy.
  *  - Fire-and-forget: every call is wrapped in `safeSync()` so a Sheets API
  *    failure never breaks the originating DB transaction.
  *  - Manager memo columns are NEVER overwritten. Upserts only touch the
@@ -231,6 +233,25 @@ export async function appendOnlyRow(tab: TabName, row: (string | number | boolea
   const tabName = TAB[tab];
   const { firstCol, lastCol } = DB_RANGE[tab];
   await appendRow(client, tabName, `${firstCol}:${lastCol}`, row);
+}
+
+// ─── Public: read helpers for admin-reviewed imports ───────────────────────
+
+export async function readTabValues(
+  tab: TabName,
+  a1Range: string,
+): Promise<(string | number | boolean | null)[][]> {
+  if (!SHEET_ID) throw new Error('GOOGLE_SHEET_ID is not set');
+  const client = getSheetsClient();
+  if (!client) throw new Error('Google Sheets client unavailable');
+
+  const tabName = TAB[tab];
+  const res = await client.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: `${tabName}!${a1Range}`,
+    valueRenderOption: 'FORMATTED_VALUE',
+  });
+  return (res.data.values ?? []) as (string | number | boolean | null)[][];
 }
 
 // ─── Public: safe wrapper (fire-and-forget + retry queue) ─────────────────

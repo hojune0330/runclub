@@ -425,13 +425,13 @@ export default function SessionManagement() {
               <table className="responsive-table" style={{ minWidth: 720 }}>
                 <thead>
                   <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
-                    <th className="text-left font-medium px-4 py-2.5 w-[130px] whitespace-nowrap">날짜</th>
-                    <th className="text-left font-medium px-4 py-2.5 w-[70px] whitespace-nowrap">시간</th>
-                    <th className="text-left font-medium px-4 py-2.5 w-[120px] whitespace-nowrap">유형</th>
-                    <th className="text-left font-medium px-4 py-2.5 whitespace-nowrap">세션명</th>
-                    <th className="text-left font-medium px-4 py-2.5 whitespace-nowrap">장소</th>
-                    <th className="text-right font-medium px-4 py-2.5 w-[130px] whitespace-nowrap">예약/정원</th>
-                    <th className="text-center font-medium px-4 py-2.5 w-[80px] whitespace-nowrap">상태</th>
+                    <th className="text-left font-medium px-4 py-2.5 w-[120px] whitespace-nowrap">날짜</th>
+                    <th className="text-left font-medium px-4 py-2.5 w-[60px] whitespace-nowrap">시간</th>
+                    <th className="text-left font-medium px-4 py-2.5 w-[100px] whitespace-nowrap">유형</th>
+                    <th className="text-left font-medium px-4 py-2.5 w-[200px]">세션명</th>
+                    <th className="text-left font-medium px-4 py-2.5 w-[130px]">장소</th>
+                    <th className="text-right font-medium px-4 py-2.5 w-[120px] whitespace-nowrap">예약/정원</th>
+                    <th className="text-center font-medium px-4 py-2.5 w-[70px] whitespace-nowrap">상태</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -462,8 +462,8 @@ export default function SessionManagement() {
                             {config.label}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 text-[var(--color-text)] whitespace-nowrap">{s.name}</td>
-                        <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">{s.location || '—'}</td>
+                        <td className="px-4 py-2.5 text-[var(--color-text)] max-w-[200px] truncate" title={s.name}>{s.name}</td>
+                        <td className="px-4 py-2.5 text-[var(--color-text-secondary)] max-w-[130px] truncate" title={s.location || undefined}>{s.location || '—'}</td>
                         <td className="px-4 py-2.5 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <span className={cn("tabular-nums", full ? "text-[var(--color-danger)]" : "text-[var(--color-text)]")}>

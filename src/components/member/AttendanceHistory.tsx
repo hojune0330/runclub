@@ -277,7 +277,7 @@ export default function AttendanceHistory() {
                         <th className="text-left font-medium px-4 py-2 w-[140px]">날짜</th>
                         <th className="text-left font-medium px-4 py-2 w-[80px]">시간</th>
                         <th className="text-left font-medium px-4 py-2 w-[120px]">유형</th>
-                        <th className="text-left font-medium px-4 py-2">세션명</th>
+                        <th className="text-left font-medium px-4 py-2 w-[180px]">세션명</th>
                         <th className="text-right font-medium px-4 py-2 w-[160px]">상태</th>
                       </tr>
                     </thead>
@@ -311,7 +311,7 @@ export default function AttendanceHistory() {
                                 {config.label}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-[var(--color-text)]">{sess.name}</td>
+                            <td className="px-4 py-3 text-[var(--color-text)] max-w-[180px] truncate" title={sess.name}>{sess.name}</td>
                             <td className="px-4 py-3 text-right">
                               <div className="inline-flex items-center gap-2 justify-end">
                                 <span

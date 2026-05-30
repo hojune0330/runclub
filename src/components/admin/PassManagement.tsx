@@ -433,9 +433,9 @@ function ProductsTable({
           <thead>
             <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
               <th className="text-left font-medium px-4 py-2.5 w-[60px]">정렬</th>
-              <th className="text-left font-medium px-4 py-2.5">상품명</th>
+              <th className="text-left font-medium px-4 py-2.5 w-[200px]">상품명</th>
               <th className="text-left font-medium px-4 py-2.5 w-[100px]">분류</th>
-              <th className="text-left font-medium px-4 py-2.5">이용 가능 세션</th>
+              <th className="text-left font-medium px-4 py-2.5 w-[160px]">이용 가능 세션</th>
               <th className="text-center font-medium px-4 py-2.5 w-[90px]">횟수/기간</th>
               <th className="text-right font-medium px-4 py-2.5 w-[130px]">가격</th>
               <th className="text-center font-medium px-4 py-2.5 w-[90px]">사용중</th>
@@ -454,11 +454,12 @@ function ProductsTable({
               return (
                 <tr key={p.id} className="border-b border-[var(--color-border-subtle)] last:border-0 hover:bg-[var(--color-bg-subtle)]">
                   <td className="px-4 py-2.5 text-[var(--color-text-muted)] tabular-nums">{p.displayOrder ?? 0}</td>
-                  <td className="px-4 py-2.5">
+                  <td className="px-4 py-2.5 max-w-[200px]">
                     <button
                       type="button"
                       onClick={() => onSelect(p)}
-                      className="text-left text-[var(--color-text)] font-medium hover:underline"
+                      className="text-left text-[var(--color-text)] font-medium hover:underline truncate block max-w-full"
+                      title={p.name}
                     >
                       {p.name}
                     </button>
@@ -474,7 +475,7 @@ function ProductsTable({
                     </div>
                   </td>
                   <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">{passCategoryLabel(p.category)}</td>
-                  <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">{applicableLabels}</td>
+                  <td className="px-4 py-2.5 text-[var(--color-text-secondary)] max-w-[160px] truncate" title={applicableLabels}>{applicableLabels}</td>
                   <td className="px-4 py-2.5 text-center text-[var(--color-text-secondary)] tabular-nums">
                     {p.totalCount ? `${p.totalCount}회` : `${p.durationDays}일`}
                   </td>
@@ -627,7 +628,7 @@ function PassesTable({
           <thead>
             <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
               <th className="text-left font-medium px-4 py-2.5 w-[110px]">회원명</th>
-              <th className="text-left font-medium px-4 py-2.5">수강권</th>
+              <th className="text-left font-medium px-4 py-2.5 w-[180px]">수강권</th>
               <th className="text-left font-medium px-4 py-2.5 w-[100px]">잔여</th>
               <th className="text-left font-medium px-4 py-2.5 w-[180px]">이용 기간</th>
               <th className="text-right font-medium px-4 py-2.5 w-[100px]">가격</th>
@@ -644,7 +645,7 @@ function PassesTable({
               return (
                 <tr key={p.id} className="border-b border-[var(--color-border-subtle)] last:border-0 hover:bg-[var(--color-bg-subtle)] cursor-pointer" onClick={() => onSelect(p)}>
                   <td className="px-4 py-2.5 text-[var(--color-text)] font-medium">{p.memberName}</td>
-                  <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">{p.productName}</td>
+                  <td className="px-4 py-2.5 text-[var(--color-text-secondary)] max-w-[180px] truncate" title={p.productName}>{p.productName}</td>
                   <td className="px-4 py-2.5 text-[var(--color-text-secondary)] tabular-nums">
                     {p.category === 'count' ? `${p.remainingCount} / ${p.totalCount}회` : '—'}
                   </td>
@@ -2021,7 +2022,7 @@ function PaymentsMonitorPanel() {
                 <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
                   <th className="text-left font-medium px-4 py-2.5 w-[150px]">시각</th>
                   <th className="text-left font-medium px-4 py-2.5 w-[110px]">회원</th>
-                  <th className="text-left font-medium px-4 py-2.5">상품</th>
+                  <th className="text-left font-medium px-4 py-2.5 w-[180px]">상품</th>
                   <th className="text-right font-medium px-4 py-2.5 w-[110px]">금액</th>
                   <th className="text-center font-medium px-4 py-2.5 w-[110px]">상태</th>
                   <th className="text-left font-medium px-4 py-2.5 w-[200px]">주문/거래 ID</th>
@@ -2048,7 +2049,7 @@ function PaymentsMonitorPanel() {
                         })}
                       </td>
                       <td className="px-4 py-2.5 text-[var(--color-text)] font-medium">{it.memberName}</td>
-                      <td className="px-4 py-2.5 text-[var(--color-text-secondary)]">
+                      <td className="px-4 py-2.5 text-[var(--color-text-secondary)] max-w-[180px] truncate" title={it.productName}>
                         {it.productName}
                         {isFailed && it.errorMessage && (
                           <p className="text-[11px] text-red-700 mt-0.5 truncate max-w-[400px]" title={it.errorMessage}>

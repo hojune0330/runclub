@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { dbAll, dbGet, dbRun, genId } from '@/lib/db';
+import { dbAll, dbGet, dbRun, genId, ensureSchema } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { normalizePhone, validateName, validateEmail, validateText } from '@/lib/validation';
 import { readJsonBody } from '@/lib/http';
@@ -32,8 +32,12 @@ export async function GET(req: NextRequest) {
   if (!auth) return unauthorizedResponse();
   if (auth.role !== 'admin') return forbiddenResponse();
 
+  await ensureSchema();
   const members = await dbAll(`
-    SELECT id, name, phone, email, role, join_date, is_active, memo, profile_image
+    SELECT id, name, phone, email, role, join_date, is_active, memo, profile_image,
+           sheet_manager_memo, sheet_tag, sheet_member_grade,
+           sheet_acquisition_source, sheet_next_contact_date,
+           sheet_assigned_manager, sheet_meta_synced_at
     FROM members ORDER BY join_date DESC
   `, []);
 
@@ -47,6 +51,13 @@ export async function GET(req: NextRequest) {
     isActive: !!m.is_active,
     memo: m.memo,
     profileImage: m.profile_image,
+    sheetManagerMemo: m.sheet_manager_memo,
+    sheetTag: m.sheet_tag,
+    sheetMemberGrade: m.sheet_member_grade,
+    sheetAcquisitionSource: m.sheet_acquisition_source,
+    sheetNextContactDate: m.sheet_next_contact_date,
+    sheetAssignedManager: m.sheet_assigned_manager,
+    sheetMetaSyncedAt: m.sheet_meta_synced_at,
   })));
 }
 
