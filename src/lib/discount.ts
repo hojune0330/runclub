@@ -11,7 +11,7 @@
 //
 // 0원 이하가 되면 Toss를 우회하고 즉시 발급 (PR-C3 재활용).
 
-import { dbGet, dbAll } from '@/lib/db';
+import { dbGet, dbAll, ensureDiscountSchema } from '@/lib/db';
 
 // ─── Types ───
 
@@ -142,6 +142,9 @@ export async function calculateDiscount(
     useMileage?: number;    // 회원이 사용하겠다고 입력한 적립금
   }
 ): Promise<DiscountResult> {
+  // Ensure discount schema (idempotent — only runs once per process).
+  await ensureDiscountSchema();
+
   const lines: DiscountLineItem[] = [];
   let remaining = productPrice;
 

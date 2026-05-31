@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dbAll, dbGet, dbRun, genId } from '@/lib/db';
 import { getAuthFromRequest, requireAdmin } from '@/lib/auth';
-import { ensureDiscountSchema } from '@/lib/db';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-DISCOUNT: Admin coupon CRUD
@@ -16,8 +15,6 @@ export async function GET(req: NextRequest) {
   const auth = await getAuthFromRequest(req);
   if (!auth) return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 });
   if (auth.role !== 'admin') return NextResponse.json({ error: '관리자 권한이 필요합니다' }, { status: 403 });
-
-  await ensureDiscountSchema();
 
   const coupons = await dbAll<any>(
     `SELECT * FROM coupons ORDER BY created_at DESC`
@@ -49,8 +46,6 @@ export async function POST(req: NextRequest) {
   const auth = await getAuthFromRequest(req);
   if (!auth) return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 });
   if (auth.role !== 'admin') return NextResponse.json({ error: '관리자 권한이 필요합니다' }, { status: 403 });
-
-  await ensureDiscountSchema();
 
   try {
     const body = await req.json();
@@ -109,8 +104,6 @@ export async function PUT(req: NextRequest) {
   const auth = await getAuthFromRequest(req);
   if (!auth) return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 });
   if (auth.role !== 'admin') return NextResponse.json({ error: '관리자 권한이 필요합니다' }, { status: 403 });
-
-  await ensureDiscountSchema();
 
   try {
     const id = req.nextUrl.searchParams.get('id');
@@ -174,8 +167,6 @@ export async function DELETE(req: NextRequest) {
   const auth = await getAuthFromRequest(req);
   if (!auth) return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 });
   if (auth.role !== 'admin') return NextResponse.json({ error: '관리자 권한이 필요합니다' }, { status: 403 });
-
-  await ensureDiscountSchema();
 
   try {
     const id = req.nextUrl.searchParams.get('id');

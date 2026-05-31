@@ -762,7 +762,9 @@ export async function seedDatabase(mode?: 'production' | 'demo') {
 
   // ─── 3. Pass products (always — admin needs them to issue passes) ───
   // PR-DISCOUNT: updated pricing per owner spec.
-  //   슬로우 롱런 = 월 10,000원 / 마라톤 = 회당 25,000원 × 8주 / EBW = 월 100,000원
+  //   슬로우 롱런 = 월 10,000원 (회당 ≈ 2,500원, 주 1회 × 4주)
+  //   마라톤 = 회당 25,000원 × 8주 = 200,000원
+  //   EBW = 월 100,000원 (회당 ≈ 6,250원, 주 4회 × 4주 = 월 16회)
   const products: Array<[string, string, string, string, number | null, number, number]> = [
     ['pp_001', 'EBW 멤버십',          'monthly', '["ebw"]',             null, 30, 100000],
     ['pp_002', '슬로우 롱런 멤버십',   'monthly', '["slowrun"]',         null, 30, 10000],
@@ -789,9 +791,12 @@ export async function seedDatabase(mode?: 'production' | 'demo') {
       INSERT INTO member_passes (id, member_id, product_id, total_count, remaining_count, start_date, expiry_date, issued_date, price, status)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'active')
     `;
-    await dbRun(passInsert, ['mp_001', 'member_001', 'pp_001', 10, 8, todayStr, addDays(55), todayStr, 200000]);
-    await dbRun(passInsert, ['mp_002', 'member_002', 'pp_003', 10, 10, todayStr, addDays(60), todayStr, 150000]);
-    await dbRun(passInsert, ['mp_003', 'member_003', 'pp_006', null, null, todayStr, addDays(29), todayStr, 180000]);
+    // mp_001: EBW 멤버십 — 월 100,000원, monthly 상품이므로 total_count = null
+    await dbRun(passInsert, ['mp_001', 'member_001', 'pp_001', null, null, todayStr, addDays(55), todayStr, 100000]);
+    // mp_002: 마라톤 클래스 (8주) — 200,000원, total_count = 8
+    await dbRun(passInsert, ['mp_002', 'member_002', 'pp_003', 8, 8, todayStr, addDays(60), todayStr, 200000]);
+    // mp_003: 마라톤 드롭인 (1회) — 25,000원, total_count = 1
+    await dbRun(passInsert, ['mp_003', 'member_003', 'pp_006', 1, 1, todayStr, addDays(29), todayStr, 25000]);
     activePassCount = 3;
   }
 

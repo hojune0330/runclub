@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { dbGet, dbRun, genId } from '@/lib/db';
+import { dbGet, dbRun, dbTx, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse } from '@/lib/auth';
 import { safeSync } from '@/lib/sheets';
 import { mapPassRow } from '@/lib/sheets-mappers';
 import { earnMileage } from '@/lib/discount';
-import { ensureDiscountSchema } from '@/lib/db';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-6: Member-initiated purchase — Step 2 (CONFIRM)
@@ -30,8 +29,6 @@ export async function POST(req: NextRequest) {
   if (!auth) return unauthorizedResponse();
 
   try {
-    await ensureDiscountSchema();
-
     const body = await req.json();
     const { paymentKey, orderId, amount } = body;
 
@@ -201,18 +198,23 @@ export async function POST(req: NextRequest) {
       ).catch(err => console.error('[payments/confirm] coupon count failed:', err));
     }
 
-    // Deduct mileage from member balance
+    // Deduct mileage from member balance (atomic via dbTx)
     if (pending.mileage_used > 0) {
-      void dbRun(
-        `UPDATE members SET mileage_balance = GREATEST(0, mileage_balance - $1) WHERE id = $2`,
-        [pending.mileage_used, pending.member_id]
-      ).then(() =>
-        dbRun(
+      void dbTx(async (client) => {
+        await client.query(
+          `UPDATE members SET mileage_balance = GREATEST(0, mileage_balance - $1) WHERE id = $2`,
+          [pending.mileage_used, pending.member_id]
+        );
+        const result = await client.query(
+          `SELECT mileage_balance FROM members WHERE id = $1`,
+          [pending.member_id]
+        );
+        await client.query(
           `INSERT INTO mileage_log (member_id, amount, reason, reference_id, balance_after)
-           SELECT $1, $2, 'usage', $3, mileage_balance FROM members WHERE id = $1`,
-          [pending.member_id, -pending.mileage_used, orderId]
-        )
-      ).catch(err => console.error('[payments/confirm] mileage deduct failed:', err));
+           VALUES ($1, $2, 'usage', $3, $4)`,
+          [pending.member_id, -pending.mileage_used, orderId, result.rows[0]?.mileage_balance ?? 0]
+        );
+      }).catch(err => console.error('[payments/confirm] mileage deduct failed:', err));
     }
 
     return NextResponse.json({

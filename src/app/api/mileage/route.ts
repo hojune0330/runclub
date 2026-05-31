@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dbAll, dbGet, dbRun, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse } from '@/lib/auth';
-import { ensureDiscountSchema } from '@/lib/db';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-DISCOUNT: Member mileage & grade API
@@ -13,8 +12,6 @@ import { ensureDiscountSchema } from '@/lib/db';
 export async function GET(req: NextRequest) {
   const auth = await getAuthFromRequest(req);
   if (!auth) return unauthorizedResponse();
-
-  await ensureDiscountSchema();
 
   const isAdmin = auth.role === 'admin' && req.nextUrl.searchParams.get('admin') === '1';
 

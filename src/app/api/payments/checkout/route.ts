@@ -4,7 +4,6 @@ import { getAuthFromRequest, unauthorizedResponse } from '@/lib/auth';
 import { safeSync } from '@/lib/sheets';
 import { mapPassRow } from '@/lib/sheets-mappers';
 import { calculateDiscount, getMembershipDiscountRate } from '@/lib/discount';
-import { ensureDiscountSchema } from '@/lib/db';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-6: Member-initiated purchase — Step 1 (CHECKOUT)
@@ -59,9 +58,6 @@ export async function POST(req: NextRequest) {
   if (!auth) return unauthorizedResponse();
 
   try {
-    // Ensure discount schema is initialized
-    await ensureDiscountSchema();
-
     const body = await req.json();
     const productId = body?.productId;
     const couponCode = typeof body?.couponCode === 'string' && body.couponCode.trim() ? body.couponCode.trim() : undefined;
@@ -230,9 +226,111 @@ export async function POST(req: NextRequest) {
 
     // Check if discount made it free — bypass Toss
     if (discount.finalAmount === 0) {
-      // TODO: 0원이면 confirm 없이 바로 발급하는 PR-C3 스타일 처리
-      // 지금은 결제 취소로 간주 (Toss는 100원 미만 결제 거부)
-      // 향후 무료 패스 자동 발급으로 전환 가능
+      // PR-C3 style: 즉시 발급. Toss는 100원 미만 결제를 거부하므로
+      // 할인으로 0원이 된 경우 confirm 없이 바로 member_passes를 발급한다.
+      const today = new Date().toISOString().split('T')[0];
+      const startMs = new Date(`${today}T00:00:00Z`).getTime();
+      const expiryDate = new Date(startMs + product.duration_days * 86400000)
+        .toISOString().split('T')[0];
+
+      // Build discount_reason for audit trail
+      const reasonParts: string[] = [];
+      if (discount.membershipDiscount > 0) reasonParts.push(`멤버십 할인 -${discount.membershipDiscount.toLocaleString()}원`);
+      if (discount.couponDiscount > 0) reasonParts.push(`쿠폰 할인 -${discount.couponDiscount.toLocaleString()}원`);
+      if (discount.mileageUsed > 0) reasonParts.push(`적립금 사용 -${discount.mileageUsed.toLocaleString()}원`);
+      const totalDiscount = discount.membershipDiscount + discount.couponDiscount + discount.promotionDiscount + discount.mileageUsed;
+      const discountReason = reasonParts.length > 0 ? reasonParts.join(', ') : null;
+
+      const passId = genId('mp');
+      await dbRun(`
+        INSERT INTO member_passes (
+          id, member_id, product_id,
+          total_count, remaining_count,
+          start_date, expiry_date, issued_date,
+          price, status,
+          payment_status, payment_method, payment_amount, paid_at,
+          transaction_id, discount_amount, discount_reason,
+          mileage_earned, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, 'active',
+          'paid', 'free', 0, NOW(),
+          $10, $11, $12, $13, NOW()
+        )
+      `, [
+        passId, member.id, product.id,
+        product.total_count, product.total_count,
+        today, expiryDate, today,
+        product.price,              // 정가
+        orderId,                     // transaction_id = orderId (Toss paymentKey 대용)
+        totalDiscount,
+        discountReason,
+        0,                           // mileage_earned = 0 (무료 결제이므로 적립 없음)
+      ]);
+
+      // Mark pending_payments as confirmed for audit trail
+      await dbRun(`
+        UPDATE pending_payments
+           SET status = 'confirmed',
+               confirmed_at = NOW(),
+               pass_id = $1,
+               updated_at = NOW()
+         WHERE order_id = $2
+      `, [passId, orderId]);
+
+      // Mark coupon as used if applied
+      if (discount.couponId && discount.couponDiscount > 0) {
+        await dbRun(
+          `INSERT INTO member_coupons (id, member_id, coupon_id, status, used_at, used_order_id)
+           VALUES ($1, $2, $3, 'used', NOW(), $4) ON CONFLICT DO NOTHING`,
+          [genId('mcp'), member.id, discount.couponId, orderId]
+        );
+        await dbRun(
+          `UPDATE coupons SET used_count = used_count + 1 WHERE id = $1`,
+          [discount.couponId]
+        );
+      }
+
+      // Deduct mileage from balance if used
+      if (discount.mileageUsed > 0) {
+        await dbRun(
+          `UPDATE members SET mileage_balance = GREATEST(0, mileage_balance - $1) WHERE id = $2`,
+          [discount.mileageUsed, member.id]
+        );
+        const memberAfter = await dbGet<{ mileage_balance: number }>(
+          `SELECT mileage_balance FROM members WHERE id = $1`, [member.id]
+        );
+        await dbRun(
+          `INSERT INTO mileage_log (member_id, amount, reason, reference_id, balance_after)
+           VALUES ($1, $2, 'usage', $3, $4)`,
+          [member.id, -discount.mileageUsed, orderId, memberAfter?.mileage_balance ?? 0]
+        );
+      }
+
+      // Sheets mirror (best-effort)
+      try {
+        const issuedRow = await dbGet<any>(`
+          SELECT mp.id, mp.member_id, mp.product_id,
+                 mp.total_count, mp.remaining_count,
+                 mp.start_date, mp.expiry_date, mp.issued_date,
+                 mp.price, mp.status, mp.paused_at,
+                 m.name AS member_name,
+                 pp.name AS product_name, pp.category
+          FROM member_passes mp
+          JOIN members m ON mp.member_id = m.id
+          JOIN pass_products pp ON mp.product_id = pp.id
+          WHERE mp.id = $1
+        `, [passId]);
+        if (issuedRow) void safeSync('passes', 'upsert', mapPassRow(issuedRow));
+      } catch { /* swallow */ }
+
+      return NextResponse.json({
+        free: true,
+        orderId,
+        passId,
+        orderName: product.name,
+        amount: 0,
+        discountLines: discount.discountLines,
+      });
     }
 
     return NextResponse.json({
