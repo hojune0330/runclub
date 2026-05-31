@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Calendar, Clock, MapPin, Users, Lock, ArrowRight, Info } from 'lucide-react';
 import PublicLayout from '@/components/public/PublicLayout';
+import PublicProductCard from '@/components/public/PublicProductCard';
 import { sessionTypeConfig } from '@/lib/config';
 import { parseISO, format } from '@/lib/utils';
 
@@ -145,6 +146,17 @@ export default async function PublicSessionsPage() {
             })}
           </div>
         )}
+
+        {/* ── Product catalog strip ── */}
+        <div id="products" className="mt-10 md:mt-12 pt-8 md:pt-10 border-t border-[var(--color-border)]">
+          <h2 className="text-[18px] md:text-[22px] font-bold text-[var(--color-text)] mb-4 md:mb-5">
+            수강권 안내
+          </h2>
+          <p className="text-[12.5px] md:text-[13.5px] text-[var(--color-text-muted)] mb-5 md:mb-6 max-w-[580px]">
+            세션에 참여하려면 수강권이 필요해요. 아래 상품 중 원하는 것을 선택하고 가입 후 구매할 수 있습니다.
+          </p>
+          <PublicProductCard variant="strip" max={6} />
+        </div>
 
         {/* Bottom CTA */}
         <div className="mt-10 md:mt-12 pt-8 md:pt-10 border-t border-[var(--color-border)] text-center">

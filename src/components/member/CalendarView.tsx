@@ -411,11 +411,11 @@ export default function CalendarView() {
             <thead>
               <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
                 <th className="text-left font-medium px-4 py-2.5 w-[80px]">시간</th>
-                <th className="text-left font-medium px-4 py-2.5 w-[120px]">유형</th>
+                <th className="text-left font-medium px-4 py-2.5 w-[100px]">유형</th>
                 <th className="text-left font-medium px-4 py-2.5">세션명</th>
-                <th className="text-left font-medium px-4 py-2.5 w-[180px]">장소</th>
-                <th className="text-left font-medium px-4 py-2.5 w-[160px]">예약</th>
-                <th className="text-right font-medium px-4 py-2.5 w-[100px]">상태</th>
+                <th className="text-left font-medium px-4 py-2.5 w-[140px]">장소</th>
+                <th className="text-left font-medium px-4 py-2.5 w-[130px]">예약</th>
+                <th className="text-right font-medium px-4 py-2.5 w-[90px]">상태</th>
               </tr>
             </thead>
             <tbody>
@@ -450,23 +450,23 @@ export default function CalendarView() {
                         {config.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-[var(--color-text)]">
-                      <div className="flex items-center gap-2">
-                        <span>{session.name}</span>
+                    <td className="px-4 py-3 text-[var(--color-text)] max-w-[280px]">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="truncate" title={session.name}>{session.name}</span>
                         {session.isIndoor && (
-                          <span className="text-[11px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded px-1.5 py-0">
+                          <span className="text-[11px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded px-1.5 py-0 shrink-0">
                             실내
                           </span>
                         )}
                         {isReserved && (
-                          <span className="text-[11px] font-medium px-1.5 py-0 rounded bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary-border)]">
+                          <span className="text-[11px] font-medium px-1.5 py-0 rounded bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary-border)] shrink-0">
                             예약됨
                           </span>
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-[var(--color-text-secondary)]">
-                      {session.location || '—'}
+                    <td className="px-4 py-3 text-[var(--color-text-secondary)] max-w-[140px]">
+                      <span className="truncate block" title={session.location || undefined}>{session.location || '—'}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">

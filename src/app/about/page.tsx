@@ -16,6 +16,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import PublicLayout from '@/components/public/PublicLayout';
+import PublicProductCard from '@/components/public/PublicProductCard';
 import { cn } from '@/lib/utils';
 
 const FAQS: { q: string; a: string }[] = [
@@ -268,6 +269,22 @@ export default function AboutPage() {
             );
           })}
         </ul>
+      </section>
+
+      {/* ── Featured Products ── */}
+      <section className="max-w-[1200px] mx-auto px-4 md:px-6 py-10 md:py-16">
+        <div className="text-center mb-6 md:mb-10">
+          <p className="text-[11px] md:text-[12px] font-semibold tracking-[0.18em] uppercase text-[var(--color-primary)]">
+            Pricing
+          </p>
+          <h2 className="mt-1.5 md:mt-2 text-[20px] md:text-[28px] font-bold text-[var(--color-text)] tracking-tight">
+            수강권 안내
+          </h2>
+          <p className="mt-1.5 md:mt-2 text-[12.5px] md:text-[14px] text-[var(--color-text-muted)]">
+            나에게 맞는 수강권을 선택하고 러닝을 시작하세요.
+          </p>
+        </div>
+        <PublicProductCard variant="featured" featuredOnly max={4} />
       </section>
 
       {/* CTA */}

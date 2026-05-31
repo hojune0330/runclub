@@ -251,7 +251,7 @@ export default function AuditLog() {
               <th className="text-left font-medium px-3 py-2.5 w-[140px]">관리자</th>
               <th className="text-left font-medium px-3 py-2.5 w-[150px]">행동</th>
               <th className="text-left font-medium px-3 py-2.5 w-[180px]">대상</th>
-              <th className="text-left font-medium px-3 py-2.5">요약</th>
+              <th className="text-left font-medium px-3 py-2.5 w-[200px]">요약</th>
               <th className="text-left font-medium px-3 py-2.5 w-[120px]">IP</th>
             </tr>
           </thead>
@@ -314,7 +314,7 @@ export default function AuditLog() {
                           <span className="text-[var(--color-text-muted)]">—</span>
                         )}
                       </td>
-                      <td className="px-3 py-2.5 text-[var(--color-text-secondary)]">
+                      <td className="px-3 py-2.5 text-[var(--color-text-secondary)] max-w-[200px] truncate" title={e.summary || undefined}>
                         {e.summary || (
                           <span className="text-[var(--color-text-muted)]">—</span>
                         )}
