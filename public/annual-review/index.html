@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RUNCLUB 연간 회고</title>
+<!--
+  ============================================================================
+  RUNCLUB 연간 회고 페이지 (Annual Review)
+  ============================================================================
+  위치: public/annual-review/index.html
+  접근: https://<domain>/annual-review/
+
+  설계 원칙:
+  - 순수 프론트엔드, 정적 HTML. 기존 Next.js 앱과 완전히 격리.
+  - 데이터는 전역 JS 객체 `REVIEW_DATA` 에서 로드하며, 현재는 더미 데이터.
+  - 실제 API 연동 시 이 객체를 fetch 호출로 교체하면 됨.
+
+  ============================================================================
+  향후 API 데이터 인터페이스 (백엔드 연동 시 사용)
+  ============================================================================
+
+  GET /api/annual-review?year=2026
+    → ReviewData (아래 타입 참조)
+
+  GET /api/annual-review/summary?year=2026
+    → { totalMembers, totalSessions, ... } (SummaryData)
+
+  모든 필드는 optional — 데이터가 없는 해는 해당 차트를 숨김 처리.
+
+  ============================================================================
+  TypeScript 인터페이스 (실제 API 응답 형태)
+  ============================================================================
+
+  interface ReviewData {
+    year: number;
+    summary: SummaryData;
+    attendance: AttendanceTrend[];
+    sessionTypes: SessionTypeBreakdown[];
+    topMembers: TopMember[];
+    passSales: PassSalesData;
+    peakMoments: PeakMoment[];
+    monthlyHeatmap: MonthlyHeatmapEntry[];
+  }
+
+  interface SummaryData {
+    totalMembers: number;         // 전체 회원 수
+    newMembers: number;           // 신규 가입
+    totalSessions: number;        // 전체 세션 수
+    totalCheckins: number;        // 전체 출석체크 수
+    mostPopularSession: string;   // 가장 인기 있었던 세션명
+    totalPassesSold: number;      // 판매된 수강권 수
+    totalRevenue: number;         // 총 매출
+    avgAttendanceRate: number;    // 평균 출석률 (%)
+    activeMembers: number;        // 활성 회원 (1회 이상 참석)
+    retentionRate: number;        // 유지율 (%)
+  }
+
+  interface AttendanceTrend {
+    month: string;                // '2026-01'
+    total: number;                // 총 출석
+    ebw: number;                  // EBW 출석
+    slowrun: number;              // 슬로우롱런 출석
+    marathon: number;             // 마라톤 출석
+  }
+
+  interface SessionTypeBreakdown {
+    type: 'ebw' | 'slowrun' | 'marathon';
+    label: string;                // 'EBW', '슬로우 롱런', '마라톤'
+    count: number;                // 세션 수
+    totalAttendance: number;      // 총 출석 인원
+  }
+
+  interface TopMember {
+    id: string;
+    name: string;
+    attendanceCount: number;      // 총 출석 횟수
+    favoriteType: string;         // 가장 많이 참석한 세션 유형
+    totalMileage: number;         // 보유 적립금
+    avatarUrl?: string;
+  }
+
+  interface PassSalesData {
+    byProduct: PassProductSale[]; // 상품별 판매
+    byMonth: MonthlyPassSale[];   // 월별 판매
+  }
+
+  interface PassProductSale {
+    productId: string;
+    productName: string;
+    count: number;
+    revenue: number;
+  }
+
+  interface MonthlyPassSale {
+    month: string;
+    count: number;
+    revenue: number;
+  }
+
+  interface PeakMoment {
+    date: string;
+    title: string;
+    sessionName: string;
+    attendanceCount: number;
+    highlight: string;            // ex: "역대 최다 인원 47명 참석!"
+  }
+
+  interface MonthlyHeatmapEntry {
+    month: string;
+    weekNumber: number;
+    dayOfWeek: number;            // 0=일, 1=월, ...
+    count: number;                // 출석 수
+  }
+
+  ============================================================================
+  더미 데이터에서 사용하는 실제 DB 컬럼 매핑
+  ============================================================================
+
+  sessions 테이블:
+    id, type, date, start_time, max_capacity, status, location, is_indoor
+
+  reservations 테이블:
+    id, member_id, session_id, status ('attended','noshow','cancelled'),
+    reserved_at, checked_in_at
+
+  members 테이블:
+    id, name, phone, join_date, is_active, mileage_balance, total_purchased
+
+  member_passes 테이블:
+    id, member_id, product_id, price, status, payment_status, issued_date
+
+  pass_products 테이블:
+    id, name, category, price
+
+  session_tags 테이블:
+    id, label, color
+
+  SQL 예시 (AttendanceTrend):
+    SELECT
+      TO_CHAR(s.date, 'YYYY-MM') AS month,
+      COUNT(*) FILTER (WHERE r.status = 'attended') AS total,
+      COUNT(*) FILTER (WHERE s.type = 'ebw' AND r.status = 'attended') AS ebw,
+      COUNT(*) FILTER (WHERE s.type = 'slowrun' AND r.status = 'attended') AS slowrun,
+      COUNT(*) FILTER (WHERE s.type = 'marathon' AND r.status = 'attended') AS marathon
+    FROM sessions s
+    JOIN reservations r ON s.id = r.session_id
+    WHERE EXTRACT(YEAR FROM s.date) = $1
+    GROUP BY month ORDER BY month
+
+  SQL 예시 (TopMembers):
+    SELECT
+      m.id, m.name,
+      COUNT(*) AS attendance_count,
+      MODE() WITHIN GROUP (ORDER BY s.type) AS favorite_type,
+      m.mileage_balance
+    FROM members m
+    JOIN reservations r ON m.id = r.member_id
+    JOIN sessions s ON r.session_id = s.id
+    WHERE r.status = 'attended' AND EXTRACT(YEAR FROM s.date) = $1
+    GROUP BY m.id, m.name, m.mileage_balance
+    ORDER BY attendance_count DESC LIMIT 10
+
+  ============================================================================
+-->
+<style>
+  /* ── Reset & Base ── */
+  *,*::before,*::after { box-sizing:border-box; margin:0; padding:0 }
+  html { font-size:16px; -webkit-font-smoothing:antialiased }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+    background:#0a0e14; color:#e2e8f0; min-height:100dvh; overflow-x:hidden;
+    /* 스포티한 질감 배경 */
+    background-image:
+      radial-gradient(ellipse at 20% 50%, rgba(59,130,246,0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, rgba(239,68,68,0.06) 0%, transparent 50%),
+      radial-gradient(ellipse at 50% 80%, rgba(16,185,129,0.06) 0%, transparent 50%);
+  }
+
+  /* ── 전체 컨테이너: 모바일에서도 꽉 차게 ── */
+  .app { max-width:520px; margin:0 auto; padding:0 20px; min-height:100dvh; display:flex; flex-direction:column }
+
+  /* ── 헤더 ── */
+  .header { text-align:center; padding:36px 0 20px }
+  .header .logo {
+    display:inline-flex; align-items:center; gap:8px;
+    font-size:13px; font-weight:700; letter-spacing:0.06em;
+    color:#64748b; text-transform:uppercase; margin-bottom:10px
+  }
+  .header .logo svg { width:22px; height:22px }
+  .header .title {
+    font-size:28px; font-weight:900; letter-spacing:-0.02em; line-height:1.15;
+    background:linear-gradient(135deg, #f1f5f9 0%, #93c5fd 50%, #fbbf24 100%);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    background-clip:text;
+  }
+  .header .subtitle { font-size:13px; color:#64748b; margin-top:6px; font-weight:500 }
+
+  /* ── 년도 선택기 ── */
+  .year-picker {
+    display:flex; justify-content:center; gap:6px; margin:0 0 28px
+  }
+  .year-btn {
+    padding:8px 22px; border-radius:99px; border:1.5px solid #1e293b;
+    background:transparent; color:#94a3b8; font-size:14px; font-weight:600;
+    cursor:pointer; transition:all .2s; letter-spacing:-0.01em
+  }
+  .year-btn:hover { border-color:#475569; color:#e2e8f0 }
+  .year-btn.active {
+    background:linear-gradient(135deg,#2563eb,#7c3aed); border-color:transparent;
+    color:#fff; box-shadow:0 4px 20px rgba(37,99,235,0.3)
+  }
+
+  /* ── 페이지 영역 ── */
+  .page-area { flex:1; display:flex; flex-direction:column }
+
+  .page {
+    display:none; flex-direction:column; flex:1;
+    animation: pageIn .35s ease
+  }
+  .page.active { display:flex }
+  @keyframes pageIn {
+    from { opacity:0; transform:translateY(12px) }
+    to   { opacity:1; transform:translateY(0) }
+  }
+
+  /* ── 페이지 번호 표시 ── */
+  .page-indicator {
+    text-align:center; font-size:11px; color:#475569; font-weight:600;
+    letter-spacing:0.08em; margin-bottom:8px
+  }
+  .page-indicator span { color:#93c5fd }
+
+  /* ── 차트 카드 ── */
+  .chart-card {
+    background:linear-gradient(135deg, rgba(30,41,59,0.7) 0%, rgba(15,23,42,0.8) 100%);
+    border:1px solid #1e293b; border-radius:16px; padding:24px 20px;
+    flex:1; display:flex; flex-direction:column; position:relative; overflow:hidden
+  }
+  .chart-card::before {
+    content:''; position:absolute; top:0; left:0; right:0; height:1px;
+    background:linear-gradient(90deg, transparent, rgba(99,102,241,0.4), transparent)
+  }
+  .chart-card .chart-label {
+    font-size:11px; font-weight:700; letter-spacing:0.06em; color:#6366f1;
+    text-transform:uppercase; margin-bottom:4px
+  }
+  .chart-card .chart-title {
+    font-size:20px; font-weight:800; letter-spacing:-0.02em; color:#f1f5f9; margin-bottom:4px
+  }
+  .chart-card .chart-desc {
+    font-size:12.5px; color:#64748b; line-height:1.5; margin-bottom:20px
+  }
+
+  /* ── 차트 본문 (SVG / Canvas 공간) ── */
+  .chart-body {
+    flex:1; display:flex; align-items:center; justify-content:center;
+    border-radius:12px; background:rgba(15,23,42,0.5); border:1px dashed #1e293b;
+    min-height:260px; position:relative
+  }
+  .chart-body .placeholder {
+    text-align:center; color:#475569
+  }
+  .chart-body .placeholder svg { width:48px; height:48px; margin-bottom:8px; opacity:0.5 }
+  .chart-body .placeholder p { font-size:12px }
+
+  /* ── 요약 숫자 카드 (2행 그리드) ── */
+  .kpi-grid {
+    display:grid; grid-template-columns:1fr 1fr; gap:10px; flex:1
+  }
+  .kpi-item {
+    background:rgba(30,41,59,0.6); border:1px solid #1e293b; border-radius:12px;
+    padding:14px 12px; display:flex; flex-direction:column; justify-content:center
+  }
+  .kpi-item .kpi-value {
+    font-size:26px; font-weight:900; letter-spacing:-0.03em; line-height:1;
+    background:linear-gradient(135deg, #f1f5f9, #93c5fd);
+    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+    background-clip:text;
+  }
+  .kpi-item .kpi-label { font-size:11px; color:#64748b; margin-top:4px; font-weight:500 }
+
+  /* ── 하단 네비게이션 ── */
+  .nav-bar { display:flex; align-items:center; justify-content:center; gap:12px; padding:20px 0 28px }
+  .nav-dots { display:flex; gap:8px }
+  .nav-dot {
+    width:8px; height:8px; border-radius:50%; background:#1e293b;
+    transition:all .3s; cursor:pointer
+  }
+  .nav-dot.active { background:#6366f1; box-shadow:0 0 12px rgba(99,102,241,0.5); width:24px; border-radius:99px }
+  .nav-arrow {
+    width:38px; height:38px; border-radius:50%; border:1.5px solid #1e293b;
+    background:rgba(30,41,59,0.5); color:#94a3b8;
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:all .2s; font-size:16px
+  }
+  .nav-arrow:hover { border-color:#475569; color:#e2e8f0 }
+  .nav-arrow:active { background:rgba(99,102,241,0.15) }
+
+  /* ── 피크 모먼트 카드 ── */
+  .moment-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px }
+  .moment-item {
+    display:flex; align-items:center; gap:12px; padding:12px 14px;
+    background:rgba(30,41,59,0.5); border:1px solid #1e293b; border-radius:12px
+  }
+  .moment-item .moment-date {
+    font-size:11px; font-weight:700; color:#6366f1; min-width:52px; text-align:center
+  }
+  .moment-item .moment-info { flex:1; min-width:0 }
+  .moment-item .moment-title { font-size:13px; font-weight:700; color:#e2e8f0; line-height:1.3 }
+  .moment-item .moment-hl { font-size:11.5px; color:#64748b; margin-top:2px }
+  .moment-item .moment-num {
+    font-size:22px; font-weight:900; color:#fbbf24; min-width:40px; text-align:right; letter-spacing:-0.02em
+  }
+
+  /* ── 멤버 리스트 ── */
+  .member-list { flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px }
+  .member-row {
+    display:flex; align-items:center; gap:12px; padding:10px 14px;
+    background:rgba(30,41,59,0.5); border:1px solid #1e293b; border-radius:12px
+  }
+  .member-row .rank {
+    font-size:14px; font-weight:900; color:#fbbf24; min-width:24px; text-align:center
+  }
+  .member-row .rank.gold { color:#fbbf24 }
+  .member-row .rank.silver { color:#94a3b8 }
+  .member-row .rank.bronze { color:#d97706 }
+  .member-row .mem-name { font-size:13px; font-weight:600; color:#e2e8f0; flex:1; min-width:0 }
+  .member-row .mem-stat {
+    font-size:11px; color:#64748b; text-align:right; line-height:1.3
+  }
+  .member-row .mem-stat strong { color:#93c5fd; font-size:13px }
+
+  /* ── 애니메이션 모션 라인 (배경 장식) ── */
+  .motion-line {
+    position:absolute; height:1px;
+    background:linear-gradient(90deg, transparent, rgba(99,102,241,0.2), transparent);
+    left:0; right:0
+  }
+
+  /* ── 반응형 ── */
+  @media (min-width:600px) {
+    .app { padding:0 32px }
+    .chart-card { padding:28px 24px }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- HEADER -->
+  <header class="header">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M7 12h10M12 7l4 5-4 5"/></svg>
+      RUNCLUB
+    </div>
+    <h1 class="title">연간 회고</h1>
+    <p class="subtitle">함께 달린 1년, 기록으로 돌아보다</p>
+  </header>
+
+  <!-- YEAR PICKER -->
+  <div class="year-picker" id="yearPicker">
+    <button class="year-btn" data-year="all">2025 — 2026</button>
+    <button class="year-btn active" data-year="2026">2026</button>
+  </div>
+
+  <!-- PAGES -->
+  <div class="page-area" id="pageArea">
+    <!-- filled by JS -->
+  </div>
+
+  <!-- NAVIGATION -->
+  <nav class="nav-bar" id="navBar">
+    <button class="nav-arrow" id="prevBtn" aria-label="이전">←</button>
+    <div class="nav-dots" id="navDots"></div>
+    <button class="nav-arrow" id="nextBtn" aria-label="다음">→</button>
+  </nav>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════
+// REVIEW_DATA — 연간 회고 더미 데이터
+// 실제 연동 시 fetch('/api/annual-review?year=2026') 로 교체
+// ══════════════════════════════════════════════════════════════════════
+const REVIEW_DATA = {
+  all: { // 2025-2026 전체
+    year: '2025-2026',
+    summary: {
+      totalMembers: 487, newMembers: 203,
+      totalSessions: 312, totalCheckins: 12480,
+      mostPopularSession: '슬로우 롱런', totalPassesSold: 1203,
+      totalRevenue: 87650000, avgAttendanceRate: 72,
+      activeMembers: 384, retentionRate: 68
+    },
+    attendance: [
+      { month:'2025-01', total:980, ebw:320, slowrun:410, marathon:250 },
+      { month:'2025-02', total:870, ebw:280, slowrun:390, marathon:200 },
+      { month:'2025-03', total:1100, ebw:360, slowrun:480, marathon:260 },
+      { month:'2025-04', total:1250, ebw:400, slowrun:520, marathon:330 },
+      { month:'2025-05', total:1180, ebw:380, slowrun:510, marathon:290 },
+      { month:'2025-06', total:1050, ebw:340, slowrun:460, marathon:250 },
+      { month:'2025-07', total:950, ebw:310, slowrun:420, marathon:220 },
+      { month:'2025-08', total:900, ebw:290, slowrun:400, marathon:210 },
+      { month:'2025-09', total:1120, ebw:370, slowrun:490, marathon:260 },
+      { month:'2025-10', total:1200, ebw:390, slowrun:530, marathon:280 },
+      { month:'2025-11', total:1080, ebw:350, slowrun:470, marathon:260 },
+      { month:'2025-12', total:990, ebw:330, slowrun:430, marathon:230 },
+      { month:'2026-01', total:1020, ebw:340, slowrun:450, marathon:230 },
+      { month:'2026-02', total:930, ebw:300, slowrun:420, marathon:210 },
+      { month:'2026-03', total:1150, ebw:380, slowrun:510, marathon:260 },
+      { month:'2026-04', total:1210, ebw:410, slowrun:530, marathon:270 },
+      { month:'2026-05', total:1100, ebw:370, slowrun:490, marathon:240 }
+    ],
+    sessionTypes: [
+      { type:'ebw', label:'EBW', count:104, totalAttendance:6120 },
+      { type:'slowrun', label:'슬로우 롱런', count:104, totalAttendance:7890 },
+      { type:'marathon', label:'마라톤', count:104, totalAttendance:4470 }
+    ],
+    topMembers: [
+      { id:'m1', name:'강병규', attendanceCount:186, favoriteType:'슬로우 롱런', totalMileage:25000, avatarUrl:null },
+      { id:'m2', name:'안현지', attendanceCount:172, favoriteType:'EBW', totalMileage:18500, avatarUrl:null },
+      { id:'m3', name:'정예진', attendanceCount:158, favoriteType:'마라톤', totalMileage:22000, avatarUrl:null },
+      { id:'m4', name:'김로운', attendanceCount:145, favoriteType:'슬로우 롱런', totalMileage:12000, avatarUrl:null },
+      { id:'m5', name:'박지호', attendanceCount:132, favoriteType:'EBW', totalMileage:16000, avatarUrl:null }
+    ],
+    passSales: {
+      byProduct: [
+        { productId:'pp_001', productName:'EBW 멤버십', count:210, revenue:21000000 },
+        { productId:'pp_002', productName:'슬로우 롱런 멤버십', count:380, revenue:3800000 },
+        { productId:'pp_003', productName:'마라톤 클래스 (8주)', count:95, revenue:19000000 }
+      ],
+      byMonth: [
+        { month:'2025-01', count:45, revenue:2800000 },
+        { month:'2025-02', count:38, revenue:2200000 },
+        { month:'2025-03', count:62, revenue:4100000 }
+      ]
+    },
+    peakMoments: [
+      { date:'2025-04-19', title:'봄맞이 마라톤 특별 세션', sessionName:'아이오 마라톤 클래스', attendanceCount:47, highlight:'역대 최다 인원 47명 참석! 전원 완주 달성 🏆' },
+      { date:'2025-09-13', title:'가을 EBW 챌린지 데이', sessionName:'EBW 실내 러닝', attendanceCount:38, highlight:'신규 회원 12명 첫 참석, EBW 최고 기록 경신' },
+      { date:'2026-03-22', title:'슬로우 롱런 100회차 기념런', sessionName:'슬로우 롱런 클럽', attendanceCount:52, highlight:'100회 기념! 참석자 전원 기념 메달 증정 🎖️' },
+      { date:'2026-04-05', title:'벚꽃 런 2026', sessionName:'슬로우 롱런 클럽', attendanceCount:44, highlight:'벚꽃 명소 코스, SNS 후기 200건 돌파' }
+    ]
+  },
+  '2026': {
+    year: '2026',
+    summary: {
+      totalMembers: 412, newMembers: 87,
+      totalSessions: 110, totalCheckins: 5410,
+      mostPopularSession: '슬로우 롱런', totalPassesSold: 440,
+      totalRevenue: 32400000, avgAttendanceRate: 78,
+      activeMembers: 296, retentionRate: 72
+    },
+    attendance: [
+      { month:'2026-01', total:1020, ebw:340, slowrun:450, marathon:230 },
+      { month:'2026-02', total:930, ebw:300, slowrun:420, marathon:210 },
+      { month:'2026-03', total:1150, ebw:380, slowrun:510, marathon:260 },
+      { month:'2026-04', total:1210, ebw:410, slowrun:530, marathon:270 },
+      { month:'2026-05', total:1100, ebw:370, slowrun:490, marathon:240 }
+    ],
+    sessionTypes: [
+      { type:'ebw', label:'EBW', count:36, totalAttendance:1800 },
+      { type:'slowrun', label:'슬로우 롱런', count:36, totalAttendance:2400 },
+      { type:'marathon', label:'마라톤', count:38, totalAttendance:1210 }
+    ],
+    topMembers: [
+      { id:'m1', name:'강병규', attendanceCount:72, favoriteType:'슬로우 롱런', totalMileage:25000, avatarUrl:null },
+      { id:'m2', name:'안현지', attendanceCount:68, favoriteType:'EBW', totalMileage:18500, avatarUrl:null },
+      { id:'m3', name:'정예진', attendanceCount:61, favoriteType:'마라톤', totalMileage:22000, avatarUrl:null },
+      { id:'m4', name:'김로운', attendanceCount:55, favoriteType:'슬로우 롱런', totalMileage:12000, avatarUrl:null },
+      { id:'m5', name:'박지호', attendanceCount:48, favoriteType:'EBW', totalMileage:16000, avatarUrl:null }
+    ],
+    passSales: {
+      byProduct: [
+        { productId:'pp_001', productName:'EBW 멤버십', count:82, revenue:8200000 },
+        { productId:'pp_002', productName:'슬로우 롱런 멤버십', count:145, revenue:1450000 },
+        { productId:'pp_003', productName:'마라톤 클래스 (8주)', count:38, revenue:7600000 }
+      ],
+      byMonth: [
+        { month:'2026-01', count:52, revenue:3800000 },
+        { month:'2026-02', count:48, revenue:3100000 }
+      ]
+    },
+    peakMoments: [
+      { date:'2026-03-22', title:'슬로우 롱런 100회차 기념런', sessionName:'슬로우 롱런 클럽', attendanceCount:52, highlight:'100회 기념! 참석자 전원 기념 메달 증정 🎖️' },
+      { date:'2026-04-05', title:'벚꽃 런 2026', sessionName:'슬로우 롱런 클럽', attendanceCount:44, highlight:'벚꽃 명소 코스, SNS 후기 200건 돌파' }
+    ]
+  }
+};
+
+// ══════════════════════════════════════════════════════════════════════
+// RENDER ENGINE
+// ══════════════════════════════════════════════════════════════════════
+
+let currentYear = '2026';
+let currentPage = 0;
+const PAGES = ['summary', 'attendance', 'members', 'moments', 'sales']; // 5 pages
+
+// ── Formatting helpers ──
+const fmtWon = (v) => {
+  if (v >= 10000) return (v/10000).toFixed(v%10000===0?0:1) + '만원';
+  return v.toLocaleString() + '원';
+};
+const fmtNum = (v) => v.toLocaleString();
+
+// ── Build page HTML ──
+function buildPage(pageId, data) {
+  switch(pageId) {
+    case 'summary': return buildSummaryPage(data);
+    case 'attendance': return buildAttendancePage(data);
+    case 'members': return buildMembersPage(data);
+    case 'moments': return buildMomentsPage(data);
+    case 'sales': return buildSalesPage(data);
+    default: return '';
+  }
+}
+
+function buildSummaryPage(d) {
+  const s = d.summary;
+  return `
+    <div class="chart-card">
+      <div class="chart-label">OVERVIEW</div>
+      <div class="chart-title">한눈에 보는 ${d.year}</div>
+      <div class="chart-desc">회원, 세션, 출석, 수익 — ${d.year === '2026' ? '올해' : '2년간'}의 핵심 지표입니다</div>
+      <div class="kpi-grid">
+        <div class="kpi-item"><div class="kpi-value">${fmtNum(s.totalMembers)}</div><div class="kpi-label">전체 회원</div></div>
+        <div class="kpi-item"><div class="kpi-value">${fmtNum(s.newMembers)}</div><div class="kpi-label">신규 가입</div></div>
+        <div class="kpi-item"><div class="kpi-value">${fmtNum(s.totalSessions)}</div><div class="kpi-label">전체 세션</div></div>
+        <div class="kpi-item"><div class="kpi-value">${fmtNum(s.totalCheckins)}</div><div class="kpi-label">출석 체크</div></div>
+        <div class="kpi-item"><div class="kpi-value">${s.avgAttendanceRate}%</div><div class="kpi-label">평균 출석률</div></div>
+        <div class="kpi-item"><div class="kpi-value">${s.retentionRate}%</div><div class="kpi-label">회원 유지율</div></div>
+        <div class="kpi-item"><div class="kpi-value">${fmtWon(s.totalRevenue)}</div><div class="kpi-label">총 매출</div></div>
+        <div class="kpi-item"><div class="kpi-value">🏃 ${s.mostPopularSession}</div><div class="kpi-label">최고 인기 세션</div></div>
+      </div>
+    </div>`;
+}
+
+function buildAttendancePage(d) {
+  // 간단한 SVG 바 차트 (placeholder → 추후 Chart.js 또는 D3로 교체)
+  const months = d.attendance;
+  const maxVal = Math.max(...months.map(m=>m.total));
+  const barW = 100 / months.length;
+  let bars = months.map((m,i) => {
+    const h = (m.total/maxVal*100).toFixed(1);
+    const x = (i * barW + barW*0.15).toFixed(1);
+    const w = (barW * 0.7).toFixed(1);
+    return `<rect x="${x}%" y="${(100-h).toFixed(1)}%" width="${w}%" height="${h}%" rx="3" fill="url(#barGrad)" opacity="0.85">
+      <title>${m.month}: ${m.total}회</title></rect>`;
+  }).join('');
+
+  return `
+    <div class="chart-card">
+      <div class="chart-label">ATTENDANCE TREND</div>
+      <div class="chart-title">월별 출석 추이</div>
+      <div class="chart-desc">EBW · 슬로우 롱런 · 마라톤 — ${d.year === '2026' ? '올해' : '2년간'} 월별 출석 기록</div>
+      <div class="chart-body">
+        <svg viewBox="0 0 400 220" style="width:100%;height:100%;max-height:280px" preserveAspectRatio="xMidYMid meet">
+          <defs>
+            <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#6366f1" stop-opacity="0.9"/>
+              <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.5"/>
+            </linearGradient>
+          </defs>
+          ${bars}
+          <!-- baseline -->
+          <line x1="0" y1="100%" x2="100%" y2="100%" stroke="#1e293b" stroke-width="1"/>
+        </svg>
+      </div>
+    </div>`;
+}
+
+function buildMembersPage(d) {
+  const members = d.topMembers;
+  const ranks = ['gold','silver','bronze','',''];
+  let rows = members.map((m,i) => `
+    <div class="member-row">
+      <div class="rank ${ranks[i]||''}">${i+1}</div>
+      <div class="mem-name">${m.name}</div>
+      <div class="mem-stat"><strong>${m.attendanceCount}회</strong><br>${m.favoriteType}</div>
+    </div>
+  `).join('');
+
+  return `
+    <div class="chart-card">
+      <div class="chart-label">TOP MEMBERS</div>
+      <div class="chart-title">열정적인 러너들</div>
+      <div class="chart-desc">${d.year === '2026' ? '올해' : '2년간'} 가장 많이 달린 회원 TOP 5</div>
+      <div class="member-list">${rows}</div>
+    </div>`;
+}
+
+function buildMomentsPage(d) {
+  const moments = d.peakMoments || [];
+  if (moments.length === 0) {
+    return `<div class="chart-card"><div class="chart-label">HIGHLIGHTS</div><div class="chart-title">기록적인 순간들</div><div class="chart-desc">데이터가 아직 쌓이지 않았어요. 조금만 더 달려볼까요?</div></div>`;
+  }
+  let items = moments.map(m => `
+    <div class="moment-item">
+      <div class="moment-date">${m.date.slice(5)}</div>
+      <div class="moment-info">
+        <div class="moment-title">${m.title}</div>
+        <div class="moment-hl">${m.highlight}</div>
+      </div>
+      <div class="moment-num">${m.attendanceCount}</div>
+    </div>
+  `).join('');
+  return `
+    <div class="chart-card">
+      <div class="chart-label">HIGHLIGHTS</div>
+      <div class="chart-title">기록적인 순간들</div>
+      <div class="chart-desc">가장 많은 러너가 모였던 특별한 날</div>
+      <div class="moment-list">${items}</div>
+    </div>`;
+}
+
+function buildSalesPage(d) {
+  const prods = d.passSales.byProduct || [];
+  let rows = prods.map(p => `
+    <div class="member-row">
+      <div class="mem-name" style="flex:1">${p.productName}</div>
+      <div class="mem-stat"><strong>${p.count}건</strong><br>${fmtWon(p.revenue)}</div>
+    </div>
+  `).join('');
+
+  return `
+    <div class="chart-card">
+      <div class="chart-label">PASS SALES</div>
+      <div class="chart-title">수강권 판매 현황</div>
+      <div class="chart-desc">${d.year === '2026' ? '올해' : '2년간'} 가장 사랑받은 수강권은?</div>
+      <div class="member-list" style="margin-bottom:16px">${rows}</div>
+      <div class="chart-body" style="min-height:120px;flex:none">
+        <div class="placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
+          <p>월별 매출 추이 차트 (준비 중)</p>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ── Render current page ──
+function render() {
+  const data = REVIEW_DATA[currentYear];
+  const pageId = PAGES[currentPage];
+  const html = buildPage(pageId, data);
+  document.getElementById('pageArea').innerHTML = `
+    <div class="page active">
+      <div class="page-indicator"><span>${currentPage+1}</span> / ${PAGES.length}</div>
+      ${html}
+    </div>
+  `;
+  updateNav();
+  updateYearPicker();
+}
+
+// ── Navigation ──
+function updateNav() {
+  document.getElementById('navDots').innerHTML = PAGES.map((_,i) =>
+    `<div class="nav-dot ${i===currentPage?'active':''}" data-page="${i}"></div>`
+  ).join('');
+  document.querySelectorAll('.nav-dot').forEach(d => {
+    d.addEventListener('click', () => { currentPage = +d.dataset.page; render(); });
+  });
+  document.getElementById('prevBtn').style.visibility = currentPage === 0 ? 'hidden' : '';
+  document.getElementById('nextBtn').style.visibility = currentPage === PAGES.length-1 ? 'hidden' : '';
+}
+
+function updateYearPicker() {
+  document.querySelectorAll('.year-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.year === currentYear);
+  });
+}
+
+// ── Event listeners ──
+document.getElementById('yearPicker').addEventListener('click', e => {
+  const btn = e.target.closest('.year-btn');
+  if (!btn) return;
+  currentYear = btn.dataset.year;
+  currentPage = 0;
+  render();
+});
+
+document.getElementById('prevBtn').addEventListener('click', () => {
+  if (currentPage > 0) { currentPage--; render(); }
+});
+
+document.getElementById('nextBtn').addEventListener('click', () => {
+  if (currentPage < PAGES.length-1) { currentPage++; render(); }
+});
+
+// ── Keyboard navigation ──
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowLeft') { if (currentPage > 0) { currentPage--; render(); } }
+  if (e.key === 'ArrowRight') { if (currentPage < PAGES.length-1) { currentPage++; render(); } }
+});
+
+// ── Touch swipe ──
+let touchStartX = 0;
+document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, {passive:true});
+document.addEventListener('touchend', e => {
+  const diff = touchStartX - e.changedTouches[0].clientX;
+  if (Math.abs(diff) > 50) {
+    if (diff > 0 && currentPage < PAGES.length-1) { currentPage++; render(); }
+    else if (diff < 0 && currentPage > 0) { currentPage--; render(); }
+  }
+}, {passive:true});
+
+// ── Init ──
+render();
+</script>
+</body>
+</html>
+
+<!--
+  ══════════════════════════════════════════════════════════════════════
+  디자인 노트
+  ══════════════════════════════════════════════════════════════════════
+
+  색상 팔레트 (스포티/다크):
+    배경:  #0a0e14 (딥 네이비-블랙)
+    카드:  rgba(30,41,59,0.7) (슬레이트)
+    액센트: #6366f1 (인디고) — 메인 브랜드
+            #3b82f6 (블루)  — EBW
+            #10b981 (에메랄드) — 마라톤
+            #fbbf24 (앰버) — 하이라이트
+
+  폰트: 시스템 폰트 스택 (Noto Sans KR 우선)
+
+  5개 페이지 구성:
+    1. SUMMARY   — KPI 8종 요약
+    2. ATTENDANCE — 월별 출석 SVG 바 차트
+    3. MEMBERS   — TOP 5 러너 랭킹
+    4. MOMENTS   — 피크 모먼트 타임라인
+    5. SALES     — 수강권 판매 + 월별 매출 placeholder
+
+  상호작용:
+    - 년도 선택 버튼 (2025-2026 / 2026)
+    - 하단 도트 네비게이션
+    - 좌우 화살표 버튼
+    - 키보드 ← → 네비게이션
+    - 모바일 스와이프
+
+  ============================================================================
+  향후 개선 사항 (실제 데이터 연동 시)
+  ============================================================================
+
+  1. Chart.js 또는 D3.js 도입 → SVG placeholder 대신 실제 인터랙티브 차트
+  2. fetch('/api/annual-review?year=...') 로 REVIEW_DATA 교체
+  3. 로딩 스피너 / 에러 처리 추가
+  4. 페이지별 공유 URL: ?year=2026&page=3 형태의 쿼리 파라미터
+  5. og:image 동적 생성 → SNS 공유 최적화
+  6. 멤버별 개인 연간 리포트 (memberId 파라미터)
+  7. animated number counter (숫자 카운트업 애니메이션)
+  8. print stylesheet → PDF 출력 지원
+  ============================================================================
+-->
