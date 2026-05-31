@@ -11,7 +11,7 @@
 //
 // 0원 이하가 되면 Toss를 우회하고 즉시 발급 (PR-C3 재활용).
 
-import { dbGet, dbAll, ensureDiscountSchema } from '@/lib/db';
+import { dbGet, dbAll, dbRun, dbTx, ensureDiscountSchema } from '@/lib/db';
 
 // ─── Types ───
 
@@ -42,10 +42,21 @@ export interface CouponValidation {
   error?: string;
 }
 
+// ─── 모듈 레벨 초기화 ───
+// 이 모듈의 모든 함수가 member_passes, coupons, member_coupons,
+// mileage_log 등을 쿼리하므로 스키마가 준비된 상태여야 한다.
+// Promise singleton으로 idempotent 보장 (최초 1회만 실행).
+let _discountReady: Promise<void> | null = null;
+function ensureReady(): Promise<void> {
+  if (!_discountReady) _discountReady = ensureDiscountSchema();
+  return _discountReady;
+}
+
 // ─── 멤버십 할인 체크 ───
 // 활성(active) 또는 일시정지(paused) 상태의 수강권이 하나라도 있으면 10% 할인.
 
 export async function getMembershipDiscountRate(memberId: string): Promise<number> {
+  await ensureReady();
   const active = await dbGet<{ cnt: string }>(
     `SELECT COUNT(*)::text AS cnt FROM member_passes
       WHERE member_id = $1 AND status IN ('active','paused')
@@ -63,6 +74,7 @@ export async function validateCoupon(
   productId: string,
   orderAmount: number, // 할인 전 금액 기준
 ): Promise<CouponValidation> {
+  await ensureReady();
   const coupon = await dbGet<any>(
     `SELECT * FROM coupons WHERE code = $1 AND is_active = TRUE LIMIT 1`,
     [code]
@@ -142,8 +154,8 @@ export async function calculateDiscount(
     useMileage?: number;    // 회원이 사용하겠다고 입력한 적립금
   }
 ): Promise<DiscountResult> {
-  // Ensure discount schema (idempotent — only runs once per process).
-  await ensureDiscountSchema();
+  // Schema is guaranteed by getMembershipDiscountRate (which calls ensureReady).
+  await ensureReady();
 
   const lines: DiscountLineItem[] = [];
   let remaining = productPrice;
@@ -208,6 +220,7 @@ export async function calculateDiscount(
 
 // ─── 적립금 적립 ───
 // 결제 완료 시 실제 결제액의 10%를 적립.
+// dbTx로 감싸 UPDATE + INSERT를 원자적으로 처리.
 
 export async function earnMileage(
   memberId: string,
@@ -217,20 +230,23 @@ export async function earnMileage(
   const earned = Math.round(paidAmount * 0.10);
   if (earned <= 0) return 0;
 
-  await dbGet(
-    `UPDATE members SET mileage_balance = mileage_balance + $1 WHERE id = $2`,
-    [earned, memberId]
-  );
+  await dbTx(async (client) => {
+    await client.query(
+      `UPDATE members SET mileage_balance = mileage_balance + $1 WHERE id = $2`,
+      [earned, memberId]
+    );
 
-  const member = await dbGet<{ mileage_balance: number }>(
-    `SELECT mileage_balance FROM members WHERE id = $1`, [memberId]
-  );
+    const result = await client.query(
+      `SELECT mileage_balance FROM members WHERE id = $1`,
+      [memberId]
+    );
 
-  await dbGet(
-    `INSERT INTO mileage_log (member_id, amount, reason, reference_id, balance_after)
-     VALUES ($1, $2, 'purchase', $3, $4)`,
-    [memberId, earned, orderId, member?.mileage_balance ?? earned]
-  );
+    await client.query(
+      `INSERT INTO mileage_log (member_id, amount, reason, reference_id, balance_after)
+       VALUES ($1, $2, 'purchase', $3, $4)`,
+      [memberId, earned, orderId, result.rows[0]?.mileage_balance ?? earned]
+    );
+  });
 
   return earned;
 }

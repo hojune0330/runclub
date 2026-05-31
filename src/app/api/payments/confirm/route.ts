@@ -181,21 +181,28 @@ export async function POST(req: NextRequest) {
     } catch { /* swallow */ }
 
     // ── PR-DISCOUNT: 적립금 적립 (실제 결제액의 10%) ──
-    void earnMileage(pending.member_id, amount, orderId).catch(err => {
+    // dbTx 내부에서 원자적으로 처리되므로 await 해도 안전.
+    try {
+      await earnMileage(pending.member_id, amount, orderId);
+    } catch (err) {
       console.error('[payments/confirm] mileage earn failed:', err);
-    });
+    }
 
-    // Mark coupon as used if coupon was applied
+    // Mark coupon as used if coupon was applied (best-effort, non-blocking)
     if (pending.coupon_id && pending.coupon_discount > 0) {
-      void dbRun(
-        `INSERT INTO member_coupons (id, member_id, coupon_id, status, used_at, used_order_id)
-         VALUES ($1, $2, $3, 'used', NOW(), $4) ON CONFLICT DO NOTHING`,
-        [genId('mcp'), pending.member_id, pending.coupon_id, orderId]
-      ).catch(err => console.error('[payments/confirm] coupon mark failed:', err));
-      void dbRun(
-        `UPDATE coupons SET used_count = used_count + 1 WHERE id = $1`,
-        [pending.coupon_id]
-      ).catch(err => console.error('[payments/confirm] coupon count failed:', err));
+      try {
+        await dbRun(
+          `INSERT INTO member_coupons (id, member_id, coupon_id, status, used_at, used_order_id)
+           VALUES ($1, $2, $3, 'used', NOW(), $4) ON CONFLICT DO NOTHING`,
+          [genId('mcp'), pending.member_id, pending.coupon_id, orderId]
+        );
+        await dbRun(
+          `UPDATE coupons SET used_count = used_count + 1 WHERE id = $1`,
+          [pending.coupon_id]
+        );
+      } catch (err) {
+        console.error('[payments/confirm] coupon mark failed:', err);
+      }
     }
 
     // Deduct mileage from member balance (atomic via dbTx)
