@@ -761,13 +761,15 @@ export async function seedDatabase(mode?: 'production' | 'demo') {
   }
 
   // ─── 3. Pass products (always — admin needs them to issue passes) ───
+  // PR-DISCOUNT: updated pricing per owner spec.
+  //   슬로우 롱런 = 월 10,000원 / 마라톤 = 회당 25,000원 × 8주 / EBW = 월 100,000원
   const products: Array<[string, string, string, string, number | null, number, number]> = [
-    ['pp_001', 'EBW 10회권', 'count', '["ebw"]', 10, 60, 200000],
-    ['pp_002', 'EBW 20회권', 'count', '["ebw"]', 20, 90, 350000],
-    ['pp_003', '런클럽(수/토) 10회권', 'count', '["slowrun","marathon"]', 10, 60, 150000],
-    ['pp_004', '런클럽(수/토) 20회권', 'count', '["slowrun","marathon"]', 20, 90, 250000],
-    ['pp_005', '시즌권', 'season', 'all', null, 90, 500000],
-    ['pp_006', '월권', 'monthly', 'all', null, 30, 180000],
+    ['pp_001', 'EBW 멤버십',          'monthly', '["ebw"]',             null, 30, 100000],
+    ['pp_002', '슬로우 롱런 멤버십',   'monthly', '["slowrun"]',         null, 30, 10000],
+    ['pp_003', '마라톤 클래스 (8주)',  'count',   '["marathon"]',          8, 60, 200000],
+    ['pp_004', 'EBW + 슬로우 롱런 패키지','monthly','["ebw","slowrun"]', null, 30, 105000],
+    ['pp_005', '올인원 패키지',        'monthly', 'all',                 null, 30, 120000],
+    ['pp_006', '마라톤 드롭인 (1회)',  'count',   '["marathon"]',          1, 30, 25000],
   ];
   for (const p of products) {
     await dbRun(
@@ -961,4 +963,139 @@ export async function generateRecurringSessions(opts?: {
   }
 
   return created;
+}
+
+// ─── PR-DISCOUNT: 할인 시스템 인프라 ───
+// 회원 등급 / 쿠폰 / 프로모션 / 적립금 테이블 + pending_payments 확장.
+async function initDiscountSchema(): Promise<void> {
+  // 1. 회원 등급 마스터
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS member_grades (
+      id              TEXT PRIMARY KEY,
+      label           TEXT NOT NULL,
+      discount_rate   NUMERIC(4,3) NOT NULL DEFAULT 0,
+      mileage_rate    NUMERIC(4,3) NOT NULL DEFAULT 0.10,
+      min_purchase    INTEGER NOT NULL DEFAULT 0,
+      is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+      display_order   INTEGER NOT NULL DEFAULT 0,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // 2. 회원 확장 (등급 + 적립금 + 누적구매액)
+  await dbRun(`
+    ALTER TABLE members
+      ADD COLUMN IF NOT EXISTS grade_id        TEXT REFERENCES member_grades(id),
+      ADD COLUMN IF NOT EXISTS mileage_balance INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS total_purchased INTEGER NOT NULL DEFAULT 0
+  `);
+
+  // 3. 쿠폰 마스터
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS coupons (
+      id              TEXT PRIMARY KEY,
+      code            TEXT NOT NULL UNIQUE,
+      name            TEXT NOT NULL,
+      discount_type   TEXT NOT NULL CHECK (discount_type IN ('fixed','percent')),
+      discount_value  INTEGER NOT NULL,
+      min_order       INTEGER NOT NULL DEFAULT 0,
+      max_discount    INTEGER,
+      total_quantity  INTEGER NOT NULL DEFAULT -1,
+      used_count      INTEGER NOT NULL DEFAULT 0,
+      per_member      INTEGER NOT NULL DEFAULT 1,
+      starts_at       TIMESTAMPTZ,
+      expires_at      TIMESTAMPTZ,
+      target_products TEXT,
+      target_grades   TEXT,
+      is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // 4. 회원별 쿠폰 발급 내역
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS member_coupons (
+      id              TEXT PRIMARY KEY,
+      member_id       TEXT NOT NULL REFERENCES members(id),
+      coupon_id       TEXT NOT NULL REFERENCES coupons(id),
+      status          TEXT NOT NULL DEFAULT 'issued'
+                        CHECK (status IN ('issued','used','expired','revoked')),
+      used_at         TIMESTAMPTZ,
+      used_order_id   TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (member_id, coupon_id, status)
+    )
+  `);
+
+  // 5. 프로모션 마스터
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS promotions (
+      id              TEXT PRIMARY KEY,
+      name            TEXT NOT NULL,
+      discount_type   TEXT NOT NULL CHECK (discount_type IN ('fixed','percent')),
+      discount_value  INTEGER NOT NULL,
+      min_order       INTEGER NOT NULL DEFAULT 0,
+      max_discount    INTEGER,
+      target_products TEXT,
+      target_grades   TEXT,
+      starts_at       TIMESTAMPTZ NOT NULL,
+      expires_at      TIMESTAMPTZ NOT NULL,
+      stackable       BOOLEAN NOT NULL DEFAULT FALSE,
+      priority        INTEGER NOT NULL DEFAULT 0,
+      is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  // 6. 적립금 이력
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS mileage_log (
+      id              BIGSERIAL PRIMARY KEY,
+      member_id       TEXT NOT NULL REFERENCES members(id),
+      amount          INTEGER NOT NULL,
+      reason          TEXT NOT NULL,
+      reference_id    TEXT,
+      balance_after   INTEGER NOT NULL,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_mileage_log_member ON mileage_log(member_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_mileage_log_created ON mileage_log(created_at DESC)`);
+
+  // 7. pending_payments 확장 (할인 상세 추적)
+  await dbRun(`
+    ALTER TABLE pending_payments
+      ADD COLUMN IF NOT EXISTS original_amount   INTEGER,
+      ADD COLUMN IF NOT EXISTS membership_discount INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS coupon_id         TEXT,
+      ADD COLUMN IF NOT EXISTS coupon_discount   INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS promotion_id      TEXT,
+      ADD COLUMN IF NOT EXISTS promotion_discount INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS mileage_used      INTEGER NOT NULL DEFAULT 0
+  `);
+
+  // 8. member_passes 확장 (할인 사유 구조화)
+  await dbRun(`
+    ALTER TABLE member_passes
+      ADD COLUMN IF NOT EXISTS mileage_earned INTEGER NOT NULL DEFAULT 0
+  `);
+
+  // 9. 시드: 기본 등급 1종
+  await dbRun(`
+    INSERT INTO member_grades (id, label, discount_rate, mileage_rate, min_purchase, is_active, display_order)
+    VALUES ('grade_default', '일반', 0, 0.10, 0, TRUE, 100)
+    ON CONFLICT (id) DO NOTHING
+  `);
+
+  // 10. 쿠폰 인덱스
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_coupons_code ON coupons(code)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_member_coupons_member ON member_coupons(member_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_promotions_active ON promotions(is_active, starts_at, expires_at)`);
+}
+
+// schema bootstrap 에 discount init 연결
+let _discountInitPromise: Promise<void> | null = null;
+export async function ensureDiscountSchema(): Promise<void> {
+  if (!_discountInitPromise) _discountInitPromise = initDiscountSchema();
+  await _discountInitPromise;
 }

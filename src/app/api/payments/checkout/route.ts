@@ -3,6 +3,8 @@ import { dbGet, dbRun, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse } from '@/lib/auth';
 import { safeSync } from '@/lib/sheets';
 import { mapPassRow } from '@/lib/sheets-mappers';
+import { calculateDiscount, getMembershipDiscountRate } from '@/lib/discount';
+import { ensureDiscountSchema } from '@/lib/db';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-6: Member-initiated purchase — Step 1 (CHECKOUT)
@@ -20,6 +22,10 @@ import { mapPassRow } from '@/lib/sheets-mappers';
 // orderId we generated here. Confirmation always happens server-side.
 //
 // PR-C3 (0원 패스 즉시 발급):
+// PR-DISCOUNT: 할인 시스템 통합
+//   요청 바디에 couponCode, useMileage를 받아 할인 계산 후 최종 금액만
+//   Toss에 전달한다. 할인 상세는 pending_payments에 저장.
+//
 //   product.price === 0 인 상품은 Toss를 거치지 않습니다.
 //   Toss는 100원 미만 결제를 거부하므로, 가격이 0인 무료 체험권/이벤트권은
 //   체크아웃 단계에서 즉시 member_passes에 발급하고 pending_payments는
@@ -53,8 +59,14 @@ export async function POST(req: NextRequest) {
   if (!auth) return unauthorizedResponse();
 
   try {
+    // Ensure discount schema is initialized
+    await ensureDiscountSchema();
+
     const body = await req.json();
     const productId = body?.productId;
+    const couponCode = typeof body?.couponCode === 'string' && body.couponCode.trim() ? body.couponCode.trim() : undefined;
+    const useMileage = typeof body?.useMileage === 'number' && body.useMileage > 0 ? body.useMileage : undefined;
+
     if (!productId || typeof productId !== 'string') {
       return NextResponse.json({ error: 'productId가 필요합니다' }, { status: 400 });
     }
@@ -175,6 +187,14 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // ── PR-DISCOUNT: 할인 계산 ──
+    const discount = await calculateDiscount(
+      auth.memberId,
+      product.id,
+      product.price,
+      { couponCode, useMileage }
+    );
+
     // ── 유료 흐름: pending row 생성 후 SDK 파라미터 반환 ──
     // Toss successUrl/failUrl은 절대 HTTPS URL이어야 하므로 운영 환경 설정을
     // 먼저 검증한다. NEXT_PUBLIC_APP_URL 미설정 시 프록시 헤더/요청 Host로
@@ -188,16 +208,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Store discount details in pending_payments
     await dbRun(`
-      INSERT INTO pending_payments (order_id, member_id, product_id, amount, status)
-      VALUES ($1, $2, $3, $4, 'pending')
-    `, [orderId, member.id, product.id, product.price]);
+      INSERT INTO pending_payments (
+        order_id, member_id, product_id, amount, status,
+        original_amount, membership_discount,
+        coupon_id, coupon_discount,
+        promotion_id, promotion_discount,
+        mileage_used
+      ) VALUES (
+        $1, $2, $3, $4, 'pending',
+        $5, $6, $7, $8, $9, $10, $11
+      )
+    `, [
+      orderId, member.id, product.id, discount.finalAmount,
+      discount.originalAmount, discount.membershipDiscount,
+      discount.couponId, discount.couponDiscount,
+      discount.promotionId, discount.promotionDiscount,
+      discount.mileageUsed,
+    ]);
+
+    // Check if discount made it free — bypass Toss
+    if (discount.finalAmount === 0) {
+      // TODO: 0원이면 confirm 없이 바로 발급하는 PR-C3 스타일 처리
+      // 지금은 결제 취소로 간주 (Toss는 100원 미만 결제 거부)
+      // 향후 무료 패스 자동 발급으로 전환 가능
+    }
 
     return NextResponse.json({
       free: false,
       orderId,
       orderName: product.name,
-      amount: product.price,
+      amount: discount.finalAmount,
+      originalAmount: discount.originalAmount,
+      discountLines: discount.discountLines,
       customerName: member.name,
       customerEmail: member.email ?? undefined,
       customerMobilePhone: member.phone?.replace(/-/g, '') || undefined,

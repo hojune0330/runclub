@@ -448,8 +448,8 @@ export const api = {
   },
 
   payments: {
-    // PR-6: member-initiated checkout (Toss).
-    checkout: (productId: string) =>
+    // PR-6 + PR-DISCOUNT: member-initiated checkout (Toss) with discount support.
+    checkout: (productId: string, opts?: { couponCode?: string; useMileage?: number }) =>
       request<
         | {
             // PR-C3: 0원 무료 패스는 Toss를 거치지 않고 즉시 발급된다.
@@ -464,6 +464,13 @@ export const api = {
             orderId: string;
             orderName: string;
             amount: number;
+            originalAmount?: number;
+            discountLines?: Array<{
+              type: 'membership' | 'promotion' | 'coupon' | 'mileage';
+              label: string;
+              amount: number;
+              refId?: string;
+            }>;
             customerName: string;
             customerEmail?: string;
             customerMobilePhone?: string;
@@ -473,7 +480,7 @@ export const api = {
           }
       >('/payments/checkout', {
         method: 'POST',
-        body: JSON.stringify({ productId }),
+        body: JSON.stringify({ productId, ...opts }),
       }),
     confirm: (params: { paymentKey: string; orderId: string; amount: number }) =>
       request<{ success: boolean; passId: string; orderId: string; amount: number; method: string; alreadyConfirmed?: boolean }>(

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Star, ShoppingBag, AlertCircle, Loader2, Tag, FlaskConical } from 'lucide-react';
+import { Star, ShoppingBag, AlertCircle, Loader2, Tag, FlaskConical, Ticket, Coins } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig } from '@/lib/config';
 import { formatPrice, cn } from '@/lib/utils';
@@ -18,6 +18,8 @@ import type { PassProduct, SessionType } from '@/types';
 // → /api/payments/confirm. We dynamically `import('@tosspayments/payment-sdk')`
 // at click time so SSR doesn't choke and unbought sessions don't pay the
 // SDK download cost.
+//
+// PR-DISCOUNT: 멤버십 할인 표시, 쿠폰 코드 입력, 적립금 사용, 할인 요약.
 // ─────────────────────────────────────────────────────────────────────
 
 const passCategoryLabel = (c: PassProduct['category']) =>
@@ -210,12 +212,14 @@ function ProductCard({ product, onClick }: { product: PassProduct; onClick: () =
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// PassProductDetail — full description + buy button.
+// PassProductDetail — full description + buy with discount UI.
 // ─────────────────────────────────────────────────────────────────────
 function PassProductDetail({ product, onClose }: { product: PassProduct; onClose: () => void }) {
   const { sessionTags } = useApp();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [couponCode, setCouponCode] = useState('');
+  const [useMileage, setUseMileage] = useState<number>(0);
 
   // PR-A: 태그 기반 라벨 (fallback to legacy applicableSessions)
   const tagLabels = useMemo(() => {
@@ -240,9 +244,12 @@ function PassProductDetail({ product, onClose }: { product: PassProduct; onClose
     setError(null);
     setBusy(true);
     try {
-      // 1. Ask the server to create a pending_payments row and return the
-      //    Toss params we need to open the SDK widget.
-      const checkout = await api.payments.checkout(product.id);
+      // 1. Ask the server to create a pending_payments row, compute discounts,
+      //    and return the Toss params we need to open the SDK widget.
+      const checkout = await api.payments.checkout(product.id, {
+        couponCode: couponCode.trim() || undefined,
+        useMileage: useMileage > 0 ? useMileage : undefined,
+      });
 
       // PR-C3: 0원 무료 패스는 서버에서 즉시 발급되어 free=true로 응답.
       // Toss SDK를 우회하고 곧장 success 페이지로 이동한다.
@@ -255,8 +262,6 @@ function PassProductDetail({ product, onClose }: { product: PassProduct; onClose
       }
 
       if (!checkout.tossClientKey) {
-        // Fallback: server has no Toss client key → tell user to contact
-        // the manager. We *don't* try to silently succeed.
         setError('현재 온라인 결제가 준비되지 않았습니다. 운영자에게 문의해주세요.');
         setBusy(false);
         return;
@@ -271,8 +276,7 @@ function PassProductDetail({ product, onClose }: { product: PassProduct; onClose
       }
       const tossPayments = await mod.loadTossPayments(checkout.tossClientKey);
 
-      // 3. Open the standard payment widget. Toss redirects to successUrl
-      //    with paymentKey/orderId/amount on success.
+      // 3. Open the standard payment widget. Uses the already-discounted amount.
       await tossPayments.requestPayment('카드', {
         amount: checkout.amount,
         orderId: checkout.orderId,
@@ -321,6 +325,9 @@ function PassProductDetail({ product, onClose }: { product: PassProduct; onClose
           </span>
         </div>
 
+        {/* ── PR-DISCOUNT: 멤버십 할인 안내 ── */}
+        <MembershipDiscountBanner />
+
         {product.description && (
           <p className="text-[13.5px] text-[var(--color-text)] leading-relaxed">{product.description}</p>
         )}
@@ -348,6 +355,44 @@ function PassProductDetail({ product, onClose }: { product: PassProduct; onClose
           </div>
         )}
 
+        {/* ── PR-DISCOUNT: 쿠폰 코드 입력 ── */}
+        <div className="border border-[var(--color-border)] rounded p-3">
+          <h3 className="text-[12.5px] font-semibold text-[var(--color-text-secondary)] mb-2 flex items-center gap-1.5">
+            <Ticket size={14} /> 쿠폰 코드
+          </h3>
+          <input
+            type="text"
+            value={couponCode}
+            onChange={e => setCouponCode(e.target.value)}
+            placeholder="쿠폰 코드를 입력하세요"
+            className="w-full h-9 px-3 text-[13px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]"
+            disabled={busy}
+          />
+        </div>
+
+        {/* ── PR-DISCOUNT: 적립금 사용 ── */}
+        <div className="border border-[var(--color-border)] rounded p-3">
+          <h3 className="text-[12.5px] font-semibold text-[var(--color-text-secondary)] mb-2 flex items-center gap-1.5">
+            <Coins size={14} /> 적립금 사용
+          </h3>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={useMileage || ''}
+              onChange={e => {
+                const v = parseInt(e.target.value, 10);
+                setUseMileage(isNaN(v) || v < 0 ? 0 : Math.floor(v / 1000) * 1000);
+              }}
+              placeholder="0"
+              step={1000}
+              min={0}
+              className="flex-1 h-9 px-3 text-[13px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]"
+              disabled={busy}
+            />
+            <span className="text-[12px] text-[var(--color-text-muted)] shrink-0">원 (1,000원 단위)</span>
+          </div>
+        </div>
+
         {error && (
           <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 border border-red-200 rounded">
             <AlertCircle size={14} className="text-red-600 mt-0.5 flex-shrink-0" />
@@ -373,6 +418,28 @@ function PassProductDetail({ product, onClose }: { product: PassProduct; onClose
         </button>
       </div>
     </Modal>
+  );
+}
+
+// ── PR-DISCOUNT: 멤버십 할인 안내 배너 ──
+// 멤버십(활성/일시정지 수강권) 보유자에게 10% 할인 혜택 안내.
+function MembershipDiscountBanner() {
+  const { memberPasses } = useApp();
+  const hasMembership = useMemo(
+    () => memberPasses.some(p => p.status === 'active' || p.status === 'paused'),
+    [memberPasses]
+  );
+  if (!hasMembership) return null;
+  return (
+    <div className="flex items-start gap-2 px-3 py-2.5 bg-green-50 border border-green-200 rounded">
+      <Tag size={14} className="text-green-600 mt-0.5 flex-shrink-0" />
+      <div className="text-[12.5px] text-green-800">
+        <p className="font-semibold">멤버십 10% 할인 적용</p>
+        <p className="text-green-700 mt-0.5">
+          수강권 보유 회원은 모든 상품을 10% 할인된 가격에 구매할 수 있습니다.
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -416,4 +483,3 @@ export function TestModeBanner({ compact = false }: { compact?: boolean }) {
     </div>
   );
 }
-

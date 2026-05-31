@@ -3,6 +3,8 @@ import { dbGet, dbRun, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse } from '@/lib/auth';
 import { safeSync } from '@/lib/sheets';
 import { mapPassRow } from '@/lib/sheets-mappers';
+import { earnMileage } from '@/lib/discount';
+import { ensureDiscountSchema } from '@/lib/db';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-6: Member-initiated purchase — Step 2 (CONFIRM)
@@ -13,6 +15,9 @@ import { mapPassRow } from '@/lib/sheets-mappers';
 //   3. Call Toss /v1/payments/confirm with the secret key.
 //   4. On success, INSERT a member_passes row, mark pending row 'confirmed',
 //      log the action, mirror to Sheets.
+//
+// PR-DISCOUNT: pending_payments 에 저장된 할인 상세를 읽어 member_passes 에
+//   기록하고, 적립금을 적립한다. 쿠폰 사용 처리 및 적립금 차감도 여기서 수행.
 //
 // IMPORTANT: this endpoint MUST be idempotent. Toss may redirect twice on
 // flaky networks. We bail early if the orderId is already 'confirmed'.
@@ -25,6 +30,8 @@ export async function POST(req: NextRequest) {
   if (!auth) return unauthorizedResponse();
 
   try {
+    await ensureDiscountSchema();
+
     const body = await req.json();
     const { paymentKey, orderId, amount } = body;
 
@@ -53,6 +60,7 @@ export async function POST(req: NextRequest) {
         alreadyConfirmed: true,
       });
     }
+    // Amount validation: pending.amount already holds the discounted finalAmount from checkout.
     if (pending.amount !== amount) {
       return NextResponse.json(
         { error: '결제 금액이 일치하지 않습니다' },
@@ -108,6 +116,20 @@ export async function POST(req: NextRequest) {
     const expiryDate = new Date(startMs + product.duration_days * 86400000)
       .toISOString().split('T')[0];
 
+    // ── PR-DISCOUNT: read discount details from pending_payments ──
+    const totalDiscount = (pending.membership_discount ?? 0)
+      + (pending.coupon_discount ?? 0)
+      + (pending.promotion_discount ?? 0)
+      + (pending.mileage_used ?? 0);
+
+    // Build discount_reason for human-readable audit trail
+    const reasonParts: string[] = [];
+    if (pending.membership_discount > 0) reasonParts.push(`멤버십 할인 -${pending.membership_discount.toLocaleString()}원`);
+    if (pending.promotion_discount > 0) reasonParts.push(`프로모션 할인 -${pending.promotion_discount.toLocaleString()}원`);
+    if (pending.coupon_discount > 0) reasonParts.push(`쿠폰 할인 -${pending.coupon_discount.toLocaleString()}원`);
+    if (pending.mileage_used > 0) reasonParts.push(`적립금 사용 -${pending.mileage_used.toLocaleString()}원`);
+    const discountReason = reasonParts.length > 0 ? reasonParts.join(', ') : null;
+
     const passId = genId('mp');
     await dbRun(`
       INSERT INTO member_passes (
@@ -116,19 +138,21 @@ export async function POST(req: NextRequest) {
         start_date, expiry_date, issued_date,
         price, status,
         payment_status, payment_method, payment_amount, paid_at,
-        transaction_id, discount_amount, updated_at
+        transaction_id, discount_amount, discount_reason, updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, 'active',
         'paid', $10, $11, NOW(),
-        $12, 0, NOW()
+        $12, $13, $14, NOW()
       )
     `, [
       passId, pending.member_id, pending.product_id,
       product.total_count, product.total_count,
       today, expiryDate, today,
-      product.price,
-      tossResult?.method ?? 'toss', amount,
+      product.price,                        // 정가 (original price)
+      tossResult?.method ?? 'toss', amount, // payment_amount = 실제 결제액 (할인 후)
       paymentKey,
+      totalDiscount,
+      discountReason,
     ]);
 
     await dbRun(`
@@ -158,6 +182,38 @@ export async function POST(req: NextRequest) {
       `, [passId]);
       if (issuedRow) void safeSync('passes', 'upsert', mapPassRow(issuedRow));
     } catch { /* swallow */ }
+
+    // ── PR-DISCOUNT: 적립금 적립 (실제 결제액의 10%) ──
+    void earnMileage(pending.member_id, amount, orderId).catch(err => {
+      console.error('[payments/confirm] mileage earn failed:', err);
+    });
+
+    // Mark coupon as used if coupon was applied
+    if (pending.coupon_id && pending.coupon_discount > 0) {
+      void dbRun(
+        `INSERT INTO member_coupons (id, member_id, coupon_id, status, used_at, used_order_id)
+         VALUES ($1, $2, $3, 'used', NOW(), $4) ON CONFLICT DO NOTHING`,
+        [genId('mcp'), pending.member_id, pending.coupon_id, orderId]
+      ).catch(err => console.error('[payments/confirm] coupon mark failed:', err));
+      void dbRun(
+        `UPDATE coupons SET used_count = used_count + 1 WHERE id = $1`,
+        [pending.coupon_id]
+      ).catch(err => console.error('[payments/confirm] coupon count failed:', err));
+    }
+
+    // Deduct mileage from member balance
+    if (pending.mileage_used > 0) {
+      void dbRun(
+        `UPDATE members SET mileage_balance = GREATEST(0, mileage_balance - $1) WHERE id = $2`,
+        [pending.mileage_used, pending.member_id]
+      ).then(() =>
+        dbRun(
+          `INSERT INTO mileage_log (member_id, amount, reason, reference_id, balance_after)
+           SELECT $1, $2, 'usage', $3, mileage_balance FROM members WHERE id = $1`,
+          [pending.member_id, -pending.mileage_used, orderId]
+        )
+      ).catch(err => console.error('[payments/confirm] mileage deduct failed:', err));
+    }
 
     return NextResponse.json({
       success: true,
