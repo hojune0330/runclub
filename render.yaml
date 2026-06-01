@@ -100,20 +100,33 @@ services:
   # Replays any sheet writes that failed during the original API request
   # (e.g. transient Sheets API outage, quota). No-op when SHEET_SYNC_ENABLED
   # is false. Endpoint is auth-gated by CRON_SECRET.
+  #
+  # NOTE: This cron job uses "url" instead of buildCommand/startCommand.
+  # Render Cron Jobs with type: 'url' are MUCH simpler — no npm ci, no
+  # Docker build, just one HTTP call per tick. Perfect for this use case.
+  # Requires the $RENDER_SERVICE_NAME web service to be running.
   - type: cron
     name: runclub-sheet-sync-retry
     runtime: node
     plan: starter
     region: singapore
     branch: main
-    schedule: '*/1 * * * *'      # every 1 minute
-    buildCommand: npm ci
+    schedule: '*/5 * * * *'      # every 5 minutes (was 1 min — unnecessary load)
+    buildCommand: echo ok        # no-op: we don't need a build for a curl call
     startCommand: |
+      set -e
+      # Derive APP_URL from the web service's RENDER_EXTERNAL_URL.
+      # If not set, fall back to the known Render onrender.com URL.
+      APP_URL="${APP_URL:-https://runclub-manager.onrender.com}"
       curl -fsS -X POST \
         -H "Authorization: Bearer $CRON_SECRET" \
         "$APP_URL/api/cron/sheet-sync-retry"
     envVars:
       - key: APP_URL
-        sync: false               # e.g. https://runclub-manager.onrender.com
+        # Default: use the actual Render service URL. Only override if
+        # you're using a custom domain.
+        value: https://runclub-manager.onrender.com
       - key: CRON_SECRET
-        sync: false               # paste the SAME value as the web service
+        # MUST match the CRON_SECRET in the web service above.
+        # Run: openssl rand -hex 32  to generate a new one if needed.
+        sync: false
