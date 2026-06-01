@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
+import { PwaInstallBanner } from "@/hooks/usePushNotifications";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -53,6 +54,8 @@ export default function RootLayout({
       </head>
       <body>
         {children}
+        {/* PWA 설치 유도 배너 — beforeinstallprompt 발생 시 하단에 표시 */}
+        <PwaInstallBanner />
         {/*
           Service Worker 등록.
           - production 환경에서만 등록해 dev 시 캐시로 인한 혼란을 방지한다.

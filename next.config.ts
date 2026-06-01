@@ -26,7 +26,7 @@ const nextConfig: NextConfig = {
   ],
   // `pg` is a CommonJS module that doesn't bundle cleanly through Webpack;
   // mark it external so Next.js loads it from node_modules at runtime.
-  serverExternalPackages: ['pg'],
+  serverExternalPackages: ['pg', 'firebase-admin'],
   // Skip TypeScript validation during the production build.
   // It runs in CI/local already; doing it in the Render build worker
   // pushes peak memory past the Starter plan's cap and triggers OOM

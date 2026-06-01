@@ -10,11 +10,13 @@
  *     · API/HTML(navigation) → network-first, 실패 시 오프라인 셸
  *     · 정적 자산(아이콘, manifest) → cache-first
  *     · _next/static → cache-first (해시 포함이라 안전)
+ * - push: Firebase Cloud Messaging 푸시 알림 처리
+ * - notificationclick: 알림 클릭 시 해당 페이지로 이동
  *
  * 캐시 버전을 올리고 싶으면 CACHE_VERSION만 bump 하면 된다.
  */
 
-const CACHE_VERSION = 'runclub-v1';
+const CACHE_VERSION = 'runclub-v2';
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const PRECACHE = `${CACHE_VERSION}-precache`;
 
@@ -117,3 +119,56 @@ async function networkFirst(request) {
     return fallback || Response.error();
   }
 }
+
+// ─── Push notification handlers ───
+// Foreground push (Firebase onMessage callback fires in the main thread).
+// Background push is handled by firebase-messaging-sw.js.
+// This SW also gets push events from the server-side web-push API
+// as a fallback for non-Firebase environments.
+
+self.addEventListener('push', (event) => {
+  let data;
+  try {
+    data = event.data?.json();
+  } catch {
+    data = { title: '런클럽', body: event.data?.text() || '' };
+  }
+
+  if (!data) return;
+
+  const title = data.title || '런클럽';
+  const options = {
+    body: data.body || '',
+    icon: data.icon || '/icons/icon-192.png',
+    badge: data.badge || '/icons/icon-maskable-192.png',
+    tag: data.tag || 'runclub',
+    data: {
+      url: data.url || '/app',
+    },
+    vibrate: data.vibrate || [200, 100, 200],
+    requireInteraction: data.requireInteraction || false,
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const url = event.notification.data?.url || '/app';
+
+  event.waitUntil(
+    clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((windowClients) => {
+        for (const client of windowClients) {
+          if (client.url.includes(url) && 'focus' in client) {
+            return client.focus();
+          }
+        }
+        if (clients.openWindow) {
+          return clients.openWindow(url);
+        }
+      })
+  );
+});
