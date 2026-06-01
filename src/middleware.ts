@@ -37,6 +37,8 @@ export function middleware(req: NextRequest) {
   // headers, so they must bypass CSRF and validate payloads in the route.
   if (!pathname.startsWith('/api/')) return NextResponse.next();
   if (pathname === '/api/payments/webhook') return NextResponse.next();
+  // Cron jobs use Bearer token auth (CRON_SECRET), not browser Origin headers
+  if (pathname.startsWith('/api/cron/')) return NextResponse.next();
   if (SAFE_METHODS.has(req.method)) return NextResponse.next();
 
   // Build the set of acceptable origins. We trust the request's own host
