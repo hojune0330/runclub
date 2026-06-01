@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/generate-sw.mjs",
     "build": "NODE_OPTIONS=--max-old-space-size=1536 next build --webpack",
     "start": "next start",
     "lint": "eslint",
