@@ -107,7 +107,7 @@ async function buildSummary(year: number) {
   );
 
   const typeLabel: Record<string, string> = {
-    ebw: 'EBW', slowrun: '슬로우 롱런', marathon: '마라톤',
+    ebw: 'EBW', slowrun: '런클럽', marathon: '러닝클래스',
   };
 
   const attended = rate?.attended ?? 0;
@@ -159,7 +159,7 @@ async function buildSessionTypes(year: number) {
   ).then(rows =>
     rows.map(r => ({
       type: r.type,
-      label: { ebw: 'EBW', slowrun: '슬로우 롱런', marathon: '마라톤' }[r.type] ?? r.type,
+      label: { ebw: 'EBW', slowrun: '런클럽', marathon: '러닝클래스' }[r.type] ?? r.type,
       count: r.count,
       totalAttendance: r.total_attendance,
     }))
@@ -194,7 +194,7 @@ async function buildTopMembers(year: number) {
           [m.id, year]
         );
         const typeLabel: Record<string, string> = {
-          ebw: 'EBW', slowrun: '슬로우 롱런', marathon: '마라톤',
+          ebw: 'EBW', slowrun: '런클럽', marathon: '러닝클래스',
         };
         return {
           id: m.id,

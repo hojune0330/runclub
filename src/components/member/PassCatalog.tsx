@@ -36,8 +36,8 @@ const CATALOG_FILTER_KEY = 'slowrun:catalogFilter';
 const TAG_FILTER_LABEL: Record<string, string> = {
   runclub: '런클럽 멤버십',
   ebw: 'EBW',
-  slowrun: '슬로우 롱런',
-  marathon: '마라톤',
+  slowrun: '런클럽',
+  marathon: '러닝클래스',
   special: '특화 클래스',
   pt: '1:1 PT',
   product: '제작/굿즈',

@@ -1048,7 +1048,7 @@ export async function seedDatabase(mode?: 'production' | 'demo') {
 }
 
 // ─── 정기 세션 일괄 생성(백필) ───
-// 기본적으로 오늘부터 2026-05-31까지 정기 스케줄을 채움.
+// 기본적으로 오늘부터 90일 뒤까지 정기 스케줄을 채움.
 // 이미 같은 날짜·시작시간·유형의 세션이 있으면 건너뜀(중복 방지).
 // 반환값은 새로 INSERT한 세션 수.
 export async function generateRecurringSessions(opts?: {
@@ -1057,7 +1057,7 @@ export async function generateRecurringSessions(opts?: {
 }): Promise<number> {
   await ensureSchema();
   const from = opts?.from ?? new Date();
-  const to = opts?.to ?? new Date('2026-05-31T23:59:59');
+  const to = opts?.to ?? new Date(Date.now() + 90 * 86_400_000);
 
   const toIso = (d: Date) => {
     const y = d.getFullYear();
@@ -1077,8 +1077,8 @@ export async function generateRecurringSessions(opts?: {
   };
 
   const ebwGroupId = await getOrCreateGroupId('ebw_mon');
-  const slowGroupId = await getOrCreateGroupId('slow_wed');
-  const marGroupId = await getOrCreateGroupId('mar_sat');
+  const slowGroupId = await getOrCreateGroupId('slow_wedfri');
+  const marGroupId = await getOrCreateGroupId('class_tuesat');
 
   let created = 0;
 
@@ -1132,68 +1132,55 @@ export async function generateRecurringSessions(opts?: {
   const endDay = new Date(to);
   endDay.setHours(23, 59, 59, 999);
 
+  // 실제 운영 스케줄 (여의도공원 문화의마당, 저녁 7:30):
+  //   런클럽(slowrun)   → 매주 수(3) · 금(5)
+  //   러닝 클래스(marathon) → 매주 화(2) · 토(6)
+  const FORUM_LOCATION = '여의도공원 문화의마당';
+  const FORUM_ADDRESS = '서울 영등포구 여의공원로 68 (여의도공원 문화의마당 · 비행기 모형 앞 집결)';
+
   while (cursor <= endDay) {
     const iso = toIso(cursor);
-    const dow = cursor.getDay(); // 0=일, 1=월, 3=수, 6=토
+    const dow = cursor.getDay(); // 0=일, 1=월, 2=화, 3=수, 5=금, 6=토
 
-    if (dow === 1) {
-      // 월: EBW 19:00 / 20:00 / 21:00
-      const times: Array<[string, string]> = [
-        ['19:00', '20:00'],
-        ['20:00', '21:00'],
-        ['21:00', '22:00'],
-      ];
-      for (const [s, e] of times) {
-        await tryInsert({
-          id: `ebw_${iso}_${s.replace(':', '')}`,
-          name: 'EBW 실내 러닝',
-          type: 'ebw',
-          date: iso,
-          start: s,
-          end: e,
-          location: 'EBW 러닝센터',
-          address: '서울 송파구 올림픽로 ** (EBW 러닝센터)',
-          capacity: 8,
-          indoor: true,
-          cancelMin: 120,
-          groupId: ebwGroupId,
-        });
-      }
-    } else if (dow === 3) {
-      // 수: 슬로우 롱런 19:30~21:00
+    if (dow === 3 || dow === 5) {
+      // 수 · 금: 슬로우롱런클럽 (런클럽) 19:30
+      const dayKr = dow === 3 ? '수' : '금';
       await tryInsert({
         id: `slow_${iso}_1930`,
-        name: '슬로우 롱런 클럽',
+        name: '슬로우롱런클럽',
         type: 'slowrun',
         date: iso,
         start: '19:30',
         end: '21:00',
-        location: '올림픽공원 평화의문',
-        address: '서울 송파구 올림픽로 424 (평화의문 앞 집결)',
+        location: FORUM_LOCATION,
+        address: FORUM_ADDRESS,
         capacity: 50,
         indoor: false,
         cancelMin: 60,
         groupId: slowGroupId,
-        memo: '편안한 페이스의 LSD(Long Slow Distance) 세션. 날씨에 맞춰 복장 준비.',
+        memo: `매주 ${dayKr} 저녁 7:30 워밍업 시작, 7:40 출발. 편안한 페이스로 함께 달려요.`,
       });
-    } else if (dow === 6) {
-      // 토: 아이오 마라톤 클래스 10:00~12:00
+    } else if (dow === 2 || dow === 6) {
+      // 화 · 토: 러닝 클래스 19:30
+      const dayKr = dow === 2 ? '화' : '토';
       await tryInsert({
-        id: `mar_${iso}_1000`,
-        name: '아이오 마라톤 클래스',
+        id: `class_${iso}_1930`,
+        name: '러닝 클래스',
         type: 'marathon',
         date: iso,
-        start: '10:00',
-        end: '12:00',
-        location: '잠실 종합운동장',
-        address: '서울 송파구 올림픽로 25 (잠실 종합운동장 트랙)',
+        start: '19:30',
+        end: '21:00',
+        location: FORUM_LOCATION,
+        address: FORUM_ADDRESS,
         capacity: 50,
         indoor: false,
-        cancelMin: 120,
+        cancelMin: 60,
         groupId: marGroupId,
-        memo: '대회 준비 맞춤 인터벌/템포런. 개인 페이스별 조 편성.',
+        memo: `매주 ${dayKr} 진행하는 러닝 클래스. 주법·페이스 향상에 초점을 맞춰요.`,
       });
     }
+    // EBW(ebw)는 현재 정기 자동 생성에서 제외 — 운영 확정 시 위 패턴에 추가.
+    void ebwGroupId;
 
     cursor.setDate(cursor.getDate() + 1);
   }

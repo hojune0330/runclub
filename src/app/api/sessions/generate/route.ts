@@ -6,7 +6,7 @@ import { mapSessionRow } from '@/lib/sheets-mappers';
 
 // POST /api/sessions/generate
 // Body: { from?: 'YYYY-MM-DD', to?: 'YYYY-MM-DD' }
-// 관리자 전용: 지정 기간의 정기 스케줄(월 EBW 3세션, 수 슬로우 롱런, 토 아이오 마라톤)을 일괄 생성.
+// 관리자 전용: 지정 기간의 정기 스케줄(수·금 슬로우롱런클럽, 화·토 러닝 클래스)을 일괄 생성.
 // 중복(같은 날짜·시작시간·유형)은 자동으로 건너뜀.
 export async function POST(req: NextRequest) {
   const auth = await getAuthFromRequest(req);

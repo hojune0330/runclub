@@ -2,8 +2,8 @@
 
 export const sessionTypeConfig = {
   ebw: { label: 'EBW', color: '#f97316', bgColor: '#fff7ed', textColor: '#c2410c' },
-  slowrun: { label: '슬로우 롱런', color: '#3b82f6', bgColor: '#eff6ff', textColor: '#1d4ed8' },
-  marathon: { label: '마라톤', color: '#10b981', bgColor: '#ecfdf5', textColor: '#065f46' },
+  slowrun: { label: '런클럽', color: '#3b82f6', bgColor: '#eff6ff', textColor: '#1d4ed8' },
+  marathon: { label: '러닝클래스', color: '#10b981', bgColor: '#ecfdf5', textColor: '#065f46' },
 } as const;
 
 export const reservationStatusConfig = {

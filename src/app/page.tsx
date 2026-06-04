@@ -202,7 +202,7 @@ export default async function LandingPage() {
             <Step
               n={2}
               title="원하는 세션 예약"
-              desc="EBW · 슬로우 롱런 · 마라톤 세션 일정을 보고 자리를 잡아요."
+              desc="런클럽 · 러닝 클래스 세션 일정을 보고 자리를 잡아요."
             />
             <Step
               n={3}

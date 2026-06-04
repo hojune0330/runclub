@@ -1,9 +1,14 @@
 // ─── 클럽 메타데이터 & 내 클럽 판별 유틸 ───
 //
-// 이 앱의 세션은 3개의 "클럽(시리즈)" 중 하나에 속한다:
-//   - ebw      : EBW 실내 러닝 (월)
-//   - slowrun  : 슬로우 롱런 클럽 (수)
-//   - marathon : 아이오 마라톤 클래스 (토)
+// 이 앱의 세션은 SessionType(=클럽/시리즈) 단위로 묶인다.
+// 실제 운영 정보(2026 기준, 여의도공원 문화의마당):
+//   - slowrun  : 슬로우롱런클럽 (런클럽)  · 매주 수 · 금 저녁 7:30
+//   - marathon : 러닝 클래스               · 매주 화 · 토
+//   - ebw      : EBW 러닝 (보조 시리즈)     · 일정은 세션 캘린더 기준
+//
+// ⚠️ 운영 메모: 과거 메타데이터(올림픽공원/송파/잠실 등)는 창작용 더미였고,
+//   현재 값은 운영진이 확인한 실제 정보다. 클럽 구성이 더 정리되면
+//   이 한 곳(CLUBS)만 수정하면 회원 홈 전체에 반영된다.
 //
 // 회원 홈은 위 클럽 중 "내 클럽"(= 소속된 클럽) 목록을 먼저 보여주고,
 // 각 클럽 카드에 진입하면 예약/출석/수강권 등 그 클럽에 초점을 맞춘
@@ -26,27 +31,14 @@ export interface ClubMeta {
 }
 
 export const CLUBS: Record<SessionType, ClubMeta> = {
-  ebw: {
-    type: 'ebw',
-    name: 'EBW 실내 러닝',
-    short: 'EBW',
-    dayLabel: '매주 월요일',
-    timeLabel: '19:00 / 20:00 / 21:00',
-    place: 'EBW 러닝센터 (송파)',
-    summary: '실내 러닝머신 기반 소수정예 인터벌 트레이닝. 회차당 8명.',
-    heroEmoji: '🏃‍♀️',
-    color: '#f97316',
-    bgColor: '#fff7ed',
-    textColor: '#c2410c',
-  },
   slowrun: {
     type: 'slowrun',
-    name: '슬로우 롱런 클럽',
-    short: '슬로우 롱런',
-    dayLabel: '매주 수요일',
-    timeLabel: '19:30 ~ 21:00',
-    place: '올림픽공원 평화의문',
-    summary: '편안한 페이스의 LSD 세션. 초보자도 부담 없이 장거리 완주.',
+    name: '슬로우롱런클럽',
+    short: '런클럽',
+    dayLabel: '매주 수 · 금요일',
+    timeLabel: '저녁 7:30 (7:30 워밍업 · 7:40 출발)',
+    place: '여의도공원 문화의마당',
+    summary: '편안한 페이스로 함께 달리는 런클럽. 초보자도 부담 없이 참여할 수 있어요.',
     heroEmoji: '🌳',
     color: '#3b82f6',
     bgColor: '#eff6ff',
@@ -54,20 +46,34 @@ export const CLUBS: Record<SessionType, ClubMeta> = {
   },
   marathon: {
     type: 'marathon',
-    name: '아이오 마라톤 클래스',
-    short: '마라톤',
-    dayLabel: '매주 토요일',
-    timeLabel: '10:00 ~ 12:00',
-    place: '잠실 종합운동장 트랙',
-    summary: '대회 준비 맞춤 인터벌/템포런. 개인 페이스별 조 편성.',
+    name: '러닝 클래스',
+    short: '러닝클래스',
+    dayLabel: '매주 화 · 토요일',
+    timeLabel: '세션 일정 기준',
+    place: '여의도공원 문화의마당',
+    summary: '주법·페이스 향상에 초점을 맞춘 러닝 클래스. 단계별로 함께 성장해요.',
     heroEmoji: '🏅',
     color: '#10b981',
     bgColor: '#ecfdf5',
     textColor: '#065f46',
   },
+  ebw: {
+    type: 'ebw',
+    name: 'EBW 러닝',
+    short: 'EBW',
+    dayLabel: '세션 일정 참고',
+    timeLabel: '세션 일정 기준',
+    place: '여의도공원 일대',
+    summary: '보조 러닝 시리즈. 세부 일정은 세션 캘린더에서 확인해주세요.',
+    heroEmoji: '🏃‍♀️',
+    color: '#f97316',
+    bgColor: '#fff7ed',
+    textColor: '#c2410c',
+  },
 };
 
-export const ALL_CLUB_TYPES: SessionType[] = ['ebw', 'slowrun', 'marathon'];
+// 표시 우선순위: 메인 클럽(런클럽)을 먼저, 그 다음 러닝 클래스, EBW 순.
+export const ALL_CLUB_TYPES: SessionType[] = ['slowrun', 'marathon', 'ebw'];
 
 // ─────────────────────────────────────────────────────────
 // 내 클럽 판별 로직
@@ -154,7 +160,7 @@ export function getMyClubs(
     });
   }
 
-  // 원래 선언 순서(ebw → slowrun → marathon)로 정렬
+  // 표시 우선순위(slowrun → marathon → ebw)로 정렬
   return ALL_CLUB_TYPES
     .map(t => matched.get(t))
     .filter((m): m is ClubMembership => !!m);

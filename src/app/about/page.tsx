@@ -157,9 +157,8 @@ export default function AboutPage() {
               앱에서 확인할 수 있습니다.
             </p>
             <ul className="mt-5 space-y-2">
-              <LocationItem name="반포 한강공원" desc="EBW · 슬로우 롱런 주 진행지" />
-              <LocationItem name="여의도 한강공원" desc="마라톤 세션 인터벌 트랙" />
-              <LocationItem name="EBW 러닝센터 (실내)" desc="우천·폭염 시 대체 장소" />
+              <LocationItem name="여의도공원 문화의마당" desc="런클럽 · 러닝 클래스 주 진행지 (비행기 모형 앞 집결)" />
+              <LocationItem name="여의도공원 일대" desc="코스에 따라 공원 내 이동" />
             </ul>
           </div>
           <div className="bg-[var(--color-bg-subtle)] border border-[var(--color-border)] rounded-lg p-4 md:p-7">
@@ -173,9 +172,8 @@ export default function AboutPage() {
               </div>
             </div>
             <ul className="divide-y divide-[var(--color-border-subtle)]">
-              <ScheduleRow day="평일 저녁" time="19:00 – 20:30" types="EBW, 마라톤" />
-              <ScheduleRow day="토요일 오전" time="08:00 – 10:00" types="슬로우 롱런" />
-              <ScheduleRow day="일요일 오전" time="08:00 – 10:00" types="EBW, 슬로우 롱런" />
+              <ScheduleRow day="매주 수 · 금" time="저녁 7:30" types="런클럽" />
+              <ScheduleRow day="매주 화 · 토" time="저녁 7:30" types="러닝 클래스" />
             </ul>
             <Link
               href="/sessions"

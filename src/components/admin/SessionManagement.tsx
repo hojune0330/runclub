@@ -122,9 +122,9 @@ export default function SessionManagement() {
 
   const handleCreate = async () => {
     const names: Record<SessionType, string> = {
-      ebw: 'EBW 실내 러닝',
-      slowrun: '슬로우 롱런',
-      marathon: '마라톤 클래스',
+      ebw: 'EBW 러닝',
+      slowrun: '슬로우롱런클럽',
+      marathon: '러닝 클래스',
     };
     const endHour = parseInt(formTime.split(':')[0]) + (formType === 'ebw' ? 1 : 2);
 
@@ -795,8 +795,8 @@ export default function SessionManagement() {
                 className="form-input"
               >
                 <option value="ebw">EBW 실내 러닝</option>
-                <option value="slowrun">슬로우 롱런</option>
-                <option value="marathon">마라톤 클래스</option>
+                <option value="slowrun">슬로우롱런클럽 (런클럽)</option>
+                <option value="marathon">러닝 클래스</option>
               </select>
             </FormField>
 
@@ -855,11 +855,9 @@ export default function SessionManagement() {
           <div className="space-y-4">
             <div className="text-[12.5px] text-[var(--color-text-secondary)] leading-relaxed bg-[var(--color-bg-hover)] rounded px-3 py-2.5">
               아래 기간 동안의 정기 세션을 한 번에 만듭니다. <br />
-              · <b>매주 월</b> — EBW 실내 러닝 19:00 / 20:00 / 21:00 (정원 8명, EBW 러닝센터)
+              · <b>매주 수 · 금</b> — 슬로우롱런클럽 19:30~21:00 (정원 50명, 여의도공원 문화의마당)
               <br />
-              · <b>매주 수</b> — 슬로우 롱런 클럽 19:30~21:00 (정원 50명, 올림픽공원 평화의문)
-              <br />
-              · <b>매주 토</b> — 아이오 마라톤 클래스 10:00~12:00 (정원 50명, 잠실 종합운동장)
+              · <b>매주 화 · 토</b> — 러닝 클래스 19:30~21:00 (정원 50명, 여의도공원 문화의마당)
               <br />
               <span className="text-[var(--color-text-muted)]">
                 이미 같은 날짜·시작시간·유형의 세션이 있으면 건너뜁니다.
@@ -1721,8 +1719,8 @@ function EditSessionModal({
               <FormField label="유형" required>
                 <select className="form-input" value={type} onChange={e => setType(e.target.value as SessionType)}>
                   <option value="ebw">EBW 실내 러닝</option>
-                  <option value="slowrun">슬로우 롱런</option>
-                  <option value="marathon">마라톤 클래스</option>
+                  <option value="slowrun">슬로우롱런클럽 (런클럽)</option>
+                  <option value="marathon">러닝 클래스</option>
                 </select>
               </FormField>
             </div>

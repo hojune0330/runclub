@@ -249,9 +249,9 @@ export default function AdminQR() {
 
                   <form onSubmit={handleFieldCheckin} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-4 sm:p-5 space-y-4">
                     <div className="text-center">
-                      <h2 className="text-[20px] font-bold text-[var(--color-text)]">이름과 연락처를 입력해주세요</h2>
+                      <h2 className="text-[20px] font-bold text-[var(--color-text)]">이름과 연락처만 입력하세요</h2>
                       <p className="text-[13px] text-[var(--color-text-muted)] mt-1">
-                        예약자는 즉시 출석 처리됩니다. 연락처는 뒤 4자리만 입력해도 됩니다.
+                        예약자 · 현장 참가자 모두 즉시 출석됩니다. 연락처는 뒤 4자리만 입력해도 돼요.
                       </p>
                     </div>
 
@@ -280,31 +280,27 @@ export default function AdminQR() {
                       </label>
                     </div>
 
-                    <details className="rounded-lg border border-[var(--color-border-subtle)] bg-white px-3 py-2">
-                      <summary className="cursor-pointer text-[12.5px] font-medium text-[var(--color-text-secondary)]">
-                        관리자 옵션
-                      </summary>
-                      <div className="mt-3 space-y-2">
-                        <label className="flex items-start gap-2 text-[12.5px] text-[var(--color-text-secondary)]">
-                          <input
-                            type="checkbox"
-                            checked={allowWalkIn}
-                            onChange={e => setAllowWalkIn(e.target.checked)}
-                            className="mt-0.5"
-                          />
-                          예약이 없는 회원도 현장 추가 허용 (사용 가능한 수강권이 있으면 자동 차감, 기본 권장)
-                        </label>
-                        <label className="flex items-start gap-2 text-[12.5px] text-[var(--color-text-secondary)]">
-                          <input
-                            type="checkbox"
-                            checked={skipPass}
-                            onChange={e => setSkipPass(e.target.checked)}
-                            className="mt-0.5"
-                          />
-                          수강권 없이 관리자 무료/예외 처리
-                        </label>
-                      </div>
-                    </details>
+                    <div className="rounded-lg border border-[var(--color-border-subtle)] bg-white px-3 py-3 space-y-2">
+                      <p className="text-[11px] font-medium text-[var(--color-text-muted)] uppercase tracking-wide">현장 처리 옵션</p>
+                      <label className="flex items-start gap-2 text-[12.5px] text-[var(--color-text-secondary)]">
+                        <input
+                          type="checkbox"
+                          checked={allowWalkIn}
+                          onChange={e => setAllowWalkIn(e.target.checked)}
+                          className="mt-0.5"
+                        />
+                        <span>예약 없는 참가자도 현장 추가 <span className="text-[var(--color-text-muted)]">(수강권 있으면 자동 차감 · 신규/당일 참가 권장)</span></span>
+                      </label>
+                      <label className="flex items-start gap-2 text-[12.5px] text-[var(--color-text-secondary)]">
+                        <input
+                          type="checkbox"
+                          checked={skipPass}
+                          onChange={e => setSkipPass(e.target.checked)}
+                          className="mt-0.5"
+                        />
+                        <span>수강권 없이 무료·예외 출석 <span className="text-[var(--color-text-muted)]">(신규 체험 · 만료 회원 등)</span></span>
+                      </label>
+                    </div>
 
                     {checkinError && (
                       <div className="flex items-start gap-2 rounded-lg bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-3 py-2.5 text-[13px] text-[var(--color-danger)]">
