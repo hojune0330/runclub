@@ -785,10 +785,32 @@ const LEGACY_PASS_PRODUCT_IDS = ['pp_011', 'pp_012', 'pp_013', 'pp_014', 'pp_015
 //     (A) pass_products 가 완전히 비어 있음 (= 신규 설치/빈 DB) → 안전하게 시드
 //     (B) 환경변수 SYNC_CATALOG_FORCE=1 → 관리자가 의도적으로 카탈로그 리셋 요청
 //   그 외(이미 상품이 존재)에는 아무것도 하지 않아 운영 데이터를 보존한다.
+// 1회성 강제 리셋 마커. 이 값이 app_meta 에 기록되어 있지 않으면, 다음 부팅 때
+// 단 한 번 네이버 카탈로그로 강제 리셋(+orphan 정리)하고 마커를 남긴다. 이후
+// 부팅에서는 마커가 있으므로 건너뛰어 관리자 수동 편집을 보존한다("나중에 정리").
+// 새 강제 리셋이 필요하면 이 상수를 v2, v3... 으로 올리면 된다.
+const CATALOG_RESET_MARKER = 'catalog_reset_naver_v1';
+
 let _catalogSynced: Promise<void> | null = null;
 export function syncPassProductCatalog(): Promise<void> {
   if (!_catalogSynced) _catalogSynced = (async () => {
-    const force = process.env.SYNC_CATALOG_FORCE === '1';
+    // 메타 플래그 저장용 키-값 테이블 (없으면 생성).
+    await dbRun(
+      `CREATE TABLE IF NOT EXISTS app_meta (
+         key   TEXT PRIMARY KEY,
+         value TEXT NOT NULL,
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+       )`, []
+    );
+
+    const envForce = process.env.SYNC_CATALOG_FORCE === '1';
+    const markerRow = await dbGet<{ value: string }>(
+      `SELECT value FROM app_meta WHERE key = $1`, [CATALOG_RESET_MARKER]
+    );
+    const markerApplied = !!markerRow;
+    // 마커가 아직 없으면(=이 리셋을 한 번도 안 했으면) 1회 강제 리셋한다.
+    const force = envForce || !markerApplied;
+
     const existing = await dbGet<{ cnt: string }>(
       `SELECT COUNT(*)::text AS cnt FROM pass_products`, []
     );
@@ -880,6 +902,14 @@ export function syncPassProductCatalog(): Promise<void> {
         await dbRun(`DELETE FROM pass_products WHERE id = $1`, [staleId]);
       }
     }
+
+    // 1회성 리셋 마커 기록 → 이후 부팅에서는 force 가 꺼져 운영 편집을 보존.
+    // (envForce 로 들어온 경우에도 마커를 남겨 둔다.)
+    await dbRun(
+      `INSERT INTO app_meta (key, value) VALUES ($1, $2)
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()`,
+      [CATALOG_RESET_MARKER, new Date().toISOString()]
+    );
   })();
   return _catalogSynced;
 }
