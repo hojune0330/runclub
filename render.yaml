@@ -33,6 +33,13 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # ── Catalog reset (ONE-TIME) ───────────────────────────────────
+      # '1' → on next deploy, pass_products is force-reset to the Naver
+      # store catalog (pp_001~pp_010) and ALL orphan products are cleaned.
+      # Flip back to '0' immediately after the reset deploy so future
+      # admin edits to pass_products survive redeploys.
+      - key: SYNC_CATALOG_FORCE
+        value: '1'
       - key: DATABASE_URL
         fromDatabase:
           name: runclub-db
