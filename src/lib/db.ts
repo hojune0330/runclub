@@ -817,6 +817,48 @@ async function initCoachingSchema(): Promise<void> {
     )
   `);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_encouragement_target ON encouragements(target_type, target_id)`);
+
+  // ── P4: 외부 데이터 연동 계정 ──
+  // provider: 'strava' | 'garmin' | 'apple_health' | 'samsung_health' | 'libre_cgm' | 'barojaenfit_api'
+  // status:   'connected' | 'pending' | 'revoked'
+  // "지금은 수동, 나중은 자동" — OAuth/토큰 컬럼은 미리 두되 실제 연동은 순차 오픈.
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS connected_accounts (
+      id            TEXT PRIMARY KEY,
+      member_id     TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      provider      TEXT NOT NULL,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      external_id   TEXT,
+      access_token  TEXT,
+      refresh_token TEXT,
+      token_expires_at TIMESTAMPTZ,
+      scope         TEXT,
+      last_synced_at TIMESTAMPTZ,
+      meta          JSONB,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (member_id, provider)
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_connected_member ON connected_accounts(member_id)`);
+
+  // ── P5: 건강 클래스 지표 정의(BaroJaenfit 등 동적 지표) ──
+  // 클래스별로 "어떤 건강 지표를 입력받을지"를 코치가 정의. activity_logs.metrics(JSONB)에 저장됨.
+  // value_type: 'number' | 'percent' | 'text'
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS class_metric_defs (
+      id          TEXT PRIMARY KEY,
+      class_id    TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      key         TEXT NOT NULL,
+      label       TEXT NOT NULL,
+      unit        TEXT,
+      value_type  TEXT NOT NULL DEFAULT 'number',
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (class_id, key)
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_metric_defs_class ON class_metric_defs(class_id)`);
 }
 
 /**

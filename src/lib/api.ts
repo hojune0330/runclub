@@ -818,6 +818,42 @@ export const api = {
       ),
   },
 
+  // ─── P4: 외부 데이터 연동 ───
+  integrations: {
+    list: () =>
+      request<{
+        accounts: {
+          provider: string; name: string; category: string; color: string; desc: string;
+          availability: 'available' | 'coming_soon';
+          connected: boolean; status: string | null; lastSyncedAt: string | null;
+        }[];
+      }>('/integrations'),
+    connect: (provider: string) =>
+      request<{ ok: boolean; provider: string; status: string; comingSoon: boolean; message: string }>(
+        '/integrations',
+        { method: 'POST', body: JSON.stringify({ provider }) }
+      ),
+    disconnect: (provider: string) =>
+      request<{ ok: boolean }>(`/integrations?provider=${encodeURIComponent(provider)}`, { method: 'DELETE' }),
+  },
+
+  // ─── P5: 클래스 건강 지표 정의(동적 지표) ───
+  classMetrics: {
+    list: (classId: string) =>
+      request<{ metrics: { id: string; key: string; label: string; unit?: string; valueType: string; sortOrder: number }[] }>(
+        `/classes/${encodeURIComponent(classId)}/metrics`
+      ),
+    create: (classId: string, data: { key: string; label: string; unit?: string; valueType?: string }) =>
+      request<{ metric: { id: string; key: string; label: string; unit?: string; valueType: string } }>(
+        `/classes/${encodeURIComponent(classId)}/metrics`,
+        { method: 'POST', body: JSON.stringify(data) }
+      ),
+    remove: (classId: string, id: string) =>
+      request<{ ok: boolean }>(`/classes/${encodeURIComponent(classId)}/metrics?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
+  },
+
   seed: () => request<any>('/seed', { method: 'POST' }),
 };
 

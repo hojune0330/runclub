@@ -294,11 +294,8 @@ export async function grantMileage(
   return granted;
 }
 
-/** P2 마일리지 적립 규칙 (사용자 확정: +10 활동 / +20 롱런(10km+) / +30 과제 검증) */
-export const COACHING_MILEAGE = {
-  ACTIVITY: 10,        // 활동 1건 (하루 최대 2건까지만 적립)
-  LONG_RUN: 20,        // 10km 이상 롱런 (활동 적립에 추가)
-  HOMEWORK_VERIFIED: 30, // 과제 검증 완료
-  ACTIVITY_DAILY_CAP: 2, // 활동 적립 일일 한도
-  LONG_RUN_M: 10000,   // 롱런 기준 거리(미터)
-} as const;
+/**
+ * P2 마일리지 적립 규칙 (사용자 확정: +10 활동 / +20 롱런(10km+) / +30 과제 검증).
+ * 단일 소스는 src/lib/policy.ts (클라이언트/서버 공용). 여기서는 re-export 한다.
+ */
+export { COACHING_MILEAGE } from '@/lib/policy';

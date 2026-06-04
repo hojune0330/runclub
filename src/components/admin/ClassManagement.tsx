@@ -3,15 +3,19 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Target, Plus, Users, Trophy, Flag, Loader2, ChevronLeft, ChevronRight,
-  Inbox, CheckCircle2, XCircle, Clock, Trash2, X, ClipboardCheck, Settings,
+  Inbox, CheckCircle2, XCircle, Clock, Trash2, X, ClipboardCheck, Settings, HeartPulse,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import ClassHomeworks from '@/components/member/ClassHomeworks';
 import ClassLeaderboard from '@/components/member/ClassLeaderboard';
+import ClassMetricDefs from '@/components/admin/ClassMetricDefs';
+import { MileageGuide, GlucoseGuardrailCard } from '@/components/coaching/PolicyInfo';
 import type { CoachingClass, ClassTeam, ClassEnrollment, TeamRequest } from '@/types';
 
-type AdminDetailTab = 'manage' | 'homework' | 'leaderboard';
+type AdminDetailTab = 'manage' | 'homework' | 'health' | 'leaderboard';
+
+const isHealthKind = (k?: string) => k === 'glucose' || k === 'health';
 
 const KIND_OPTIONS: { value: string; label: string }[] = [
   { value: 'marathon', label: '마라톤' },
@@ -347,6 +351,7 @@ function ClassDetailAdmin({ classId, onBack }: { classId: string; onBack: () => 
         {([
           { id: 'manage' as const, label: '운영', icon: Settings },
           { id: 'homework' as const, label: '과제', icon: ClipboardCheck },
+          ...(isHealthKind(cls.kind) ? [{ id: 'health' as const, label: '건강설정', icon: HeartPulse }] : []),
           { id: 'leaderboard' as const, label: '리더보드', icon: Trophy },
         ]).map(t => {
           const Icon = t.icon;
@@ -422,9 +427,20 @@ function ClassDetailAdmin({ classId, onBack }: { classId: string; onBack: () => 
           </ul>
         )}
       </section>
+
+      {/* 코치용 정책 안내: 회원에게 보이는 명세와 동일 (안내 일관성 확인용) */}
+      <section className="bg-white border border-[var(--color-border)] rounded-md p-4">
+        <MileageGuide compact />
+      </section>
       </>)}
 
       {tab === 'homework' && <ClassHomeworks classId={classId} />}
+      {tab === 'health' && isHealthKind(cls.kind) && (
+        <div className="space-y-4">
+          <ClassMetricDefs classId={classId} />
+          <GlucoseGuardrailCard />
+        </div>
+      )}
       {tab === 'leaderboard' && <ClassLeaderboard classId={classId} defaultMetric={cls.metricFocus} />}
     </div>
   );

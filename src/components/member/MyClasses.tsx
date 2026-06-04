@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Target, Users, Trophy, ChevronRight, ChevronLeft, Plus, Loader2,
   Flag, UserPlus, Clock, CheckCircle2, XCircle, Compass, Activity, ClipboardCheck,
+  HeartPulse,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/AuthContext';
@@ -11,9 +12,15 @@ import { cn } from '@/lib/utils';
 import ClassFeed from './ClassFeed';
 import ClassHomeworks from './ClassHomeworks';
 import ClassLeaderboard from './ClassLeaderboard';
+import HealthLog from './HealthLog';
+import { MileageGuide, IntegrationGuide, GlucoseGuardrailCard, MileagePolicyBadge } from '@/components/coaching/PolicyInfo';
+import IntegrationsPanel from '@/components/coaching/IntegrationsPanel';
+import { CLASS_KIND_INTRO } from '@/lib/policy';
 import type { CoachingClass, ClassTeam, ClassEnrollment, TeamRequest } from '@/types';
 
-type DetailTab = 'overview' | 'feed' | 'homework' | 'leaderboard';
+type DetailTab = 'overview' | 'feed' | 'homework' | 'health' | 'leaderboard';
+
+const isHealthKind = (k?: string) => k === 'glucose' || k === 'health';
 
 const KIND_LABEL: Record<string, string> = {
   marathon: '마라톤', hyrox: '하이록스', glucose: '혈당관리',
@@ -286,12 +293,13 @@ function ClassDetail({ classId, onBack }: { classId: string; onBack: () => void 
       {/* 탭 바: 참여자만 활동/과제/리더보드 접근 */}
       {enrolled && (
         <div className="flex items-center gap-1 border-b border-[var(--color-border)] overflow-x-auto">
-          {([
+          {(([
             ['overview', '개요', Flag],
             ['feed', '활동', Activity],
+            ...(isHealthKind(cls.kind) ? [['health', '건강', HeartPulse] as const] : []),
             ['homework', '과제', ClipboardCheck],
             ['leaderboard', '리더보드', Trophy],
-          ] as const).map(([id, label, Icon]) => (
+          ] as const)).map(([id, label, Icon]) => (
             <button key={id} onClick={() => setDetailTab(id)}
               className={cn('inline-flex items-center gap-1.5 px-3 py-2 text-[13px] border-b-2 -mb-px whitespace-nowrap transition-colors',
                 detailTab === id ? 'border-[var(--color-primary)] text-[var(--color-text)] font-medium' : 'border-transparent text-[var(--color-text-muted)]')}>
@@ -357,10 +365,43 @@ function ClassDetail({ classId, onBack }: { classId: string; onBack: () => void 
               </ul>
             </section>
           )}
+
+          {/* 클래스 소개: 이런 분께 좋아요 (구매/둘러보기 화면 안내) */}
+          {CLASS_KIND_INTRO[cls.kind] && (
+            <section className="bg-white border border-[var(--color-border)] rounded-md p-4">
+              <h2 className="text-[14px] font-semibold text-[var(--color-text)] mb-1.5">{CLASS_KIND_INTRO[cls.kind].tagline}</h2>
+              <ul className="space-y-1 mb-2">
+                {CLASS_KIND_INTRO[cls.kind].forWhom.map((w, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-[12.5px] text-[var(--color-text-secondary)]">
+                    <CheckCircle2 size={13} className="mt-0.5 text-[var(--color-primary)] shrink-0" /> {w}
+                  </li>
+                ))}
+              </ul>
+              <MileagePolicyBadge />
+            </section>
+          )}
+
+          {/* 정책 안내: 마일리지 적립 방법 (구매자/회원 누구나 명확히 이해) */}
+          <section className="bg-white border border-[var(--color-border)] rounded-md p-4">
+            <MileageGuide />
+          </section>
+
+          {/* 정책 안내: 데이터 연동 (지금은 수동, 나중은 자동) */}
+          {enrolled ? (
+            <IntegrationsPanel filterCategory={isHealthKind(cls.kind) ? (cls.kind === 'glucose' ? 'glucose' : 'health') : 'run'} />
+          ) : (
+            <section className="bg-white border border-[var(--color-border)] rounded-md p-4">
+              <IntegrationGuide filterCategory={isHealthKind(cls.kind) ? (cls.kind === 'glucose' ? 'glucose' : 'health') : 'run'} />
+            </section>
+          )}
+
+          {/* 건강/혈당 클래스: 데이터 보호 가드레일 안내 */}
+          {isHealthKind(cls.kind) && <GlucoseGuardrailCard />}
         </>
       )}
 
       {enrolled && detailTab === 'feed' && <ClassFeed classId={classId} />}
+      {enrolled && detailTab === 'health' && isHealthKind(cls.kind) && <HealthLog classId={classId} />}
       {enrolled && detailTab === 'homework' && <ClassHomeworks classId={classId} />}
       {enrolled && detailTab === 'leaderboard' && <ClassLeaderboard classId={classId} defaultMetric={cls.metricFocus} />}
     </div>
