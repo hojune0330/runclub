@@ -778,9 +778,27 @@ const LEGACY_PASS_PRODUCT_IDS = ['pp_011', 'pp_012', 'pp_013', 'pp_014', 'pp_015
 // 절대 갱신하지 못한다. 따라서 카탈로그 동기화는 시드와 분리해 ensureSchema()
 // 끝에서 항상 실행한다. INSERT ... ON CONFLICT DO UPDATE 로 가격/이름/설명 등을
 // 최신 카탈로그로 맞추고, 태그 매핑도 applicable_sessions 기준으로 재동기화한다.
+//
+// ⚠️ 안전 정책 (운영 데이터 보호):
+//   관리자가 운영 중에 pass_products 를 직접 추가/수정했을 수 있다. 따라서
+//   이 함수는 절대 무조건 덮어쓰지 않는다. 다음 두 경우에만 동기화한다.
+//     (A) pass_products 가 완전히 비어 있음 (= 신규 설치/빈 DB) → 안전하게 시드
+//     (B) 환경변수 SYNC_CATALOG_FORCE=1 → 관리자가 의도적으로 카탈로그 리셋 요청
+//   그 외(이미 상품이 존재)에는 아무것도 하지 않아 운영 데이터를 보존한다.
 let _catalogSynced: Promise<void> | null = null;
 export function syncPassProductCatalog(): Promise<void> {
   if (!_catalogSynced) _catalogSynced = (async () => {
+    const force = process.env.SYNC_CATALOG_FORCE === '1';
+    const existing = await dbGet<{ cnt: string }>(
+      `SELECT COUNT(*)::text AS cnt FROM pass_products`, []
+    );
+    const productCount = Number(existing?.cnt ?? 0);
+
+    // 이미 상품이 있고 강제 플래그도 없으면 → 운영 데이터 보존, no-op.
+    if (productCount > 0 && !force) {
+      return;
+    }
+
     for (const p of PASS_PRODUCT_CATALOG) {
       const [id, name, category, applicable, totalCount, durationDays,
         price, originalPrice, displayOrder, isFeatured, description, descriptionLong] = p;
@@ -835,17 +853,31 @@ export function syncPassProductCatalog(): Promise<void> {
       }
     }
 
-    // 옛 시드 상품 정리: 구매 이력이 없으면 삭제, 있으면 비활성화(FK 보호).
-    for (const legacyId of LEGACY_PASS_PRODUCT_IDS) {
+    // ─── 카탈로그에 없는 상품 정리 ───
+    // 정리 대상:
+    //   • force 모드: 카탈로그(PASS_PRODUCT_CATALOG)에 없는 *모든* 상품
+    //     (관리자가 운영 중 만든 orphan pp_mxxx, 옛 데이터 pp_001~006 변형 등 포함).
+    //     → 네이버 카탈로그로 1회성 전체 리셋. "나중에 정리"는 force 끈 평소 운영에서.
+    //   • 비-force 모드(빈 DB 초기 시드): 알려진 LEGACY id 만 보수적으로 정리.
+    // 회원이 실제 구매(member_passes 참조)한 상품은 FK 보호를 위해 삭제 대신 비활성화.
+    const catalogIds = new Set(PASS_PRODUCT_CATALOG.map((p) => p[0] as string));
+    let cleanupTargets: string[];
+    if (force) {
+      const all = await dbAll<{ id: string }>(`SELECT id FROM pass_products`, []);
+      cleanupTargets = all.map((r) => r.id).filter((id) => !catalogIds.has(id));
+    } else {
+      cleanupTargets = LEGACY_PASS_PRODUCT_IDS.filter((id) => !catalogIds.has(id));
+    }
+    for (const staleId of cleanupTargets) {
       const used = await dbGet<{ cnt: string }>(
         `SELECT COUNT(*)::text AS cnt FROM member_passes WHERE product_id = $1`,
-        [legacyId]
+        [staleId]
       );
       if (Number(used?.cnt ?? 0) > 0) {
-        await dbRun(`UPDATE pass_products SET is_active = FALSE WHERE id = $1`, [legacyId]);
+        await dbRun(`UPDATE pass_products SET is_active = FALSE WHERE id = $1`, [staleId]);
       } else {
-        await dbRun(`DELETE FROM pass_product_tag_map WHERE product_id = $1`, [legacyId]);
-        await dbRun(`DELETE FROM pass_products WHERE id = $1`, [legacyId]);
+        await dbRun(`DELETE FROM pass_product_tag_map WHERE product_id = $1`, [staleId]);
+        await dbRun(`DELETE FROM pass_products WHERE id = $1`, [staleId]);
       }
     }
   })();
