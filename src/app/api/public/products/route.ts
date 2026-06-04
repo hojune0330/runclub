@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { dbAll } from '@/lib/db';
+import { dbAll, ensureSchema } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { getProductTagsMap } from '@/lib/tags';
 
@@ -29,6 +29,11 @@ export async function GET(req: NextRequest) {
   );
 
   try {
+    // 스키마 + 카탈로그 동기화 보장. 이 엔드포인트는 무인증이라 미들웨어에
+    // 막히지 않고 항상 도달하므로, 1회성 카탈로그 리셋(app_meta 마커)을
+    // 확실히 트리거하는 진입점 역할도 한다.
+    await ensureSchema();
+
     const where = featuredOnly
       ? 'WHERE is_active = TRUE AND is_featured = TRUE'
       : 'WHERE is_active = TRUE';
