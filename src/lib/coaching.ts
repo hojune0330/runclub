@@ -14,6 +14,15 @@ import type {
   EnrollmentStatus,
   TeamRequestKind,
   TeamRequestStatus,
+  ActivityLog,
+  ActivityKind,
+  ActivitySource,
+  Homework,
+  HomeworkMetric,
+  HomeworkSubmission,
+  HomeworkSubmissionStatus,
+  Encouragement,
+  EncouragementKind,
 } from '@/types';
 
 export const CLASS_KINDS: ClassKind[] = ['marathon', 'hyrox', 'glucose', 'health', 'pt', 'custom'];
@@ -124,4 +133,142 @@ export function mapTeamRequestRow(r: any): TeamRequest {
     resolutionNote: r.resolution_note ?? undefined,
     createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
   };
+}
+
+// ─── P2: Activity / Homework / Encouragement ───
+
+export const ACTIVITY_KINDS: ActivityKind[] = [
+  'run', 'walk_run', 'long_run', 'interval',
+  'glucose', 'body_comp', 'fasting', 'weight', 'custom',
+];
+export const ACTIVITY_SOURCES: ActivitySource[] = [
+  'manual', 'strava', 'garmin', 'apple_health',
+  'samsung_health', 'barojaenfit_manual', 'barojaenfit_api', 'libre_cgm',
+];
+export const HOMEWORK_METRICS: HomeworkMetric[] = ['distance', 'count', 'duration', 'checkin', 'freeform'];
+export const ENCOURAGEMENT_KINDS: EncouragementKind[] = ['cheer', 'fire', 'comment'];
+
+export const ACTIVITY_KIND_LABEL: Record<ActivityKind, string> = {
+  run: '러닝',
+  walk_run: '걷기/달리기',
+  long_run: '롱런',
+  interval: '인터벌',
+  glucose: '혈당 측정',
+  body_comp: '체성분',
+  fasting: '단식',
+  weight: '체중',
+  custom: '기타',
+};
+
+export const HOMEWORK_METRIC_LABEL: Record<HomeworkMetric, string> = {
+  distance: '거리(누적)',
+  count: '횟수',
+  duration: '시간(분)',
+  checkin: '출석',
+  freeform: '자유 인증',
+};
+
+function asJson(v: unknown): Record<string, unknown> | undefined {
+  if (v === null || v === undefined) return undefined;
+  if (typeof v === 'object') return v as Record<string, unknown>;
+  if (typeof v === 'string') {
+    try { return JSON.parse(v); } catch { return undefined; }
+  }
+  return undefined;
+}
+
+export function mapActivityRow(r: any): ActivityLog {
+  return {
+    id: r.id,
+    memberId: r.member_id,
+    memberName: r.member_name ?? undefined,
+    classId: r.class_id ?? undefined,
+    kind: (ACTIVITY_KINDS.includes(r.kind) ? r.kind : 'custom') as ActivityKind,
+    source: (ACTIVITY_SOURCES.includes(r.source) ? r.source : 'manual') as ActivitySource,
+    sourceRef: r.source_ref ?? undefined,
+    activityDate: asDate(r.activity_date) ?? '',
+    distanceM: asNum(r.distance_m),
+    durationS: asNum(r.duration_s),
+    avgPaceS: asNum(r.avg_pace_s),
+    elevationM: asNum(r.elevation_m),
+    avgHr: asNum(r.avg_hr),
+    metrics: asJson(r.metrics),
+    note: r.note ?? undefined,
+    photoUrl: r.photo_url ?? undefined,
+    createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+    cheerCount: asNum(r.cheer_count),
+    commentCount: asNum(r.comment_count),
+  };
+}
+
+export function mapHomeworkRow(r: any): Homework {
+  return {
+    id: r.id,
+    classId: r.class_id,
+    className: r.class_name ?? undefined,
+    title: r.title,
+    description: r.description ?? undefined,
+    metric: (HOMEWORK_METRICS.includes(r.metric) ? r.metric : 'freeform') as HomeworkMetric,
+    targetValue: asNum(r.target_value),
+    periodStart: asDate(r.period_start),
+    periodEnd: asDate(r.period_end),
+    createdBy: r.created_by ?? undefined,
+    createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+    submissionCount: asNum(r.submission_count),
+    verifiedCount: asNum(r.verified_count),
+  };
+}
+
+export function mapHomeworkSubmissionRow(r: any): HomeworkSubmission {
+  return {
+    id: r.id,
+    homeworkId: r.homework_id,
+    memberId: r.member_id,
+    memberName: r.member_name ?? undefined,
+    achievedValue: asNum(r.achieved_value),
+    status: (['submitted', 'verified', 'rejected'].includes(r.status) ? r.status : 'submitted') as HomeworkSubmissionStatus,
+    note: r.note ?? undefined,
+    photoUrl: r.photo_url ?? undefined,
+    submittedAt: r.submitted_at ? new Date(r.submitted_at).toISOString() : undefined,
+  };
+}
+
+export function mapEncouragementRow(r: any): Encouragement {
+  return {
+    id: r.id,
+    memberId: r.member_id,
+    memberName: r.member_name ?? undefined,
+    targetType: r.target_type === 'homework_submission' ? 'homework_submission' : 'activity',
+    targetId: r.target_id,
+    kind: (ENCOURAGEMENT_KINDS.includes(r.kind) ? r.kind : 'cheer') as EncouragementKind,
+    comment: r.comment ?? undefined,
+    createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+  };
+}
+
+// ─── 표시용 포맷터 ───
+
+/** 미터 → "12.3km" / "850m" */
+export function formatDistance(m?: number): string {
+  if (!m || m <= 0) return '0km';
+  if (m < 1000) return `${m}m`;
+  return `${(m / 1000).toFixed(m % 1000 === 0 ? 0 : 1)}km`;
+}
+
+/** 초/km → "5'30\"/km" */
+export function formatPace(s?: number): string {
+  if (!s || s <= 0) return '-';
+  const mm = Math.floor(s / 60);
+  const ss = Math.round(s % 60);
+  return `${mm}'${String(ss).padStart(2, '0')}"/km`;
+}
+
+/** 초 → "1:05:30" 또는 "32:10" */
+export function formatDuration(s?: number): string {
+  if (!s || s <= 0) return '-';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = Math.round(s % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${m}:${String(sec).padStart(2, '0')}`;
 }

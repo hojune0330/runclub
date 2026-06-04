@@ -250,3 +250,55 @@ export async function earnMileage(
 
   return earned;
 }
+
+/**
+ * 범용 마일리지 적립 (P2 코칭 활동/과제용).
+ * reason 예: 'activity' | 'activity_long' | 'homework'.
+ * 같은 reason+referenceId 조합이 이미 있으면 중복 적립을 막는다(idempotent).
+ * @returns 실제 적립된 포인트(중복/0 이면 0)
+ */
+export async function grantMileage(
+  memberId: string,
+  amount: number,
+  reason: string,
+  referenceId?: string | null
+): Promise<number> {
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+
+  let granted = 0;
+  await dbTx(async (client) => {
+    if (referenceId) {
+      const dup = await client.query(
+        `SELECT 1 FROM mileage_log WHERE member_id = $1 AND reason = $2 AND reference_id = $3 LIMIT 1`,
+        [memberId, reason, referenceId]
+      );
+      if ((dup.rowCount ?? 0) > 0) return; // 이미 적립됨
+    }
+
+    await client.query(
+      `UPDATE members SET mileage_balance = mileage_balance + $1 WHERE id = $2`,
+      [amount, memberId]
+    );
+    const result = await client.query(
+      `SELECT mileage_balance FROM members WHERE id = $1`,
+      [memberId]
+    );
+    await client.query(
+      `INSERT INTO mileage_log (member_id, amount, reason, reference_id, balance_after)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [memberId, amount, reason, referenceId ?? null, result.rows[0]?.mileage_balance ?? amount]
+    );
+    granted = amount;
+  });
+
+  return granted;
+}
+
+/** P2 마일리지 적립 규칙 (사용자 확정: +10 활동 / +20 롱런(10km+) / +30 과제 검증) */
+export const COACHING_MILEAGE = {
+  ACTIVITY: 10,        // 활동 1건 (하루 최대 2건까지만 적립)
+  LONG_RUN: 20,        // 10km 이상 롱런 (활동 적립에 추가)
+  HOMEWORK_VERIFIED: 30, // 과제 검증 완료
+  ACTIVITY_DAILY_CAP: 2, // 활동 적립 일일 한도
+  LONG_RUN_M: 10000,   // 롱런 기준 거리(미터)
+} as const;

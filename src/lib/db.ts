@@ -744,6 +744,79 @@ async function initCoachingSchema(): Promise<void> {
   `);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_team_requests_class ON team_requests(class_id, status)`);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_team_requests_member ON team_requests(member_id)`);
+
+  // ── P2: 활동 기록 — 모든 측정 데이터의 단일 저장소 (러닝/건강 공통) ──
+  // 설계 원칙 "지금은 수동, 나중은 자동": source 필드만 추가하면 외부 연동 확장.
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS activity_logs (
+      id            TEXT PRIMARY KEY,
+      member_id     TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      class_id      TEXT REFERENCES classes(id) ON DELETE SET NULL,
+      kind          TEXT NOT NULL DEFAULT 'run',
+      source        TEXT NOT NULL DEFAULT 'manual',
+      source_ref    TEXT,
+      activity_date DATE NOT NULL,
+      distance_m    INTEGER,
+      duration_s    INTEGER,
+      avg_pace_s    INTEGER,
+      elevation_m   INTEGER,
+      avg_hr        INTEGER,
+      metrics       JSONB,
+      note          TEXT,
+      photo_url     TEXT,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_member_date ON activity_logs(member_id, activity_date DESC)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_class ON activity_logs(class_id)`);
+  // 외부 동기화 중복 방지(같은 소스+외부ID는 1건). source_ref NULL(수동 입력)은 제약 없음.
+  await dbRun(`CREATE UNIQUE INDEX IF NOT EXISTS uq_activity_source_ref ON activity_logs(member_id, source, source_ref) WHERE source_ref IS NOT NULL`);
+
+  // ── P2: 과제(숙제) — 목표 지향 수업의 핵심 ──
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS homeworks (
+      id            TEXT PRIMARY KEY,
+      class_id      TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      title         TEXT NOT NULL,
+      description   TEXT,
+      metric        TEXT NOT NULL DEFAULT 'distance',
+      target_value  NUMERIC,
+      period_start  DATE,
+      period_end    DATE,
+      created_by    TEXT REFERENCES members(id) ON DELETE SET NULL,
+      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_homeworks_class ON homeworks(class_id)`);
+
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS homework_submissions (
+      id             TEXT PRIMARY KEY,
+      homework_id    TEXT NOT NULL REFERENCES homeworks(id) ON DELETE CASCADE,
+      member_id      TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      achieved_value NUMERIC,
+      status         TEXT NOT NULL DEFAULT 'submitted',
+      note           TEXT,
+      photo_url      TEXT,
+      submitted_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (homework_id, member_id)
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_hw_sub_member ON homework_submissions(member_id)`);
+
+  // ── P2: 응원(좋아요/댓글) ──
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS encouragements (
+      id          TEXT PRIMARY KEY,
+      member_id   TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      target_type TEXT NOT NULL,
+      target_id   TEXT NOT NULL,
+      kind        TEXT NOT NULL DEFAULT 'cheer',
+      comment     TEXT,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_encouragement_target ON encouragements(target_type, target_id)`);
 }
 
 /**

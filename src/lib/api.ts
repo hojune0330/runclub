@@ -1,6 +1,9 @@
 // API client helper - all frontend API calls go through here
 
-import type { CoachingClass, ClassTeam, ClassEnrollment, TeamRequest } from '@/types';
+import type {
+  CoachingClass, ClassTeam, ClassEnrollment, TeamRequest,
+  ActivityLog, Homework, HomeworkSubmission, Encouragement, LeaderboardResult,
+} from '@/types';
 
 const BASE = '/api';
 
@@ -698,6 +701,91 @@ export const api = {
         method: 'DELETE',
       });
     },
+    leaderboard: (classId: string, params: { metric?: string; from?: string; to?: string } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.metric) qs.set('metric', params.metric);
+      if (params.from) qs.set('from', params.from);
+      if (params.to) qs.set('to', params.to);
+      const s = qs.toString();
+      return request<LeaderboardResult>(`/classes/${encodeURIComponent(classId)}/leaderboard${s ? '?' + s : ''}`);
+    },
+  },
+
+  // ─── P2: 활동 기록 ───
+  activities: {
+    list: (params: { classId?: string; memberId?: string; limit?: number } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.classId) qs.set('classId', params.classId);
+      if (params.memberId) qs.set('memberId', params.memberId);
+      if (params.limit) qs.set('limit', String(params.limit));
+      const s = qs.toString();
+      return request<{ activities: ActivityLog[] }>(`/activities${s ? '?' + s : ''}`);
+    },
+    create: (data: {
+      classId?: string;
+      kind?: string;
+      source?: string;
+      activityDate?: string;
+      distanceM?: number;
+      durationS?: number;
+      avgPaceS?: number;
+      elevationM?: number;
+      avgHr?: number;
+      metrics?: Record<string, unknown>;
+      note?: string;
+      photoUrl?: string;
+    }) =>
+      request<{ activity: ActivityLog; mileageEarned: number }>('/activities', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    remove: (id: string) =>
+      request<{ ok: boolean }>(`/activities?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  },
+
+  // ─── P2: 과제 ───
+  homeworks: {
+    list: (classId: string) =>
+      request<{ homeworks: Homework[]; canManage: boolean }>(`/homeworks?classId=${encodeURIComponent(classId)}`),
+    get: (id: string) =>
+      request<{ homework: Homework; submissions: HomeworkSubmission[]; canManage: boolean }>(`/homeworks/${encodeURIComponent(id)}`),
+    create: (data: {
+      classId: string;
+      title: string;
+      description?: string;
+      metric?: string;
+      targetValue?: number;
+      periodStart?: string;
+      periodEnd?: string;
+    }) =>
+      request<{ homework: Homework }>('/homeworks', { method: 'POST', body: JSON.stringify(data) }),
+    remove: (id: string) =>
+      request<{ ok: boolean }>(`/homeworks?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    submit: (id: string, data: { achievedValue?: number; autoSum?: boolean; note?: string; photoUrl?: string }) =>
+      request<{ submission: HomeworkSubmission }>(`/homeworks/${encodeURIComponent(id)}`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    verify: (id: string, submissionId: string, status: 'verified' | 'rejected' | 'submitted', note?: string) =>
+      request<{ submission: HomeworkSubmission; mileageEarned: number }>(`/homeworks/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ submissionId, status, note }),
+      }),
+  },
+
+  // ─── P2: 응원 ───
+  encouragements: {
+    list: (targetType: 'activity' | 'homework_submission', targetId: string) =>
+      request<{ encouragements: Encouragement[] }>(
+        `/encouragements?targetType=${targetType}&targetId=${encodeURIComponent(targetId)}`
+      ),
+    add: (data: { targetType: 'activity' | 'homework_submission'; targetId: string; kind?: 'cheer' | 'fire' | 'comment'; comment?: string }) =>
+      request<{ encouragement?: Encouragement; toggled: 'on' | 'off' }>('/encouragements', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    remove: (id: string) =>
+      request<{ ok: boolean }>(`/encouragements?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
 
   teamRequests: {

@@ -362,6 +362,118 @@ export interface TeamRequest {
   createdAt?: string;
 }
 
+// ─── Coaching Platform (P2): Activity / Homework / Encouragement ───
+
+export type ActivityKind =
+  | 'run' | 'walk_run' | 'long_run' | 'interval'
+  | 'glucose' | 'body_comp' | 'fasting' | 'weight' | 'custom';
+export type ActivitySource =
+  | 'manual' | 'strava' | 'garmin' | 'apple_health'
+  | 'samsung_health' | 'barojaenfit_manual' | 'barojaenfit_api' | 'libre_cgm';
+
+export interface ActivityLog {
+  id: string;
+  memberId: string;
+  memberName?: string;
+  classId?: string;
+  kind: ActivityKind;
+  source: ActivitySource;
+  sourceRef?: string;
+  activityDate: string; // YYYY-MM-DD
+  distanceM?: number;
+  durationS?: number;
+  avgPaceS?: number;
+  elevationM?: number;
+  avgHr?: number;
+  metrics?: Record<string, unknown>;
+  note?: string;
+  photoUrl?: string;
+  createdAt?: string;
+  // 집계 시 채워짐
+  cheerCount?: number;
+  commentCount?: number;
+  encouragements?: Encouragement[];
+}
+
+export type HomeworkMetric = 'distance' | 'count' | 'duration' | 'checkin' | 'freeform';
+
+export interface Homework {
+  id: string;
+  classId: string;
+  className?: string;
+  title: string;
+  description?: string;
+  metric: HomeworkMetric;
+  targetValue?: number;
+  periodStart?: string;
+  periodEnd?: string;
+  createdBy?: string;
+  createdAt?: string;
+  // 집계(내 제출 현황)
+  mySubmission?: HomeworkSubmission;
+  submissionCount?: number;
+  verifiedCount?: number;
+}
+
+export type HomeworkSubmissionStatus = 'submitted' | 'verified' | 'rejected';
+
+export interface HomeworkSubmission {
+  id: string;
+  homeworkId: string;
+  memberId: string;
+  memberName?: string;
+  achievedValue?: number;
+  status: HomeworkSubmissionStatus;
+  note?: string;
+  photoUrl?: string;
+  submittedAt?: string;
+}
+
+export type EncouragementKind = 'cheer' | 'fire' | 'comment';
+
+export interface Encouragement {
+  id: string;
+  memberId: string;
+  memberName?: string;
+  targetType: 'activity' | 'homework_submission';
+  targetId: string;
+  kind: EncouragementKind;
+  comment?: string;
+  createdAt?: string;
+}
+
+// ─── Coaching Platform (P3): Leaderboard ───
+
+export interface LeaderboardRow {
+  memberId: string;
+  memberName: string;
+  teamId?: string;
+  teamName?: string;
+  value: number;       // 지표 원시 값 (distance=m, mileage=p, …) 또는 가공값
+  displayValue: string; // 표시용 포맷 (예: "42.2km", "320P", "85%")
+  rank: number;
+  isMe?: boolean;
+}
+
+export interface TeamLeaderboardRow {
+  teamId: string;
+  teamName: string;
+  color?: string;
+  total: number;
+  average: number;
+  memberCount: number;
+  displayTotal: string;
+}
+
+export interface LeaderboardResult {
+  metricFocus: ClassMetricFocus;
+  metricLabel: string;
+  periodStart?: string;
+  periodEnd?: string;
+  individuals: LeaderboardRow[];
+  teams: TeamLeaderboardRow[];
+}
+
 // ─── View Types ───
 
 export type CalendarView = 'week' | 'month';
