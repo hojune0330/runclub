@@ -668,7 +668,12 @@ async function initSchema(): Promise<void> {
  * Called automatically by every public API in this module.
  */
 export async function ensureSchema(): Promise<void> {
-  if (!_initPromise) _initPromise = initSchema();
+  if (!_initPromise) {
+    // 스키마 생성 → 그 직후 상품 카탈로그를 idempotent 하게 동기화한다.
+    // seedDatabase() 는 "회원이 이미 있으면 통째로 스킵"하므로, 운영 DB 의
+    // 상품 가격/이름/설명은 여기(ensureSchema) 에서만 최신 카탈로그로 반영된다.
+    _initPromise = initSchema().then(() => syncPassProductCatalog());
+  }
   await _initPromise;
 }
 
@@ -681,6 +686,170 @@ export async function isSeeded(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ─── 상품 카탈로그 (단일 진실 공급원) ───
+//
+// 네이버 스마트스토어 실제 라인업을 반영한 "미끼 → 전문화 클래스" funnel.
+//
+//   ① 미끼(loss-leader): pp_001 아이오 런클럽 멤버십 (10,000원, is_featured)
+//        - 누구나 부담 없이 결제 → member_passes 에 active pass 생성
+//        - 이 순간부터 getMembershipDiscountRate() 가 10% 자동 할인 적용
+//        - 즉 "런클럽 회원" 자체가 모든 전문 클래스의 상시 10% 할인 자격
+//   ② 전문 클래스(고액 마진): 런클럽 회원에게 10% 할인된 가격으로 노출되어
+//        "이미 멤버니까 할인받고 듣자"는 심리로 자연스럽게 업셀.
+//
+// 컬럼 순서:
+//   [id, name, category, applicable_sessions, total_count, duration_days,
+//    price, original_price, display_order, is_featured, description, description_long]
+//
+// price          = 실제 판매가(런클럽 회원이 결제 시 추가 10% 자동 차감)
+// original_price = 비회원 정가(취소선 표기용). 런클럽 가입을 유도하는 앵커.
+type ProdSeed = [
+  string, string, string, string, number | null, number,
+  number, number | null, number, boolean, string, string,
+];
+const PASS_PRODUCT_CATALOG: ProdSeed[] = [
+  // ── 미끼 상품 (최상단·추천) ──
+  ['pp_001', '아이오 런클럽 멤버십', 'monthly', '["runclub","ebw","slowrun","marathon"]', null, 30,
+    10000, null, 0, true,
+    '월 10,000원으로 시작하는 러닝 라이프. 전문 코치·매니저가 함께하는 안전한 야외 러닝 클럽.',
+    '아이오 런클럽 멤버십은 단돈 10,000원으로 누리는 "헬스장 같은" 야외 러닝 공간입니다. 전문 코치와 매니저의 보조 아래 안전하게 달리고, 짐 보관·급수까지 해결됩니다. ★ 멤버가 되는 순간, 아이오의 모든 전문 클래스(EBW·마라톤·특화·1:1 PT 등)를 상시 10% 할인된 가격으로 수강할 수 있습니다. 가장 먼저, 가장 가볍게 시작하세요.'],
+
+  // ── 전문화 클래스 (원데이 → 정기 → 특화 → 고액 PT 순으로 업셀) ──
+  ['pp_002', '러너를 위한 실내훈련 원데이 체험 [E.B.W]', 'count', '["ebw"]', 1, 30,
+    35000, null, 10, false,
+    '잘 달리기 위한 체력 프로그램 EBW를 하루 체험. 러닝 퍼포먼스 향상을 위한 기능성 트레이닝 입문.',
+    '초보 러너부터 숙련 러너까지, 실내에서 다양한 기능성 운동으로 러닝 퍼포먼스를 끌어올리는 EBW 원데이 체험 클래스입니다. 부상 예방·체력 증진·고칼로리 소모 효과까지. "잘 달리기 위해 잘 움직이는 법"부터 시작하세요. ※ 런클럽 멤버는 10% 할인.'],
+
+  ['pp_003', 'EBW 정기반 (월) — 러닝 기반 실내체력 운동', 'monthly', '["ebw"]', null, 30,
+    100000, null, 20, false,
+    '매주 월·목 진행하는 EBW 월 정기반. 기능적이고 전문적인 러닝 트레이닝으로 몸을 더 튼튼하게.',
+    '러닝뿐 아니라 기능적·전문적인 러닝 트레이닝으로 몸을 튼튼하게, 움직임을 유연하게 만드는 월 정기 프로그램입니다. 실내 기능성 운동, 러닝 퍼포먼스 집중 트레이닝, 부상 예방, 고강도 칼로리 소모. 초보~숙련 러너 모두 참여 가능. ※ 런클럽 멤버는 10% 할인.'],
+
+  ['pp_004', 'io러닝 러닝 클래스 (6주 과정)', 'count', '["marathon"]', 6, 60,
+    150000, null, 30, false,
+    '6주 마라톤 클래스. 각자의 컨디션·수준에 맞춰 체계적으로 훈련하는 러닝 전문 교육.',
+    '아이오 러닝의 6주 마라톤 클래스입니다. 꾸준히 준비해온 러너부터 흐름을 놓쳤던 러너까지, 지금 상태에서 다시 제대로 시작할 수 있도록 설계되었습니다. 기록을 한 단계 끌어올리거나, 무리 없이 페이스를 회복하도록 수준별로 체계적 훈련을 진행합니다. ※ 런클럽 멤버는 10% 할인.'],
+
+  ['pp_005', '[상시반] 공무원 체력시험 준비반', 'monthly', '["special"]', null, 30,
+    250000, 250000, 40, false,
+    '전직 육상선수 코치진의 종목별 맞춤 훈련. 단기간 기록 향상을 위한 특화 프로그램.',
+    '공무원 체력시험은 전략적으로 준비하면 충분히 합격할 수 있습니다. 전직 육상선수 출신 코치진이 왕복달리기·윗몸일으키기·팔굽혀펴기 등 종목별 맞춤 훈련을 직접 지도하고, 개인별 피드백과 체력 향상 플랜을 제공합니다. 단순 훈련이 아닌 "기록 단축을 위한 최적의 방법". ※ 런클럽 멤버는 결제 시 10% 추가 할인.'],
+
+  ['pp_006', '러너를 위한 맞춤형 깔창 제작', 'count', '["product"]', 1, 30,
+    130000, null, 50, false,
+    '러닝에 적합한 발은 단 25%. 발의 고유한 윤곽에 맞춘 맞춤형 깔창으로 부상을 예방하세요.',
+    '지문처럼 모든 발은 고유한 모양과 윤곽을 가집니다. 러닝에 적합한 발을 가진 사람은 단 25%뿐, 75%의 러너가 불균형을 안고 달립니다. 발의 불균형은 불필요한 통증과 부상을 유발합니다. 개인의 발에 맞춘 맞춤형 깔창으로 균형을 회복하세요. ※ 런클럽 멤버는 10% 할인.'],
+
+  ['pp_007', '[강병규 코치] 유소년 러닝 교육 (1:1 / 그룹)', 'count', '["pt"]', 1, 60,
+    130000, null, 60, false,
+    '선수 출신 코치의 유소년 전문 러닝 교육. 1:1 또는 2~3:1 소그룹으로 진행.',
+    '"무한한 기회, 끝없는 시작"을 모토로 한 러닝 전문 교육팀 아이오. 십수 년의 선수 생활과 수많은 유소년·직장인 러너 지도 노하우로 아이의 올바른 러닝 자세와 체력을 길러줍니다. 1:1 또는 2~3:1 소그룹 진행. ※ 런클럽 멤버는 10% 할인.'],
+
+  // ── 고액 1:1 PT (최종 전환·최고 마진) ──
+  ['pp_008', '[강병규 코치] 원데이 체험 (1:1 러닝 PT)', 'count', '["pt"]', 1, 30,
+    80000, null, 70, false,
+    '선수 출신 코치와의 1:1 러닝 PT 원데이 체험. 정식 PT 등록 전 맛보기.',
+    '강병규 코치와 1:1로 진행하는 러닝 PT 원데이 체험입니다. 스케줄 조율 후 예약하세요. 선수 생활과 유소년·직장인 지도 노하우로 여러분의 목표 달성을 돕습니다. ※ 런클럽 멤버는 10% 할인.'],
+
+  ['pp_009', '[강병규 코치] 러닝 PT 4회 (1:1)', 'count', '["pt"]', 4, 90,
+    480000, null, 80, false,
+    '선수 출신 코치와의 1:1 러닝 PT 4회권. 체계적 관리와 꾸준한 동기부여.',
+    '강병규 코치와 1:1로 진행하는 러닝 PT 4회권입니다. 스케줄을 코치와 조율해 예약합니다. 자세 교정부터 기록 향상까지 개인 맞춤 PT로 목표에 도달하세요. ※ 런클럽 멤버는 10% 할인.'],
+
+  ['pp_010', '[강병규 코치] 러닝 PT 8회 (1:1)', 'count', '["pt"]', 8, 120,
+    800000, null, 90, false,
+    '선수 출신 코치와의 1:1 러닝 PT 8회권. 가장 깊이 있는 1:1 전문 관리.',
+    '강병규 코치와 1:1로 진행하는 러닝 PT 8회 풀패키지입니다. 가장 체계적이고 밀도 높은 개인 맞춤 관리로 자세·체력·기록을 종합적으로 끌어올립니다. ※ 런클럽 멤버는 10% 할인.'],
+];
+
+const PASS_PRODUCT_REFUND_POLICY =
+  '수업 시작 7일 전까지 전액 환불, 3일 전까지 50% 환불, 이후 환불 불가. 횟수권은 미사용분에 한해 환불 가능합니다.';
+
+// 카탈로그에 더 이상 존재하지 않는 (옛) 시드 상품 id 목록.
+// 운영 DB 에 이미 들어가 있던 구버전 상품을 정리하기 위함. 회원이 실제로
+// 구매(member_passes 참조)한 상품은 FK 보호를 위해 삭제하지 않고 비활성화만 한다.
+const LEGACY_PASS_PRODUCT_IDS = ['pp_011', 'pp_012', 'pp_013', 'pp_014', 'pp_015'];
+
+// ─── 상품 카탈로그 동기화 (idempotent upsert) ───
+//
+// seedDatabase() 는 "회원이 이미 있으면 통째로 스킵"하므로, 운영 DB 의 상품을
+// 절대 갱신하지 못한다. 따라서 카탈로그 동기화는 시드와 분리해 ensureSchema()
+// 끝에서 항상 실행한다. INSERT ... ON CONFLICT DO UPDATE 로 가격/이름/설명 등을
+// 최신 카탈로그로 맞추고, 태그 매핑도 applicable_sessions 기준으로 재동기화한다.
+let _catalogSynced: Promise<void> | null = null;
+export function syncPassProductCatalog(): Promise<void> {
+  if (!_catalogSynced) _catalogSynced = (async () => {
+    for (const p of PASS_PRODUCT_CATALOG) {
+      const [id, name, category, applicable, totalCount, durationDays,
+        price, originalPrice, displayOrder, isFeatured, description, descriptionLong] = p;
+      await dbRun(
+        `INSERT INTO pass_products (
+           id, name, category, applicable_sessions, total_count, duration_days,
+           price, original_price, display_order, is_featured,
+           description, description_long, refund_policy, is_active
+         )
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13, TRUE)
+         ON CONFLICT (id) DO UPDATE SET
+           name                = EXCLUDED.name,
+           category            = EXCLUDED.category,
+           applicable_sessions = EXCLUDED.applicable_sessions,
+           total_count         = EXCLUDED.total_count,
+           duration_days       = EXCLUDED.duration_days,
+           price               = EXCLUDED.price,
+           original_price      = EXCLUDED.original_price,
+           display_order       = EXCLUDED.display_order,
+           is_featured         = EXCLUDED.is_featured,
+           description         = EXCLUDED.description,
+           description_long    = EXCLUDED.description_long,
+           refund_policy       = EXCLUDED.refund_policy,
+           is_active           = TRUE,
+           updated_at          = NOW()`,
+        [id, name, category, applicable, totalCount, durationDays,
+          price, originalPrice, displayOrder, isFeatured,
+          description, descriptionLong, PASS_PRODUCT_REFUND_POLICY]
+      );
+
+      // 태그 매핑 재동기화: applicable_sessions(JSON 배열 또는 'all') → pass_product_tag_map.
+      let tagIds: string[];
+      const raw = (applicable ?? 'all').trim();
+      if (raw === 'all' || raw === '"all"') {
+        tagIds = ['*'];
+      } else {
+        try {
+          const parsed = JSON.parse(raw);
+          tagIds = Array.isArray(parsed)
+            ? parsed.filter((t: unknown): t is string => typeof t === 'string' && t.length > 0)
+            : ['*'];
+        } catch { tagIds = ['*']; }
+      }
+      // 기존 매핑을 지우고 카탈로그 기준으로 다시 채운다(정확한 동기화).
+      await dbRun(`DELETE FROM pass_product_tag_map WHERE product_id = $1`, [id]);
+      for (const tagId of tagIds) {
+        await dbRun(
+          `INSERT INTO pass_product_tag_map (product_id, tag_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [id, tagId]
+        );
+      }
+    }
+
+    // 옛 시드 상품 정리: 구매 이력이 없으면 삭제, 있으면 비활성화(FK 보호).
+    for (const legacyId of LEGACY_PASS_PRODUCT_IDS) {
+      const used = await dbGet<{ cnt: string }>(
+        `SELECT COUNT(*)::text AS cnt FROM member_passes WHERE product_id = $1`,
+        [legacyId]
+      );
+      if (Number(used?.cnt ?? 0) > 0) {
+        await dbRun(`UPDATE pass_products SET is_active = FALSE WHERE id = $1`, [legacyId]);
+      } else {
+        await dbRun(`DELETE FROM pass_product_tag_map WHERE product_id = $1`, [legacyId]);
+        await dbRun(`DELETE FROM pass_products WHERE id = $1`, [legacyId]);
+      }
+    }
+  })();
+  return _catalogSynced;
 }
 
 // ─── Seed initial data ───
@@ -774,98 +943,11 @@ export async function seedDatabase(mode?: 'production' | 'demo') {
   }
 
   // ─── 3. Pass products (always — admin needs them to issue passes) ───
-  //
-  // 네이버 스마트스토어 실제 라인업을 그대로 반영한 카탈로그.
-  // 가격 전략 = "미끼(loss-leader) → 전문화 클래스 업셀" funnel:
-  //
-  //   ① 미끼: pp_001 아이오 런클럽 멤버십 (10,000원, is_featured)
-  //        - 누구나 부담 없이 결제 → member_passes 에 active pass 생성
-  //        - 이 순간부터 getMembershipDiscountRate() 가 10% 자동 할인 적용
-  //        - 즉 "런클럽 회원" 자체가 모든 전문 클래스의 상시 10% 할인 자격
-  //   ② 전문 클래스(고액 마진): 런클럽 회원에게 10% 할인된 가격으로 노출되어
-  //        "이미 멤버니까 할인받고 듣자"는 심리로 자연스럽게 업셀.
-  //
-  // 컬럼 순서:
-  //   [id, name, category, applicable_sessions, total_count, duration_days,
-  //    price, original_price, display_order, is_featured, description, description_long]
-  //
-  // price          = 실제 판매가(런클럽 회원이 결제 시 추가 10% 자동 차감)
-  // original_price = 비회원 정가(취소선 표기용). 런클럽 가입을 유도하는 앵커.
-  type ProdSeed = [
-    string, string, string, string, number | null, number,
-    number, number | null, number, boolean, string, string,
-  ];
-  const products: ProdSeed[] = [
-    // ── 미끼 상품 (최상단·추천) ──
-    ['pp_001', '아이오 런클럽 멤버십', 'monthly', '["runclub","ebw","slowrun","marathon"]', null, 30,
-      10000, null, 0, true,
-      '월 10,000원으로 시작하는 러닝 라이프. 전문 코치·매니저가 함께하는 안전한 야외 러닝 클럽.',
-      '아이오 런클럽 멤버십은 단돈 10,000원으로 누리는 "헬스장 같은" 야외 러닝 공간입니다. 전문 코치와 매니저의 보조 아래 안전하게 달리고, 짐 보관·급수까지 해결됩니다. ★ 멤버가 되는 순간, 아이오의 모든 전문 클래스(EBW·마라톤·특화·1:1 PT 등)를 상시 10% 할인된 가격으로 수강할 수 있습니다. 가장 먼저, 가장 가볍게 시작하세요.'],
-
-    // ── 전문화 클래스 (원데이 → 정기 → 특화 → 고액 PT 순으로 업셀) ──
-    ['pp_002', '러너를 위한 실내훈련 원데이 체험 [E.B.W]', 'count', '["ebw"]', 1, 30,
-      35000, null, 10, false,
-      '잘 달리기 위한 체력 프로그램 EBW를 하루 체험. 러닝 퍼포먼스 향상을 위한 기능성 트레이닝 입문.',
-      '초보 러너부터 숙련 러너까지, 실내에서 다양한 기능성 운동으로 러닝 퍼포먼스를 끌어올리는 EBW 원데이 체험 클래스입니다. 부상 예방·체력 증진·고칼로리 소모 효과까지. "잘 달리기 위해 잘 움직이는 법"부터 시작하세요. ※ 런클럽 멤버는 10% 할인.'],
-
-    ['pp_003', 'EBW 정기반 (월) — 러닝 기반 실내체력 운동', 'monthly', '["ebw"]', null, 30,
-      100000, null, 20, false,
-      '매주 월·목 진행하는 EBW 월 정기반. 기능적이고 전문적인 러닝 트레이닝으로 몸을 더 튼튼하게.',
-      '러닝뿐 아니라 기능적·전문적인 러닝 트레이닝으로 몸을 튼튼하게, 움직임을 유연하게 만드는 월 정기 프로그램입니다. 실내 기능성 운동, 러닝 퍼포먼스 집중 트레이닝, 부상 예방, 고강도 칼로리 소모. 초보~숙련 러너 모두 참여 가능. ※ 런클럽 멤버는 10% 할인.'],
-
-    ['pp_004', 'io러닝 러닝 클래스 (6주 과정)', 'count', '["marathon"]', 6, 60,
-      150000, null, 30, false,
-      '6주 마라톤 클래스. 각자의 컨디션·수준에 맞춰 체계적으로 훈련하는 러닝 전문 교육.',
-      '아이오 러닝의 6주 마라톤 클래스입니다. 꾸준히 준비해온 러너부터 흐름을 놓쳤던 러너까지, 지금 상태에서 다시 제대로 시작할 수 있도록 설계되었습니다. 기록을 한 단계 끌어올리거나, 무리 없이 페이스를 회복하도록 수준별로 체계적 훈련을 진행합니다. ※ 런클럽 멤버는 10% 할인.'],
-
-    ['pp_005', '[상시반] 공무원 체력시험 준비반', 'monthly', '["special"]', null, 30,
-      250000, 250000, 40, false,
-      '전직 육상선수 코치진의 종목별 맞춤 훈련. 단기간 기록 향상을 위한 특화 프로그램.',
-      '공무원 체력시험은 전략적으로 준비하면 충분히 합격할 수 있습니다. 전직 육상선수 출신 코치진이 왕복달리기·윗몸일으키기·팔굽혀펴기 등 종목별 맞춤 훈련을 직접 지도하고, 개인별 피드백과 체력 향상 플랜을 제공합니다. 단순 훈련이 아닌 "기록 단축을 위한 최적의 방법". ※ 런클럽 멤버는 결제 시 10% 추가 할인.'],
-
-    ['pp_006', '러너를 위한 맞춤형 깔창 제작', 'count', '["product"]', 1, 30,
-      130000, null, 50, false,
-      '러닝에 적합한 발은 단 25%. 발의 고유한 윤곽에 맞춘 맞춤형 깔창으로 부상을 예방하세요.',
-      '지문처럼 모든 발은 고유한 모양과 윤곽을 가집니다. 러닝에 적합한 발을 가진 사람은 단 25%뿐, 75%의 러너가 불균형을 안고 달립니다. 발의 불균형은 불필요한 통증과 부상을 유발합니다. 개인의 발에 맞춘 맞춤형 깔창으로 균형을 회복하세요. ※ 런클럽 멤버는 10% 할인.'],
-
-    ['pp_007', '[강병규 코치] 유소년 러닝 교육 (1:1 / 그룹)', 'count', '["pt"]', 1, 60,
-      130000, null, 60, false,
-      '선수 출신 코치의 유소년 전문 러닝 교육. 1:1 또는 2~3:1 소그룹으로 진행.',
-      '"무한한 기회, 끝없는 시작"을 모토로 한 러닝 전문 교육팀 아이오. 십수 년의 선수 생활과 수많은 유소년·직장인 러너 지도 노하우로 아이의 올바른 러닝 자세와 체력을 길러줍니다. 1:1 또는 2~3:1 소그룹 진행. ※ 런클럽 멤버는 10% 할인.'],
-
-    // ── 고액 1:1 PT (최종 전환·최고 마진) ──
-    ['pp_008', '[강병규 코치] 원데이 체험 (1:1 러닝 PT)', 'count', '["pt"]', 1, 30,
-      80000, null, 70, false,
-      '선수 출신 코치와의 1:1 러닝 PT 원데이 체험. 정식 PT 등록 전 맛보기.',
-      '강병규 코치와 1:1로 진행하는 러닝 PT 원데이 체험입니다. 스케줄 조율 후 예약하세요. 선수 생활과 유소년·직장인 지도 노하우로 여러분의 목표 달성을 돕습니다. ※ 런클럽 멤버는 10% 할인.'],
-
-    ['pp_009', '[강병규 코치] 러닝 PT 4회 (1:1)', 'count', '["pt"]', 4, 90,
-      480000, null, 80, false,
-      '선수 출신 코치와의 1:1 러닝 PT 4회권. 체계적 관리와 꾸준한 동기부여.',
-      '강병규 코치와 1:1로 진행하는 러닝 PT 4회권입니다. 스케줄을 코치와 조율해 예약합니다. 자세 교정부터 기록 향상까지 개인 맞춤 PT로 목표에 도달하세요. ※ 런클럽 멤버는 10% 할인.'],
-
-    ['pp_010', '[강병규 코치] 러닝 PT 8회 (1:1)', 'count', '["pt"]', 8, 120,
-      800000, null, 90, false,
-      '선수 출신 코치와의 1:1 러닝 PT 8회권. 가장 깊이 있는 1:1 전문 관리.',
-      '강병규 코치와 1:1로 진행하는 러닝 PT 8회 풀패키지입니다. 가장 체계적이고 밀도 높은 개인 맞춤 관리로 자세·체력·기록을 종합적으로 끌어올립니다. ※ 런클럽 멤버는 10% 할인.'],
-  ];
-  const PROD_REFUND_POLICY =
-    '수업 시작 7일 전까지 전액 환불, 3일 전까지 50% 환불, 이후 환불 불가. 횟수권은 미사용분에 한해 환불 가능합니다.';
-  for (const p of products) {
-    const [id, name, category, applicable, totalCount, durationDays,
-      price, originalPrice, displayOrder, isFeatured, description, descriptionLong] = p;
-    await dbRun(
-      `INSERT INTO pass_products (
-         id, name, category, applicable_sessions, total_count, duration_days,
-         price, original_price, display_order, is_featured,
-         description, description_long, refund_policy
-       )
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-      [id, name, category, applicable, totalCount, durationDays,
-        price, originalPrice, displayOrder, isFeatured,
-        description, descriptionLong, PROD_REFUND_POLICY]
-    );
-  }
+  // 카탈로그는 모듈 상수(PASS_PRODUCT_CATALOG) + syncPassProductCatalog() 로
+  // 단일화되어 있다. 신규 시드든 기존 운영 DB든 동일한 upsert 경로를 타도록
+  // 여기서도 같은 함수를 호출한다. (idempotent)
+  await syncPassProductCatalog();
+  const products = PASS_PRODUCT_CATALOG;
 
   // ─── 4. Sample issued passes (demo mode only) ───
   let activePassCount = 0;
