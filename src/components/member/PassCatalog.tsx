@@ -26,11 +26,22 @@ const passCategoryLabel = (c: PassProduct['category']) =>
   c === 'count' ? '횟수권' : c === 'season' ? '시즌권' : '월권';
 
 /** SKILL:slowrun-catalog-filter
- *  SlowRunMembership CTA → 이쪽으로 이동할 때 sessionStorage 에 저장된
- *  필터를 읽어 slowrun 태그 상품만 보여준다. 읽자마자 삭제하므로 다른 경로로
- *  진입할 때는 영향을 주지 않는다.
+ *  런클럽 멤버십 안내 페이지의 CTA → 이쪽으로 이동할 때 sessionStorage 에
+ *  저장된 태그를 읽어 해당 태그 상품만 보여준다. 읽자마자 삭제하므로
+ *  다른 경로로 진입할 때는 영향을 주지 않는다.
  */
 const CATALOG_FILTER_KEY = 'slowrun:catalogFilter';
+
+// 태그 id → 필터 배너에 표시할 사람이 읽는 이름.
+const TAG_FILTER_LABEL: Record<string, string> = {
+  runclub: '런클럽 멤버십',
+  ebw: 'EBW',
+  slowrun: '슬로우 롱런',
+  marathon: '마라톤',
+  special: '특화 클래스',
+  pt: '1:1 PT',
+  product: '제작/굿즈',
+};
 
 export default function PassCatalog() {
   const { passProducts } = useApp();
@@ -79,7 +90,7 @@ export default function PassCatalog() {
         <div className="flex items-center gap-2 px-4 py-2.5 bg-[var(--color-slowrun-bg)] border border-[var(--color-slowrun)]/20 rounded text-[13px] text-[var(--color-text)] animate-slide-up">
           <Tag size={14} className="text-[var(--color-slowrun)] shrink-0" />
           <span className="flex-1">
-            <strong>슬로우 롱런</strong> 멤버십 전용 상품만 표시 중입니다.
+            <strong>{TAG_FILTER_LABEL[tagFilter] ?? tagFilter}</strong> 관련 상품만 표시 중입니다.
           </span>
           <button
             onClick={() => setTagFilter(null)}
@@ -429,17 +440,36 @@ function MembershipDiscountBanner() {
     () => memberPasses.some(p => p.status === 'active' || p.status === 'paused'),
     [memberPasses]
   );
-  if (!hasMembership) return null;
+  if (hasMembership) {
+    return (
+      <div className="flex items-start gap-2 px-3 py-2.5 bg-green-50 border border-green-200 rounded">
+        <Tag size={14} className="text-green-600 mt-0.5 flex-shrink-0" />
+        <div className="text-[12.5px] text-green-800">
+          <p className="font-semibold">멤버십 10% 할인 적용 중</p>
+          <p className="text-green-700 mt-0.5">
+            현재 멤버십이 활성 상태입니다. 아래 모든 전문 클래스를 결제 시 10% 자동 할인된 가격으로 구매하실 수 있습니다.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  // 미보유자에게는 "런클럽 가입 → 전 상품 10% 할인" funnel 안내.
   return (
-    <div className="flex items-start gap-2 px-3 py-2.5 bg-green-50 border border-green-200 rounded">
-      <Tag size={14} className="text-green-600 mt-0.5 flex-shrink-0" />
-      <div className="text-[12.5px] text-green-800">
-        <p className="font-semibold">멤버십 10% 할인 적용</p>
-        <p className="text-green-700 mt-0.5">
-          수강권 보유 회원은 모든 상품을 10% 할인된 가격에 구매할 수 있습니다.
+    <button
+      onClick={() => {
+        try { sessionStorage.setItem('slowrun:catalogFilter', 'runclub'); } catch { /* noop */ }
+        window.dispatchEvent(new CustomEvent('member:navigate', { detail: 'membership' }));
+      }}
+      className="w-full flex items-start gap-2 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded text-left transition-colors hover:bg-amber-100"
+    >
+      <Tag size={14} className="text-amber-600 mt-0.5 flex-shrink-0" />
+      <div className="text-[12.5px] text-amber-900 flex-1">
+        <p className="font-semibold">월 10,000원 런클럽 멤버십으로 모든 클래스 10% 할인받기 →</p>
+        <p className="text-amber-800 mt-0.5">
+          런클럽 멤버십(월 10,000원) 하나만 보유하면, 아래 모든 전문 클래스를 결제 시 상시 10% 할인된 가격으로 수강할 수 있습니다.
         </p>
       </div>
-    </div>
+    </button>
   );
 }
 

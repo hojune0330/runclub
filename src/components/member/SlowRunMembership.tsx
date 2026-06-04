@@ -12,16 +12,16 @@ interface FAQ {
 
 const faqs: FAQ[] = [
   {
-    q: '한 달에 두 번 다 와도 추가 요금이 있나요?',
-    a: '없습니다. 10,000원으로 30일간 무제한 이용입니다.',
+    q: '런클럽이 무엇인가요?',
+    a: '런클럽은 안정적으로 러닝할 수 있는 "헬스장 같은 공간"입니다. 정해진 시간과 장소에 모여 전문 코치의 지도 아래 함께 달리는 야외 러닝 프로그램으로, PT처럼 체계적인 관리와 꾸준한 동기부여를 제공합니다.',
+  },
+  {
+    q: '월 10,000원으로 정말 무엇이 좋아지나요?',
+    a: '단돈 10,000원으로 30일간 야외 러닝 세션에 횟수 제한 없이 참여할 수 있고, 짐 보관·급수까지 지원됩니다. 무엇보다 런클럽 회원이 되면 아이오의 모든 전문 클래스(EBW·마라톤·특화·1:1 PT 등)를 상시 10% 할인된 가격으로 수강할 수 있습니다.',
   },
   {
     q: '중간에 해지하면 환불되나요?',
     a: '이미 시작된 이용권은 기간이 끝날 때까지 사용하시는 것을 원칙으로 합니다. 다음 달부터 결제가 중단됩니다.',
-  },
-  {
-    q: '한 번도 못 나왔는데 환불 가능한가요?',
-    a: '세션 시작 전에 미리 말씀해주시면 다음 달로 이월해드릴 수 있습니다. 케이스별로 코치에게 문의 부탁드립니다.',
   },
 ];
 
@@ -36,7 +36,7 @@ function useSlowRunStatus() {
     // slowrun 태그가 있는 상품 id 목록
     const slowrunProductIds = new Set(
       passProducts
-        .filter(p => p.tags && p.tags.includes('slowrun') && p.isActive)
+        .filter(p => p.tags && p.tags.includes('runclub') && p.isActive)
         .map(p => p.id)
     );
     // 활성(active)이면서 slowrun 상품에 해당하는 수강권 중 만료일 기준 내림차순
@@ -69,7 +69,7 @@ function useSlowRunStatus() {
 const CATALOG_FILTER_KEY = 'slowrun:catalogFilter';
 
 function navigateToCatalogWithFilter() {
-  try { sessionStorage.setItem(CATALOG_FILTER_KEY, 'slowrun'); } catch { /* noop */ }
+  try { sessionStorage.setItem(CATALOG_FILTER_KEY, 'runclub'); } catch { /* noop */ }
   window.dispatchEvent(new CustomEvent('member:navigate', { detail: 'catalog' }));
 }
 
@@ -86,11 +86,11 @@ export default function SlowRunMembership() {
       {/* ── Page Heading ── */}
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-1">
-          <Calendar size={18} className="text-[var(--color-slowrun)]" />
-          <h1 className="page-title">슬로우 롱런 멤버십</h1>
+          <Calendar size={18} className="text-[var(--color-runclub)]" />
+          <h1 className="page-title">아이오 런클럽 멤버십</h1>
         </div>
         <p className="text-[13px] text-[var(--color-text-muted)]">
-          월 10,000원, 수요일과 금요일 모두 자유롭게 참여하세요.
+          월 10,000원으로 시작하는 러닝 라이프 — 회원이 되면 모든 전문 클래스 상시 10% 할인.
         </p>
       </div>
 
@@ -124,12 +124,12 @@ export default function SlowRunMembership() {
       {!slowRunStatus && (
         <div className="bg-[var(--color-slowrun-bg)] border border-[var(--color-slowrun)]/20 rounded px-5 py-5 mb-6">
           <h2 className="text-[16px] font-bold text-[var(--color-text)] mb-2">
-            월 10,000원, 수요일과 금요일 모두 자유롭게 참여하세요
+            단돈 월 10,000원으로 "러닝 라이프"를 시작하세요
           </h2>
           <p className="text-[13px] text-[var(--color-text-secondary)] leading-relaxed">
-            기존에 수요일에만 운영되던 슬로우 롱런이 <strong className="text-[var(--color-text)]">금요일까지 확대</strong>됩니다.
-            가격은 그대로 <strong className="text-[var(--color-text)]">월 10,000원</strong>, 한 달 동안 수요일과 금요일 세션에{' '}
-            <strong className="text-[var(--color-text)]">횟수 제한 없이</strong> 참여하실 수 있습니다.
+            전문 코치·매니저가 함께하는 안전한 야외 러닝 클럽에 횟수 제한 없이 참여하세요.
+            그리고 무엇보다 — <strong className="text-[var(--color-text)]">런클럽 회원이 되는 순간, 아이오의 모든 전문 클래스</strong>(EBW·마라톤·공무원 특화·1:1 PT 등)를{' '}
+            <strong className="text-[var(--color-primary)]">상시 10% 할인</strong>된 가격으로 수강할 수 있습니다.
           </p>
         </div>
       )}
@@ -153,6 +153,25 @@ export default function SlowRunMembership() {
         </div>
       </div>
 
+      {/* ── 핵심 후크: 런클럽 회원 = 전 상품 10% 상시 할인 ── */}
+      <div className="bg-[var(--color-primary-bg)] border border-[var(--color-primary-border)] rounded px-5 py-4 mb-6">
+        <div className="flex items-start gap-3">
+          <div className="w-8 h-8 rounded-full bg-[var(--color-primary)] flex items-center justify-center shrink-0 mt-0.5">
+            <CheckCircle2 size={16} className="text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-[14.5px] font-bold text-[var(--color-text)] mb-1">
+              런클럽 회원만의 혜택 — 모든 전문 클래스 상시 10% 할인
+            </h2>
+            <p className="text-[13px] text-[var(--color-text-secondary)] leading-relaxed">
+              멤버십을 보유한 동안에는 EBW 정기반, io러닝 클래스, 공무원 체력시험 특화반,
+              강병규 코치 1:1 러닝 PT, 맞춤형 깔창 제작까지 <strong className="text-[var(--color-primary)]">결제 금액에서 자동으로 10%가 차감</strong>됩니다.
+              단돈 1만 원의 멤버십 하나로 한 해 내내 할인받으세요.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* ── CTA Button (only shown when no active pass) ── */}
       {!slowRunStatus && (
         <div className="mb-6">
@@ -161,7 +180,7 @@ export default function SlowRunMembership() {
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-[var(--color-primary)] text-white text-[13.5px] font-medium px-6 py-2.5 rounded transition-colors hover:bg-[var(--color-primary-hover)] active:bg-[var(--color-primary-active)]"
           >
             <ShoppingBag size={15} />
-            수강권 구매하러 가기
+            런클럽 멤버십 가입하기
           </button>
         </div>
       )}
@@ -186,8 +205,9 @@ export default function SlowRunMembership() {
             <span className="w-5 h-5 rounded-full bg-[var(--color-bg-subtle)] border border-[var(--color-border)] text-[11px] font-semibold text-[var(--color-text-secondary)] flex items-center justify-center shrink-0 mt-0.5 tabular-nums">1</span>
             <div className="flex-1 min-w-0">
               <p className="text-[13px] text-[var(--color-text-secondary)] leading-relaxed">
-                결제일로부터 <strong className="text-[var(--color-text)]">30일 동안</strong> 슬로우 롱런 세션에
+                결제일로부터 <strong className="text-[var(--color-text)]">30일 동안</strong> 런클럽 세션에
                 자유롭게 참여할 수 있는 멤버십입니다. 예를 들어 5월 25일에 결제하시면 6월 23일까지 이용 가능합니다.
+                멤버십이 활성인 동안은 다른 전문 클래스 구매 시 <strong className="text-[var(--color-primary)]">10% 할인</strong>도 계속 적용됩니다.
               </p>
             </div>
           </div>

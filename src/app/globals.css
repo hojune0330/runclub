@@ -36,12 +36,20 @@
   --color-danger-border: #fecaca;
 
   /* ── Session Types ── */
+  --color-runclub: #d97706;
+  --color-runclub-bg: #fffbeb;
   --color-ebw: #ea580c;
   --color-ebw-bg: #fff7ed;
   --color-slowrun: #2563eb;
   --color-slowrun-bg: #eff6ff;
   --color-marathon: #059669;
   --color-marathon-bg: #ecfdf5;
+  --color-special: #7c3aed;
+  --color-special-bg: #f5f3ff;
+  --color-pt: #db2777;
+  --color-pt-bg: #fdf2f8;
+  --color-product: #4b5563;
+  --color-product-bg: #f9fafb;
 
   --font-sans: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
 }

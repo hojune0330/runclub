@@ -43,7 +43,7 @@ const navGroups: { label: string; items: { id: Tab; label: string; icon: typeof 
     items: [
       { id: 'passes', label: '내 수강권', icon: Ticket },
       { id: 'catalog', label: '수강권 구매', icon: ShoppingBag },
-      { id: 'membership', label: '슬로우 롱런 멤버십', icon: Info },
+      { id: 'membership', label: '런클럽 멤버십', icon: Info },
       { id: 'attendance', label: '출석 이력', icon: History },
       { id: 'qr', label: 'QR 체크인', icon: QrCode },
     ],
