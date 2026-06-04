@@ -12,15 +12,16 @@ import { useApp } from '@/store/AppContext';
 // ── 슬로우롱런클럽 운영 정보 (한 곳에서 관리) ──
 const CLUB_INFO = {
   name: '슬로우롱런클럽',
-  place: '여의도 한강공원 문화의 광장',
-  placeDetail: '여의나루역 2번 출구 방향, 문화의 광장 계단 앞 집결',
+  place: '여의도공원 문화의마당',
+  placeDetail: '문화의마당 비행기 모형 앞 집결 (여의도공원 세븐일레븐 3호점 · 여의도공원 출입구6과 태극기 게양대 사이)',
+  mapUrl: 'https://naver.me/52cgNgZX',
   meetTime: '오후 7:30',
   warmupTime: '7:30 워밍업 시작 · 7:40 러닝 출발',
   days: '매주 수요일 · 금요일',
   monthlyCount: 8, // 주 2회 × 4주
   weeklyCount: 2,
   pricePerSession: 1250, // 10,000원 / 8회
-  kakaoOpenChat: 'https://open.kakao.com/o/slowrunclub', // TODO: 실제 오픈채팅 링크로 교체
+  kakaoOpenChat: 'https://open.kakao.com/o/gQsrUACh',
 };
 
 interface FAQ {
@@ -223,6 +224,14 @@ export default function SlowRunMembership() {
               <p className="text-[12px] text-[var(--color-text-muted)]">장소</p>
               <p className="text-[13.5px] font-semibold text-[var(--color-text)]">{CLUB_INFO.place}</p>
               <p className="text-[12px] text-[var(--color-text-secondary)] mt-0.5">{CLUB_INFO.placeDetail}</p>
+              <a
+                href={CLUB_INFO.mapUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 mt-1.5 text-[12px] font-medium text-[var(--color-runclub)] hover:underline"
+              >
+                <MapPin size={12} /> 네이버 지도로 위치 보기
+              </a>
             </div>
           </div>
         </div>
