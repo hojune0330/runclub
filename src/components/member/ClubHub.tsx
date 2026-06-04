@@ -19,6 +19,7 @@ import {
   type ClubMembership,
 } from '@/lib/clubs';
 import { format, cn } from '@/lib/utils';
+import NextActionCard from './NextActionCard';
 import type { SessionType } from '@/types';
 
 interface ClubHubProps {
@@ -63,27 +64,32 @@ export default function ClubHub({ onSelectClub, onGoToDashboard }: ClubHubProps)
           Welcome back
         </p>
         <h1 className="text-[20px] md:text-[22px] font-semibold text-[var(--color-text)] mt-0.5">
-          {user?.name}님, 오늘은 어떤 클럽으로 갈까요?
+          {user?.name}님, 안녕하세요 👋
         </h1>
         <p className="text-[12.5px] md:text-[13px] text-[var(--color-text-muted)] mt-1 leading-relaxed">
-          소속된 클럽을 선택하면 해당 클럽의 예약·출석·수강권만 모아서 보여드려요.
+          지금 바로 할 수 있는 일을 아래에서 확인하세요.
         </p>
       </section>
+
+      {/* 다음 할 일 — 가장 중요한 행동 유도 */}
+      <NextActionCard />
 
       {/* 내 클럽 */}
       <section>
         <div className="flex items-end justify-between mb-2.5">
           <h2 className="text-[14px] font-semibold text-[var(--color-text)] flex items-center gap-1.5">
             <Sparkles size={15} className="text-[var(--color-primary)]" />
-            내 클럽
+            {memberships.length === 1 ? '내 클럽' : memberships.length > 1 ? '내 클럽' : '클럽 둘러보기'}
           </h2>
-          <button
-            onClick={onGoToDashboard}
-            className="h-9 px-2.5 -mr-2 text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] active:bg-[var(--color-bg-hover)] rounded inline-flex items-center gap-1"
-          >
-            종합 대시보드
-            <ArrowRight size={12} />
-          </button>
+          {memberships.length > 0 && (
+            <button
+              onClick={onGoToDashboard}
+              className="h-9 px-2.5 -mr-2 text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] active:bg-[var(--color-bg-hover)] rounded inline-flex items-center gap-1"
+            >
+              내 활동 통계
+              <ArrowRight size={12} />
+            </button>
+          )}
         </div>
 
         {memberships.length === 0 ? (

@@ -27,25 +27,25 @@ const navGroups: { label: string; items: { id: Tab; label: string; icon: typeof 
   {
     label: '홈',
     items: [
-      { id: 'home', label: '내 클럽', icon: Home },
-      { id: 'overview', label: '종합 대시보드', icon: LayoutDashboard },
+      { id: 'home', label: '홈', icon: Home },
+      { id: 'overview', label: '내 활동 통계', icon: LayoutDashboard },
     ],
   },
   {
-    label: '예약',
+    label: '러닝 참여',
     items: [
-      { id: 'calendar', label: '세션 일정', icon: Calendar },
+      { id: 'calendar', label: '세션 일정·예약', icon: Calendar },
       { id: 'reservations', label: '내 예약', icon: ClipboardList },
+      { id: 'qr', label: 'QR 체크인', icon: QrCode },
+      { id: 'attendance', label: '출석 이력', icon: History },
     ],
   },
   {
-    label: '이용',
+    label: '수강권 · 멤버십',
     items: [
+      { id: 'membership', label: '슬로우롱런 소개', icon: Info },
       { id: 'passes', label: '내 수강권', icon: Ticket },
       { id: 'catalog', label: '수강권 구매', icon: ShoppingBag },
-      { id: 'membership', label: '런클럽 멤버십', icon: Info },
-      { id: 'attendance', label: '출석 이력', icon: History },
-      { id: 'qr', label: 'QR 체크인', icon: QrCode },
     ],
   },
   {
@@ -264,7 +264,9 @@ export default function MemberApp() {
             >
               <Bell size={17} />
               {unreadNotices > 0 && (
-                <span className="absolute top-1.5 right-1.5 md:top-1 md:right-1 w-1.5 h-1.5 bg-[var(--color-danger)] rounded-full" />
+                <span className="absolute -top-0.5 -right-0.5 md:-top-1 md:-right-1 bg-[var(--color-danger)] text-white text-[10px] tabular-nums min-w-[16px] h-[16px] px-1 flex items-center justify-center rounded-full font-medium">
+                  {unreadNotices > 9 ? '9+' : unreadNotices}
+                </span>
               )}
             </button>
           </div>

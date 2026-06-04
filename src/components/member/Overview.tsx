@@ -12,7 +12,6 @@ import {
   Trophy,
   Clock,
   MapPin,
-  UserPlus,
 } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import {
@@ -27,6 +26,7 @@ import {
 } from '@/lib/utils';
 import { sessionTypeConfig } from '@/lib/config';
 import InviteModal from './InviteModal';
+import NextActionCard from './NextActionCard';
 
 export default function Overview() {
   const { reservations, sessions, memberPasses, currentMember } = useApp();
@@ -153,24 +153,23 @@ export default function Overview() {
   return (
     <div className="space-y-6 max-w-[1200px]">
       {/* Greeting */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="page-title">
-            안녕하세요, {currentMember.name}님 👋
-          </h1>
-          <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
-            {formatKoreanDate(new Date(), 'yyyy년 M월 d일 EEEE')} · 오늘도 좋은 러닝 되세요!
-          </p>
-        </div>
-        <button
-          onClick={() => setInviteOpen(true)}
-          className="h-11 md:h-9 inline-flex items-center gap-1.5 px-3.5 rounded-md text-[13px] font-medium bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-white transition-colors"
-        >
-          <UserPlus size={14} />
-          친구 초대
-        </button>
+      <div>
+        <h1 className="page-title">
+          안녕하세요, {currentMember.name}님 👋
+        </h1>
+        <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
+          {formatKoreanDate(new Date(), 'yyyy년 M월 d일 EEEE')} · 오늘도 좋은 러닝 되세요!
+        </p>
       </div>
 
+      {/* 다음 할 일 — 첫 화면과 동일한 행동 유도 카드 */}
+      <NextActionCard />
+
+      {/* 신규 회원 온보딩 — 출석/예약/수강권이 전혀 없으면 빈 차트 대신 안내 */}
+      {totalRecords === 0 && upcoming.length === 0 && activePasses.length === 0 ? (
+        <OnboardingPanel onNavigate={navigate} />
+      ) : (
+        <>
       {/* KPI row */}
       <div className="kpi-grid-4">
         <KpiCard
@@ -234,6 +233,18 @@ export default function Overview() {
         >
           <div className="p-4">
             <MonthlyBarChart data={monthly} />
+            {/* 범례 — 색만으로 구분되지 않도록 라벨 명시 (접근성) */}
+            <div className="flex items-center justify-center gap-4 mt-3 text-[11.5px] text-[var(--color-text-muted)]">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: 'var(--color-primary)' }} />
+                출석
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[repeating-linear-gradient(45deg,var(--color-danger),var(--color-danger)_2px,transparent_2px,transparent_4px)] border border-[var(--color-danger)]/40" />
+                노쇼
+              </span>
+              <span className="inline-flex items-center gap-1">상단 %는 출석률</span>
+            </div>
           </div>
         </Panel>
 
@@ -512,6 +523,9 @@ export default function Overview() {
         </Panel>
       </div>
 
+        </>
+      )}
+
       {/* Invite banner */}
       <section className="bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-primary-hover)] rounded-md p-5 flex items-center justify-between">
         <div className="flex items-center gap-3 text-white">
@@ -535,6 +549,59 @@ export default function Overview() {
 
       <InviteModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
     </div>
+  );
+}
+
+// ─── 신규 회원 온보딩 패널 ───
+// 출석/예약/수강권이 전혀 없는 회원에게 빈 차트 대신 "다음 3걸음"을 안내한다.
+function OnboardingPanel({ onNavigate }: { onNavigate: (tab: string) => void }) {
+  const steps: { num: string; title: string; desc: string; cta: string; tab: string; emoji: string }[] = [
+    {
+      num: '1', emoji: '📖',
+      title: '슬로우롱런클럽 살펴보기',
+      desc: '매주 수·금 저녁 7:30, 여의도공원 문화의마당. 어떤 모임인지 먼저 확인하세요.',
+      cta: '클럽 소개 보기', tab: 'membership',
+    },
+    {
+      num: '2', emoji: '🎟️',
+      title: '멤버십 가입 (첫 1회 무료)',
+      desc: '월 10,000원으로 한 달 8회. 가입 전 첫 러닝 1회는 무료로 체험할 수 있어요.',
+      cta: '멤버십 보기', tab: 'catalog',
+    },
+    {
+      num: '3', emoji: '🏃',
+      title: '첫 세션 예약하기',
+      desc: '원하는 날짜의 세션을 골라 예약하면 끝. 당일엔 QR로 간편하게 출석해요.',
+      cta: '세션 일정 보기', tab: 'calendar',
+    },
+  ];
+  return (
+    <section className="bg-white border border-[var(--color-border)] rounded-lg overflow-hidden">
+      <div className="px-5 py-4 border-b border-[var(--color-border)] bg-[var(--color-runclub-bg)]">
+        <h2 className="text-[15px] font-bold text-[var(--color-text)]">처음 오셨네요! 3걸음이면 준비 끝 🎉</h2>
+        <p className="text-[12.5px] text-[var(--color-text-secondary)] mt-0.5">
+          아직 활동 기록이 없어요. 아래 순서대로 시작하면 출석·통계가 차곡차곡 쌓입니다.
+        </p>
+      </div>
+      <div className="p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {steps.map(s => (
+          <div key={s.num} className="border border-[var(--color-border-subtle)] rounded-lg p-4 flex flex-col">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-6 h-6 rounded-full bg-[var(--color-runclub)] text-white text-[12px] font-bold flex items-center justify-center tabular-nums">{s.num}</span>
+              <span className="text-[18px]">{s.emoji}</span>
+            </div>
+            <p className="text-[13.5px] font-semibold text-[var(--color-text)]">{s.title}</p>
+            <p className="text-[12px] text-[var(--color-text-muted)] mt-1 leading-relaxed flex-1">{s.desc}</p>
+            <button
+              onClick={() => onNavigate(s.tab)}
+              className="mt-3 inline-flex items-center justify-center gap-1 h-9 rounded-md text-[12.5px] font-medium text-[var(--color-runclub)] bg-[var(--color-runclub-bg)] hover:opacity-90 transition-opacity"
+            >
+              {s.cta} <ArrowRight size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -563,12 +630,12 @@ function MonthlyBarChart({
             >
               {d.noshow > 0 && (
                 <div
-                  className="w-full"
+                  className="w-full bg-[repeating-linear-gradient(45deg,var(--color-danger),var(--color-danger)_3px,transparent_3px,transparent_6px)]"
                   style={{
                     height: `${((d.noshow / total) * barHeight)}px`,
-                    backgroundColor: 'var(--color-danger)',
-                    opacity: 0.7,
+                    opacity: 0.85,
                   }}
+                  title={`노쇼 ${d.noshow}회`}
                 />
               )}
               <div
