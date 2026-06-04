@@ -661,6 +661,89 @@ async function initSchema(): Promise<void> {
       ON password_reset_requests(member_id)
       WHERE status = 'pending'
   `);
+
+  // ─── 코칭 플랫폼(P1): 클래스 / 팀 / 등록 / 팀요청 ───
+  // docs/coaching-platform-plan.md 참고. 기존 운영(예약·출석·수강권)과 독립적이며
+  // 클래스에 등록한 회원에게만 노출되는 옵트인 레이어.
+  await initCoachingSchema();
+}
+
+// ─── 코칭 플랫폼 스키마 (P1) ───
+// 목표 지향 수업(마라톤/하이록스/혈당관리 등)을 위한 클래스·팀·등록·요청 큐.
+// activity_logs / homeworks / encouragements 등 P2+ 테이블은 후속 PR 에서 추가.
+async function initCoachingSchema(): Promise<void> {
+  // 1) 클래스(코호트) — 기간제 목표 지향 수업
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS classes (
+      id              TEXT PRIMARY KEY,
+      name            TEXT NOT NULL,
+      kind            TEXT NOT NULL DEFAULT 'custom',
+      goal_summary    TEXT,
+      coach_id        TEXT REFERENCES members(id) ON DELETE SET NULL,
+      start_date      DATE,
+      end_date        DATE,
+      status          TEXT NOT NULL DEFAULT 'active',
+      tag_id          TEXT,
+      metric_focus    TEXT NOT NULL DEFAULT 'distance',
+      cover_image_url TEXT,
+      leaderboard_public BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_classes_status ON classes(status)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_classes_coach ON classes(coach_id)`);
+
+  // 2) 팀/조 — 코치만 생성(이용자는 요청). 클래스 내부 구획.
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS class_teams (
+      id          TEXT PRIMARY KEY,
+      class_id    TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL,
+      color       TEXT,
+      created_by  TEXT REFERENCES members(id) ON DELETE SET NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_class_teams_class ON class_teams(class_id)`);
+
+  // 3) 수강 등록 — member ↔ class ↔ team
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS class_enrollments (
+      id          TEXT PRIMARY KEY,
+      class_id    TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      member_id   TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      team_id     TEXT REFERENCES class_teams(id) ON DELETE SET NULL,
+      role        TEXT NOT NULL DEFAULT 'member',
+      goal_text   TEXT,
+      goal_target NUMERIC,
+      joined_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      status      TEXT NOT NULL DEFAULT 'active',
+      UNIQUE (class_id, member_id)
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_enroll_class ON class_enrollments(class_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_enroll_member ON class_enrollments(member_id)`);
+
+  // 4) 팀 요청 큐 — 이용자가 팀 생성/합류/이동을 요청, 코치 검토 후 발급
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS team_requests (
+      id              TEXT PRIMARY KEY,
+      class_id        TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+      member_id       TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      kind            TEXT NOT NULL DEFAULT 'create',
+      desired_team_id TEXT REFERENCES class_teams(id) ON DELETE SET NULL,
+      desired_name    TEXT,
+      reason          TEXT,
+      status          TEXT NOT NULL DEFAULT 'pending',
+      resolved_by     TEXT REFERENCES members(id) ON DELETE SET NULL,
+      resolved_at     TIMESTAMPTZ,
+      resolution_note TEXT,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_team_requests_class ON team_requests(class_id, status)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_team_requests_member ON team_requests(member_id)`);
 }
 
 /**

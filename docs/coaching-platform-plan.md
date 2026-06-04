@@ -268,13 +268,56 @@ integrations/
 
 ---
 
-## 9. 미해결 / 추가 확정 필요 (착수 전 체크)
+## 9. 확정된 정책 (사용자 결정 반영)
 
-- [ ] **P1 회원 UI 위치**: 회원 앱 사이드바에 "내 클래스" 그룹 신설? (기존 navGroups에 추가)
-- [ ] **팀 생성 권한**: 코치만? 참가자도 자유 생성? → 스키마는 둘 다 허용, **정책만 결정** 필요.
-- [ ] **혈당 수치 공개 범위**: 리더보드에 실수치 금지(범위 % 만) 확정.
-- [ ] **마일리지 적립률**: 활동 1건 = ? P / 과제 달성 = ? P (운영 정책).
-- [ ] **바로잰핏 데이터 항목**: 사용자가 "최대한 많이 입력"할 필드 목록 — 바로잰핏에서 어떤 값을 측정하는지(체지방·근육량·대사량 등) 목록 주시면 `metrics` JSONB 키 표준화.
+1. **팀 생성 권한**: **코치만 생성**. 단, 이용자는 **팀 생성/배정을 요청** 가능 → 코치 검토 후 발급.
+   → 신규 테이블 `team_requests` 필요(요청 큐).
+2. **회원 UI 위치**: 회원 앱 사이드바에 **"내 클래스" 그룹 신설**(판단·확정). 멤버 navGroups 에
+   `클래스` 그룹(내 클래스 / 활동 기록 / 리더보드) 추가. 모바일 bottomNav 는 유지.
+3. **마일리지 적립률 (추천 → 확정)**:
+   | 행동 | 적립 | 비고 |
+   |---|---|---|
+   | 활동 기록 1건(러닝/걷뛰) | **+10P** | 1일 최대 2건까지 적립(어뷰징 방지) |
+   | 장거리(10km↑) 활동 | **+20P** | 거리 보너스(자동 판정) |
+   | 과제 달성(verified) | **+30P** | 코치 확인 시 적립 |
+   | 출석(기존) | 기존 규칙 유지 | 변경 없음 |
+   | 응원 받기 | 0P | 적립 없음(소셜만) |
+   - 모두 `mileage_log` 에 `reason='activity'|'homework'` 로 기록. 운영 중 상수로 조정 가능.
+4. **혈당/건강 데이터 — 비의료 가이드라인 준수(웹 검색 확인 완료)**:
+   - 출처: 보건복지부 「비의료 건강관리서비스 가이드라인 및 사례집」, 의료법 §56.
+   - ✅ **허용**: 사용자가 측정한 혈압·혈당·체중의 **기록·저장·그래프 표시**, BMI/칼로리 계산,
+     적정 목표 체중·운동량 **안내**, 운동 독려 메시지, **사용자/코치가 설정한 목표 범위 이탈 여부 안내**,
+     검진·측정 리마인더.
+   - ❌ **금지(의료행위)**: 질환 발생 유무·위험 **진단/판단**, **진단·처방·처치**, 의학적 전문지식 기반 판단.
+   - **코드 가드레일**:
+     - 리더보드 혈당 지표는 **실수치 비공개 → "목표 범위 내 %" 가공값만** 공개.
+     - 모든 건강 화면에 "본 서비스는 의료행위가 아니며 건강관리 보조용입니다" 고지 문구 상수화.
+     - "진단/처방/위험/질환 판정" 류 문구·로직 금지. 목표 범위는 **사용자/코치가 직접 입력**(앱이 의학적으로 판정하지 않음).
+5. **바로잰핏 측정 항목 — 최대한 많이 입력 가능한 환경**:
+   - `activity_logs.metrics` JSONB 에 자유 확장. 표준 키 세트(초안):
+     `weight_kg, body_fat_pct, skeletal_muscle_kg, bmi, bmr_kcal, visceral_fat_level,
+      body_water_pct, protein_pct, bone_mass_kg, glucose_mgdl, glucose_context(fasting/postprandial),
+      fasting_hours, blood_pressure_sys, blood_pressure_dia, resting_hr, intake_kcal, note`
+   - 입력 폼은 **동적 필드**(있는 것만 입력) → 나중 바로잰핏 API 가 같은 키로 자동 채움.
+
+## 9-1. 신규 테이블 추가 — team_requests (정책 1 반영)
+```sql
+CREATE TABLE IF NOT EXISTS team_requests (
+  id          TEXT PRIMARY KEY,           -- treq_xxx
+  class_id    TEXT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  member_id   TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE, -- 요청자
+  kind        TEXT NOT NULL DEFAULT 'create', -- create(신규 팀 제안) | join(기존 팀 합류) | move(이동)
+  desired_team_id TEXT REFERENCES class_teams(id) ON DELETE SET NULL, -- join/move 시
+  desired_name TEXT,                       -- create 시 제안하는 팀 이름
+  reason      TEXT,
+  status      TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected
+  resolved_by TEXT REFERENCES members(id),
+  resolved_at TIMESTAMPTZ,
+  resolution_note TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_team_requests_class ON team_requests(class_id, status);
+```
 
 ---
 

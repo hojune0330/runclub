@@ -278,6 +278,90 @@ export interface AppNotification {
   linkTo?: string;
 }
 
+// ─── Coaching Platform (P1): Class / Team / Enrollment / TeamRequest ───
+// docs/coaching-platform-plan.md 참고. 목표 지향 수업(마라톤/하이록스/혈당관리 등)
+// 을 위한 옵트인 레이어. 기존 Session(개별 회차)과 별개의 "기간제 프로그램".
+
+export type ClassKind = 'marathon' | 'hyrox' | 'glucose' | 'health' | 'pt' | 'custom';
+export type ClassStatus = 'active' | 'finished' | 'archived';
+export type ClassMetricFocus =
+  | 'distance'
+  | 'mileage'
+  | 'attendance'
+  | 'homework'
+  | 'glucose_in_range';
+
+export interface CoachingClass {
+  id: string;
+  name: string;
+  kind: ClassKind;
+  goalSummary?: string;
+  coachId?: string;
+  coachName?: string;
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string;   // YYYY-MM-DD
+  status: ClassStatus;
+  tagId?: string;
+  metricFocus: ClassMetricFocus;
+  coverImageUrl?: string;
+  leaderboardPublic: boolean;
+  // 집계(목록/상세 조회 시 채워짐)
+  memberCount?: number;
+  teamCount?: number;
+  myEnrollment?: ClassEnrollment;
+  teams?: ClassTeam[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ClassTeam {
+  id: string;
+  classId: string;
+  name: string;
+  color?: string;
+  createdBy?: string;
+  memberCount?: number;
+  createdAt?: string;
+}
+
+export type EnrollmentRole = 'member' | 'coach';
+export type EnrollmentStatus = 'active' | 'dropped' | 'finished';
+
+export interface ClassEnrollment {
+  id: string;
+  classId: string;
+  memberId: string;
+  memberName?: string;
+  teamId?: string;
+  teamName?: string;
+  role: EnrollmentRole;
+  goalText?: string;
+  goalTarget?: number;
+  status: EnrollmentStatus;
+  joinedAt?: string;
+}
+
+export type TeamRequestKind = 'create' | 'join' | 'move';
+export type TeamRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export interface TeamRequest {
+  id: string;
+  classId: string;
+  className?: string;
+  memberId: string;
+  memberName?: string;
+  kind: TeamRequestKind;
+  desiredTeamId?: string;
+  desiredTeamName?: string;
+  desiredName?: string;
+  reason?: string;
+  status: TeamRequestStatus;
+  resolvedBy?: string;
+  resolvedAt?: string;
+  resolutionNote?: string;
+  createdAt?: string;
+}
+
 // ─── View Types ───
 
 export type CalendarView = 'week' | 'month';

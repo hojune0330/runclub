@@ -63,11 +63,23 @@ export type AuditAction =
   // PR-C1: 세션 태그 마스터 CRUD
   | 'tag_create'
   | 'tag_update'
-  | 'tag_delete';
+  | 'tag_delete'
+  // P1: 코칭 플랫폼 (클래스/팀/등록/팀요청)
+  | 'class.create'
+  | 'class.update'
+  | 'class.delete'
+  | 'class.enroll'
+  | 'class.unenroll'
+  | 'team.create'
+  | 'team.update'
+  | 'team.delete'
+  | 'team.assign'
+  | 'team_request.approve'
+  | 'team_request.reject';
 
 export interface AuditEntry {
   action: AuditAction;
-  targetType?: 'member' | 'session' | 'pass' | 'pass_product' | 'notice' | 'reservation' | 'qr' | 'tag' | 'attendance';
+  targetType?: 'member' | 'session' | 'pass' | 'pass_product' | 'notice' | 'reservation' | 'qr' | 'tag' | 'attendance' | 'class' | 'team' | 'team_request';
   targetId?: string | null;
   targetName?: string | null;
   summary?: string | null;

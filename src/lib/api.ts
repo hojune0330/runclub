@@ -1,5 +1,7 @@
 // API client helper - all frontend API calls go through here
 
+import type { CoachingClass, ClassTeam, ClassEnrollment, TeamRequest } from '@/types';
+
 const BASE = '/api';
 
 class AuthExpiredError extends Error {
@@ -627,6 +629,105 @@ export const api = {
       request<{ success: boolean }>(`/tags?id=${encodeURIComponent(id)}`, {
         method: 'DELETE',
       }),
+  },
+
+  // ─── P1: 코칭 플랫폼 (클래스/팀/등록/팀요청) ───
+  classes: {
+    list: (scope: 'mine' | 'all' = 'mine') =>
+      request<{ classes: CoachingClass[] }>(`/classes?scope=${scope}`),
+    get: (id: string) =>
+      request<{ class: CoachingClass; enrollments: ClassEnrollment[]; canManage: boolean }>(
+        `/classes/${encodeURIComponent(id)}`
+      ),
+    create: (data: {
+      name: string;
+      kind?: string;
+      metricFocus?: string;
+      goalSummary?: string;
+      startDate?: string;
+      endDate?: string;
+      coverImageUrl?: string;
+      leaderboardPublic?: boolean;
+      coachId?: string;
+    }) =>
+      request<{ class: CoachingClass }>('/classes', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    update: (
+      id: string,
+      data: Partial<{
+        name: string;
+        kind: string;
+        metricFocus: string;
+        status: string;
+        goalSummary: string | null;
+        startDate: string | null;
+        endDate: string | null;
+        coverImageUrl: string | null;
+        leaderboardPublic: boolean;
+        coachId: string;
+      }>
+    ) =>
+      request<{ class: CoachingClass }>(`/classes/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+    remove: (id: string) =>
+      request<{ ok: boolean }>(`/classes/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+
+    teams: (classId: string) =>
+      request<{ teams: ClassTeam[] }>(`/classes/${encodeURIComponent(classId)}/teams`),
+    createTeam: (classId: string, data: { name: string; color?: string }) =>
+      request<{ team: ClassTeam }>(`/classes/${encodeURIComponent(classId)}/teams`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+
+    enroll: (
+      classId: string,
+      data: { memberId?: string; teamId?: string; role?: string; goalText?: string; goalTarget?: number } = {}
+    ) =>
+      request<{ enrollment: ClassEnrollment }>(`/classes/${encodeURIComponent(classId)}/enroll`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    unenroll: (classId: string, memberId?: string) => {
+      const qs = memberId ? `?memberId=${encodeURIComponent(memberId)}` : '';
+      return request<{ ok: boolean }>(`/classes/${encodeURIComponent(classId)}/enroll${qs}`, {
+        method: 'DELETE',
+      });
+    },
+  },
+
+  teamRequests: {
+    list: (params: { classId?: string; status?: string; scope?: 'mine' | 'manage' } = {}) => {
+      const qs = new URLSearchParams();
+      if (params.classId) qs.set('classId', params.classId);
+      if (params.status) qs.set('status', params.status);
+      if (params.scope) qs.set('scope', params.scope);
+      const s = qs.toString();
+      return request<{ requests: TeamRequest[] }>(`/team-requests${s ? '?' + s : ''}`);
+    },
+    create: (data: {
+      classId: string;
+      kind: 'create' | 'join' | 'move';
+      desiredName?: string;
+      desiredTeamId?: string;
+      reason?: string;
+    }) =>
+      request<{ request: TeamRequest }>('/team-requests', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    resolve: (id: string, action: 'approve' | 'reject', note?: string) =>
+      request<{ request: TeamRequest; assignedTeamId: string | null; assignedTeamName: string | null }>(
+        '/team-requests',
+        {
+          method: 'PATCH',
+          body: JSON.stringify({ id, action, note }),
+        }
+      ),
   },
 
   seed: () => request<any>('/seed', { method: 'POST' }),
