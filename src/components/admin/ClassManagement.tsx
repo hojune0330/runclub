@@ -3,11 +3,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Target, Plus, Users, Trophy, Flag, Loader2, ChevronLeft, ChevronRight,
-  Inbox, CheckCircle2, XCircle, Clock, Trash2, X,
+  Inbox, CheckCircle2, XCircle, Clock, Trash2, X, ClipboardCheck, Settings,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import ClassHomeworks from '@/components/member/ClassHomeworks';
+import ClassLeaderboard from '@/components/member/ClassLeaderboard';
 import type { CoachingClass, ClassTeam, ClassEnrollment, TeamRequest } from '@/types';
+
+type AdminDetailTab = 'manage' | 'homework' | 'leaderboard';
 
 const KIND_OPTIONS: { value: string; label: string }[] = [
   { value: 'marathon', label: '마라톤' },
@@ -263,6 +267,7 @@ function ClassDetailAdmin({ classId, onBack }: { classId: string; onBack: () => 
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamColor, setNewTeamColor] = useState('#3b82f6');
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<AdminDetailTab>('manage');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -337,6 +342,30 @@ function ClassDetailAdmin({ classId, onBack }: { classId: string; onBack: () => 
         </div>
       </header>
 
+      {/* 탭 바 */}
+      <div className="flex items-center gap-1 border-b border-[var(--color-border)]">
+        {([
+          { id: 'manage' as const, label: '운영', icon: Settings },
+          { id: 'homework' as const, label: '과제', icon: ClipboardCheck },
+          { id: 'leaderboard' as const, label: '리더보드', icon: Trophy },
+        ]).map(t => {
+          const Icon = t.icon;
+          const active = tab === t.id;
+          return (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium border-b-2 -mb-px transition-colors',
+                active
+                  ? 'border-[var(--color-primary)] text-[var(--color-primary)]'
+                  : 'border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]',
+              )}>
+              <Icon size={14} /> {t.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {tab === 'manage' && (<>
       {/* 팀 관리 */}
       <section className="bg-white border border-[var(--color-border)] rounded-md p-4">
         <h2 className="text-[14px] font-semibold text-[var(--color-text)] flex items-center gap-1.5 mb-3">
@@ -393,6 +422,10 @@ function ClassDetailAdmin({ classId, onBack }: { classId: string; onBack: () => 
           </ul>
         )}
       </section>
+      </>)}
+
+      {tab === 'homework' && <ClassHomeworks classId={classId} />}
+      {tab === 'leaderboard' && <ClassLeaderboard classId={classId} defaultMetric={cls.metricFocus} />}
     </div>
   );
 }

@@ -3,12 +3,17 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Target, Users, Trophy, ChevronRight, ChevronLeft, Plus, Loader2,
-  Flag, UserPlus, Clock, CheckCircle2, XCircle, Compass,
+  Flag, UserPlus, Clock, CheckCircle2, XCircle, Compass, Activity, ClipboardCheck,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/AuthContext';
 import { cn } from '@/lib/utils';
+import ClassFeed from './ClassFeed';
+import ClassHomeworks from './ClassHomeworks';
+import ClassLeaderboard from './ClassLeaderboard';
 import type { CoachingClass, ClassTeam, ClassEnrollment, TeamRequest } from '@/types';
+
+type DetailTab = 'overview' | 'feed' | 'homework' | 'leaderboard';
 
 const KIND_LABEL: Record<string, string> = {
   marathon: '마라톤', hyrox: '하이록스', glucose: '혈당관리',
@@ -191,6 +196,7 @@ function ClassDetail({ classId, onBack }: { classId: string; onBack: () => void 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showReqForm, setShowReqForm] = useState(false);
+  const [detailTab, setDetailTab] = useState<DetailTab>('overview');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -277,60 +283,86 @@ function ClassDetail({ classId, onBack }: { classId: string; onBack: () => void 
         )}
       </header>
 
-      {/* 팀 목록 */}
-      <section className="bg-white border border-[var(--color-border)] rounded-md p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[14px] font-semibold text-[var(--color-text)] flex items-center gap-1.5">
-            <Flag size={15} className="text-[var(--color-primary)]" /> 팀 ({teams.length})
-          </h2>
-          {enrolled && (
-            <button onClick={() => setShowReqForm(v => !v)}
-              className="inline-flex items-center gap-1 text-[12.5px] text-[var(--color-primary)] font-medium">
-              <Plus size={13} /> 팀 요청
+      {/* 탭 바: 참여자만 활동/과제/리더보드 접근 */}
+      {enrolled && (
+        <div className="flex items-center gap-1 border-b border-[var(--color-border)] overflow-x-auto">
+          {([
+            ['overview', '개요', Flag],
+            ['feed', '활동', Activity],
+            ['homework', '과제', ClipboardCheck],
+            ['leaderboard', '리더보드', Trophy],
+          ] as const).map(([id, label, Icon]) => (
+            <button key={id} onClick={() => setDetailTab(id)}
+              className={cn('inline-flex items-center gap-1.5 px-3 py-2 text-[13px] border-b-2 -mb-px whitespace-nowrap transition-colors',
+                detailTab === id ? 'border-[var(--color-primary)] text-[var(--color-text)] font-medium' : 'border-transparent text-[var(--color-text-muted)]')}>
+              <Icon size={14} /> {label}
             </button>
-          )}
+          ))}
         </div>
-
-        {showReqForm && (
-          <TeamRequestForm classId={classId} teams={teams} onDone={() => { setShowReqForm(false); void load(); }} />
-        )}
-
-        {teams.length === 0 ? (
-          <p className="text-[12.5px] text-[var(--color-text-muted)] py-2">
-            아직 팀이 없어요. {enrolled ? '‘팀 요청’으로 새 팀을 제안하면 코치가 검토 후 만들어드려요.' : '코치가 팀을 구성하면 표시돼요.'}
-          </p>
-        ) : (
-          <ul className="grid gap-2 sm:grid-cols-2 mt-1">
-            {teams.map(t => (
-              <li key={t.id} className="flex items-center justify-between gap-2 border border-[var(--color-border-subtle)] rounded px-3 py-2">
-                <span className="inline-flex items-center gap-2 text-[13px] text-[var(--color-text)]">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: t.color || 'var(--color-primary)' }} />
-                  {t.name}
-                </span>
-                <span className="text-[11.5px] text-[var(--color-text-muted)]">{t.memberCount ?? 0}명</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      {/* 멤버 명단 (코치/관리자만 서버에서 내려줌) */}
-      {enrollments.length > 0 && (
-        <section className="bg-white border border-[var(--color-border)] rounded-md p-4">
-          <h2 className="text-[14px] font-semibold text-[var(--color-text)] mb-2">참여 멤버</h2>
-          <ul className="divide-y divide-[var(--color-border-subtle)]">
-            {enrollments.map(e => (
-              <li key={e.id} className="flex items-center justify-between py-2 text-[13px]">
-                <span className="text-[var(--color-text)]">
-                  {e.memberName ?? '회원'}
-                  {e.role === 'coach' && <span className="ml-1.5 text-[11px] text-[var(--color-primary)]">코치</span>}
-                </span>
-                <span className="text-[11.5px] text-[var(--color-text-muted)]">{e.teamName ?? '미배정'}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
       )}
+
+      {(!enrolled || detailTab === 'overview') && (
+        <>
+          {/* 팀 목록 */}
+          <section className="bg-white border border-[var(--color-border)] rounded-md p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-[14px] font-semibold text-[var(--color-text)] flex items-center gap-1.5">
+                <Flag size={15} className="text-[var(--color-primary)]" /> 팀 ({teams.length})
+              </h2>
+              {enrolled && (
+                <button onClick={() => setShowReqForm(v => !v)}
+                  className="inline-flex items-center gap-1 text-[12.5px] text-[var(--color-primary)] font-medium">
+                  <Plus size={13} /> 팀 요청
+                </button>
+              )}
+            </div>
+
+            {showReqForm && (
+              <TeamRequestForm classId={classId} teams={teams} onDone={() => { setShowReqForm(false); void load(); }} />
+            )}
+
+            {teams.length === 0 ? (
+              <p className="text-[12.5px] text-[var(--color-text-muted)] py-2">
+                아직 팀이 없어요. {enrolled ? '‘팀 요청’으로 새 팀을 제안하면 코치가 검토 후 만들어드려요.' : '코치가 팀을 구성하면 표시돼요.'}
+              </p>
+            ) : (
+              <ul className="grid gap-2 sm:grid-cols-2 mt-1">
+                {teams.map(t => (
+                  <li key={t.id} className="flex items-center justify-between gap-2 border border-[var(--color-border-subtle)] rounded px-3 py-2">
+                    <span className="inline-flex items-center gap-2 text-[13px] text-[var(--color-text)]">
+                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: t.color || 'var(--color-primary)' }} />
+                      {t.name}
+                    </span>
+                    <span className="text-[11.5px] text-[var(--color-text-muted)]">{t.memberCount ?? 0}명</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* 멤버 명단 (코치/관리자만 서버에서 내려줌) */}
+          {enrollments.length > 0 && (
+            <section className="bg-white border border-[var(--color-border)] rounded-md p-4">
+              <h2 className="text-[14px] font-semibold text-[var(--color-text)] mb-2">참여 멤버</h2>
+              <ul className="divide-y divide-[var(--color-border-subtle)]">
+                {enrollments.map(e => (
+                  <li key={e.id} className="flex items-center justify-between py-2 text-[13px]">
+                    <span className="text-[var(--color-text)]">
+                      {e.memberName ?? '회원'}
+                      {e.role === 'coach' && <span className="ml-1.5 text-[11px] text-[var(--color-primary)]">코치</span>}
+                    </span>
+                    <span className="text-[11.5px] text-[var(--color-text-muted)]">{e.teamName ?? '미배정'}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </>
+      )}
+
+      {enrolled && detailTab === 'feed' && <ClassFeed classId={classId} />}
+      {enrolled && detailTab === 'homework' && <ClassHomeworks classId={classId} />}
+      {enrolled && detailTab === 'leaderboard' && <ClassLeaderboard classId={classId} defaultMetric={cls.metricFocus} />}
     </div>
   );
 }
