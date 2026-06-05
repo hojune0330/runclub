@@ -22,7 +22,7 @@ function inRange(v?: number): boolean {
   return typeof v === 'number' && v >= GLUCOSE_TARGET.LOW && v <= GLUCOSE_TARGET.HIGH;
 }
 
-export default function HealthLog({ classId }: { classId: string }) {
+export default function HealthLog({ classId }: { classId?: string }) {
   const { user } = useAuth();
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [defs, setDefs] = useState<MetricDef[]>([]);
@@ -33,8 +33,8 @@ export default function HealthLog({ classId }: { classId: string }) {
     setLoading(true);
     try {
       const [a, m] = await Promise.all([
-        api.activities.list({ classId, memberId: user?.id, limit: 60 }),
-        api.classMetrics.list(classId).catch(() => ({ metrics: [] as MetricDef[] })),
+        api.activities.list({ classId: classId || undefined, memberId: user?.id, limit: 60 }),
+        classId ? api.classMetrics.list(classId).catch(() => ({ metrics: [] as MetricDef[] })) : Promise.resolve({ metrics: [] as MetricDef[] }),
       ]);
       setLogs(a.activities.filter(x => ['glucose', 'body_comp', 'weight', 'fasting', 'custom'].includes(x.kind)));
       setDefs(m.metrics);
@@ -154,7 +154,7 @@ function HealthCard({ log, defs, onDeleted }: { log: ActivityLog; defs: MetricDe
   );
 }
 
-function HealthForm({ classId, defs, onClose, onSaved }: { classId: string; defs: MetricDef[]; onClose: () => void; onSaved: () => void }) {
+function HealthForm({ classId, defs, onClose, onSaved }: { classId?: string; defs: MetricDef[]; onClose: () => void; onSaved: () => void }) {
   const [kind, setKind] = useState('glucose');
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [glucose, setGlucose] = useState('');
@@ -172,7 +172,7 @@ function HealthForm({ classId, defs, onClose, onSaved }: { classId: string; defs
         if (raw != null && raw !== '') metrics[d.key] = d.valueType === 'text' ? raw : Number(raw);
       });
       await api.activities.create({
-        classId, kind, source: 'manual', activityDate: date,
+        classId: classId || undefined, kind, source: 'manual', activityDate: date,
         metrics: Object.keys(metrics).length ? metrics : undefined,
         note: note.trim() || undefined,
       });

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Calendar, ClipboardList, Ticket, QrCode, User, LogOut, Bell, Megaphone, History, ChevronDown, HelpCircle, LayoutDashboard, Menu, X, Home, ShoppingBag, Info, Target } from 'lucide-react';
+import { Calendar, ClipboardList, Ticket, QrCode, User, LogOut, Bell, Megaphone, History, ChevronDown, HelpCircle, LayoutDashboard, Menu, X, Home, ShoppingBag, Info, Target, Sparkles } from 'lucide-react';
 import Overview from './Overview';
 import CalendarView from './CalendarView';
 import MyReservations from './MyReservations';
@@ -16,13 +16,14 @@ import ClubHub from './ClubHub';
 import ClubHome from './ClubHome';
 import SlowRunMembership from './SlowRunMembership';
 import MyClasses from './MyClasses';
+import TrainingHub from './TrainingHub';
 import { useAuth } from '@/store/AuthContext';
 import { useApp } from '@/store/AppContext';
 import { cn } from '@/lib/utils';
 import BusinessFooter from '@/components/public/BusinessFooter';
 import type { SessionType } from '@/types';
 
-type Tab = 'home' | 'overview' | 'calendar' | 'reservations' | 'passes' | 'catalog' | 'attendance' | 'qr' | 'notices' | 'profile' | 'help' | 'membership' | 'classes';
+type Tab = 'home' | 'overview' | 'calendar' | 'reservations' | 'passes' | 'catalog' | 'attendance' | 'qr' | 'notices' | 'profile' | 'help' | 'membership' | 'classes' | 'training';
 
 const navGroups: { label: string; items: { id: Tab; label: string; icon: typeof Calendar }[] }[] = [
   {
@@ -42,8 +43,9 @@ const navGroups: { label: string; items: { id: Tab; label: string; icon: typeof 
     ],
   },
   {
-    label: '내 클래스',
+    label: '트레이닝',
     items: [
+      { id: 'training', label: '트레이닝 허브', icon: Sparkles },
       { id: 'classes', label: '코칭 클래스·팀', icon: Target },
     ],
   },
@@ -134,6 +136,7 @@ export default function MemberApp() {
           <ClubHub
             onSelectClub={type => setSelectedClub(type)}
             onGoToDashboard={() => setActiveTab('overview')}
+            onGoToTraining={() => setActiveTab('training')}
           />
         );
       case 'overview': return <Overview />;
@@ -147,6 +150,7 @@ export default function MemberApp() {
       case 'profile': return <Profile />;
       case 'help': return <Help />;
       case 'membership': return <SlowRunMembership />;
+      case 'training': return <TrainingHub onOpenClasses={() => setActiveTab('classes')} />;
       case 'classes': return <MyClasses />;
     }
   };

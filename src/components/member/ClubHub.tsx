@@ -8,6 +8,11 @@ import {
   Ticket,
   Sparkles,
   Compass,
+  Activity,
+  Coins,
+  HeartPulse,
+  Link2,
+  Repeat,
 } from 'lucide-react';
 import { useAuth } from '@/store/AuthContext';
 import { useApp } from '@/store/AppContext';
@@ -25,6 +30,7 @@ import type { SessionType } from '@/types';
 interface ClubHubProps {
   onSelectClub: (type: SessionType) => void;
   onGoToDashboard: () => void;
+  onGoToTraining?: () => void;
 }
 
 /**
@@ -34,7 +40,7 @@ interface ClubHubProps {
  * - 아직 소속이 없으면 "둘러보기" 형태로 전체 클럽 노출
  * - 각 카드는 클릭 시 해당 클럽의 상세 홈으로 진입
  */
-export default function ClubHub({ onSelectClub, onGoToDashboard }: ClubHubProps) {
+export default function ClubHub({ onSelectClub, onGoToDashboard, onGoToTraining }: ClubHubProps) {
   const { user } = useAuth();
   const { memberPasses, reservations, sessions, currentMember } = useApp();
 
@@ -73,6 +79,9 @@ export default function ClubHub({ onSelectClub, onGoToDashboard }: ClubHubProps)
 
       {/* 다음 할 일 — 가장 중요한 행동 유도 */}
       <NextActionCard />
+
+      {/* 트레이닝 허브 디스커버리 — 클래스 없이도 누구나 */}
+      {onGoToTraining && <TrainingTeaser onGoToTraining={onGoToTraining} />}
 
       {/* 내 클럽 */}
       <section>
@@ -131,6 +140,75 @@ export default function ClubHub({ onSelectClub, onGoToDashboard }: ClubHubProps)
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * 클래스를 듣지 않는 회원도 "이런 기능이 있구나" 하고 발견할 수 있도록
+ * 랜딩 화면에 깔끔하게 노출하는 트레이닝 허브 티저.
+ * - 지저분하지 않게: 카드 1개에 핵심 기능만 칩 형태로
+ * - 궁금해서 눌러보면 바로 트레이닝 허브로 진입
+ */
+function TrainingTeaser({ onGoToTraining }: { onGoToTraining: () => void }) {
+  const features = [
+    { icon: Activity, label: '활동 기록', color: '#2563eb' },
+    { icon: Repeat, label: '9.5일 주기화', color: '#7c3aed' },
+    { icon: HeartPulse, label: '건강·혈당 관리', color: '#dc2626' },
+    { icon: Link2, label: '데이터 연동', color: '#ea580c' },
+    { icon: Coins, label: '마일리지 적립', color: '#ca8a04' },
+  ];
+  return (
+    <button
+      onClick={onGoToTraining}
+      className={cn(
+        'group w-full text-left rounded-xl border transition-all p-4 md:p-5',
+        'border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary-bg)] to-white',
+        'hover:shadow-md hover:-translate-y-[1px] active:translate-y-0'
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-white"
+          style={{ background: 'var(--color-primary)' }}
+          aria-hidden
+        >
+          <Sparkles size={20} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <h2 className="text-[14.5px] font-semibold text-[var(--color-text)]">
+              트레이닝 허브
+            </h2>
+            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-[var(--color-primary)] text-white">
+              누구나 무료
+            </span>
+          </div>
+          <p className="text-[12px] text-[var(--color-text-muted)] mt-1 leading-relaxed">
+            클래스를 듣지 않아도 괜찮아요. 활동 기록·마일리지·건강 관리·데이터
+            연동을 <span className="font-medium text-[var(--color-text)]">지금 바로</span> 써볼 수 있어요.
+          </p>
+        </div>
+        <ArrowRight
+          size={16}
+          className="shrink-0 mt-1 text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] group-hover:translate-x-0.5 transition-all"
+        />
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 mt-3.5">
+        {features.map(f => {
+          const Icon = f.icon;
+          return (
+            <span
+              key={f.label}
+              className="inline-flex items-center gap-1 text-[11.5px] font-medium px-2 py-1 rounded-full bg-white border border-[var(--color-border)]"
+            >
+              <Icon size={12} style={{ color: f.color }} />
+              <span className="text-[var(--color-text-secondary)]">{f.label}</span>
+            </span>
+          );
+        })}
+      </div>
+    </button>
   );
 }
 

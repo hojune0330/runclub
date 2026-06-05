@@ -824,7 +824,7 @@ export const api = {
       request<{
         accounts: {
           provider: string; name: string; category: string; color: string; desc: string;
-          availability: 'available' | 'coming_soon';
+          availability: 'available' | 'coming_soon'; oauth?: boolean;
           connected: boolean; status: string | null; lastSyncedAt: string | null;
         }[];
       }>('/integrations'),
@@ -835,6 +835,39 @@ export const api = {
       ),
     disconnect: (provider: string) =>
       request<{ ok: boolean }>(`/integrations?provider=${encodeURIComponent(provider)}`, { method: 'DELETE' }),
+    // Strava OAuth 시작 URL(브라우저 리디렉션용)
+    stravaStartUrl: (classId?: string) =>
+      `/api/integrations/strava/start${classId ? `?classId=${encodeURIComponent(classId)}` : ''}`,
+    stravaSync: (classId?: string) =>
+      request<{ ok: boolean; imported: number; mileageEarned: number }>('/integrations/strava/sync', {
+        method: 'POST', body: JSON.stringify({ classId }),
+      }),
+  },
+
+  // ─── 마일리지 조회(코칭 허브에서 잔액/내역 표시) ───
+  mileage: {
+    get: () =>
+      request<{
+        mileageBalance: number; gradeLabel?: string;
+        history?: { id: string; amount: number; reason: string; balanceAfter: number; createdAt: string }[];
+      }>('/mileage'),
+  },
+
+  // ─── P-b: 주기화(9.5일) 트레이닝 플랜 ───
+  trainingPlans: {
+    get: (params: { classId?: string } = {}) =>
+      request<{ plan: import('@/types').TrainingPlan | null }>(
+        `/training-plans${params.classId ? `?classId=${encodeURIComponent(params.classId)}` : '?scope=mine'}`
+      ),
+    create: (data: {
+      classId?: string; name?: string; cycleDays?: number; anchorDate?: string; note?: string;
+      blocks: { label: string; daySpan: number; intensity?: string; focus?: string; targetDistanceM?: number }[];
+    }) =>
+      request<{ plan: import('@/types').TrainingPlan }>('/training-plans', {
+        method: 'POST', body: JSON.stringify(data),
+      }),
+    remove: (id: string) =>
+      request<{ ok: boolean }>(`/training-plans?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
 
   // ─── P5: 클래스 건강 지표 정의(동적 지표) ───

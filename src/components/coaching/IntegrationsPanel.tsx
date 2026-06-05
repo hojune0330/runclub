@@ -1,20 +1,20 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Link2, Loader2, Check, Clock, Bell, Plug, Info } from 'lucide-react';
+import { Link2, Loader2, Check, Clock, Bell, Plug, Info, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { INTEGRATION_PRINCIPLE_NOTE } from '@/lib/policy';
 
 type Account = {
   provider: string; name: string; category: string; color: string; desc: string;
-  availability: 'available' | 'coming_soon';
+  availability: 'available' | 'coming_soon'; oauth?: boolean;
   connected: boolean; status: string | null; lastSyncedAt: string | null;
 };
 
 const CATEGORY_LABEL: Record<string, string> = { run: '러닝', health: '건강', glucose: '혈당' };
 
-export default function IntegrationsPanel({ filterCategory }: { filterCategory?: 'run' | 'health' | 'glucose' }) {
+export default function IntegrationsPanel({ filterCategory, classId }: { filterCategory?: 'run' | 'health' | 'glucose'; classId?: string }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -30,11 +30,46 @@ export default function IntegrationsPanel({ filterCategory }: { filterCategory?:
 
   useEffect(() => { void load(); }, [load]);
 
+  // Strava 콜백 결과(?strava=connected) 처리: 토스트 + 새로고침
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const sp = new URLSearchParams(window.location.search);
+    const s = sp.get('strava');
+    if (!s) return;
+    const msg: Record<string, string> = {
+      connected: 'Strava 연동이 완료됐어요! 최근 활동을 불러왔어요.',
+      cancelled: 'Strava 연동을 취소했어요.',
+      error: 'Strava 연동 중 문제가 발생했어요. 다시 시도해주세요.',
+      unavailable: 'Strava 연동이 아직 활성화되지 않았어요.',
+    };
+    setToast(msg[s] ?? null);
+    void load();
+    sp.delete('strava');
+    const url = window.location.pathname + (sp.toString() ? `?${sp}` : '');
+    window.history.replaceState({}, '', url);
+    setTimeout(() => setToast(null), 4000);
+  }, [load]);
+
+  const syncStrava = async (a: Account) => {
+    setBusy(a.provider);
+    try {
+      const res = await api.integrations.stravaSync(classId);
+      setToast(`Strava에서 ${res.imported}건을 불러왔어요${res.mileageEarned ? ` (+${res.mileageEarned}P)` : ''}.`);
+      await load();
+    } catch (e: any) { setToast(e?.message ?? '동기화 실패'); }
+    finally { setBusy(null); setTimeout(() => setToast(null), 4000); }
+  };
+
   const visible = filterCategory
     ? accounts.filter(a => a.category === filterCategory)
     : accounts;
 
   const connect = async (a: Account) => {
+    // 실제 OAuth(예: Strava) → 인증 페이지로 이동
+    if (a.oauth) {
+      window.location.href = api.integrations.stravaStartUrl(classId);
+      return;
+    }
     setBusy(a.provider);
     try {
       const res = await api.integrations.connect(a.provider);
@@ -78,12 +113,23 @@ export default function IntegrationsPanel({ filterCategory }: { filterCategory?:
 
                     <div className="mt-2.5">
                       {a.connected ? (
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-emerald-700">
-                            <Check size={12} /> 연동됨
-                          </span>
-                          <button onClick={() => disconnect(a)} disabled={busy === a.provider}
-                            className="text-[11.5px] text-[var(--color-text-muted)] hover:text-rose-600">연동 해제</button>
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-emerald-700">
+                              <Check size={12} /> 연동됨
+                            </span>
+                            <button onClick={() => disconnect(a)} disabled={busy === a.provider}
+                              className="text-[11.5px] text-[var(--color-text-muted)] hover:text-rose-600">연동 해제</button>
+                          </div>
+                          {a.oauth && (
+                            <button onClick={() => syncStrava(a)} disabled={busy === a.provider}
+                              className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-primary)] bg-[var(--color-primary-bg)] rounded-full px-2.5 py-1 hover:opacity-90 disabled:opacity-50">
+                              {busy === a.provider ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} 활동 다시 불러오기
+                            </button>
+                          )}
+                          {a.lastSyncedAt && (
+                            <p className="text-[10.5px] text-[var(--color-text-muted)]">최근 동기화: {new Date(a.lastSyncedAt).toLocaleString('ko-KR')}</p>
+                          )}
                         </div>
                       ) : pending ? (
                         <div className="flex items-center justify-between gap-2">
@@ -100,8 +146,9 @@ export default function IntegrationsPanel({ filterCategory }: { filterCategory?:
                         </button>
                       ) : (
                         <button onClick={() => connect(a)} disabled={busy === a.provider}
-                          className="inline-flex items-center gap-1 text-[12px] font-medium text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded-full px-2.5 py-1 disabled:opacity-50">
-                          {busy === a.provider ? <Loader2 size={11} className="animate-spin" /> : <Plug size={11} />} 연동하기
+                          className="inline-flex items-center gap-1 text-[12px] font-medium text-white rounded-full px-2.5 py-1 disabled:opacity-50 hover:opacity-90"
+                          style={a.oauth ? { background: a.color } : { background: 'var(--color-primary)' }}>
+                          {busy === a.provider ? <Loader2 size={11} className="animate-spin" /> : <Plug size={11} />} {a.oauth ? `${a.name}로 연동` : '연동하기'}
                         </button>
                       )}
                     </div>

@@ -474,6 +474,39 @@ export interface LeaderboardResult {
   teams: TeamLeaderboardRow[];
 }
 
+// ─── Coaching Platform (P-b): Periodization (9.5일 주기화) ───
+
+export type BlockIntensity = 'rest' | 'easy' | 'moderate' | 'hard' | 'peak';
+
+export interface TrainingBlock {
+  id: string;
+  planId: string;
+  sortOrder: number;
+  label: string;
+  daySpan: number;        // 며칠 동안(소수 허용 → 9.5일 주기 대응)
+  intensity: BlockIntensity;
+  focus?: string;
+  targetDistanceM?: number;
+}
+
+export interface TrainingPlan {
+  id: string;
+  classId?: string;
+  memberId?: string;
+  name: string;
+  cycleDays: number;       // 사이클 총 일수 (기본 9.5)
+  anchorDate: string;      // YYYY-MM-DD, 사이클 시작 기준일
+  isActive: boolean;
+  note?: string;
+  createdBy?: string;
+  createdAt?: string;
+  blocks?: TrainingBlock[];
+  // 집계(오늘 위치)
+  todayBlock?: TrainingBlock | null;
+  cyclePosition?: number;  // 오늘이 사이클 며칠째(0-base, 소수 가능)
+  cycleIndex?: number;     // 몇 번째 사이클인지
+}
+
 // ─── View Types ───
 
 export type CalendarView = 'week' | 'month';

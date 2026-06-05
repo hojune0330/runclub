@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Star, ShoppingBag, AlertCircle, Loader2, Tag, FlaskConical, Ticket, Coins } from 'lucide-react';
+import { Star, ShoppingBag, AlertCircle, Loader2, Tag, FlaskConical, Ticket, Coins, Sparkles, ArrowRight } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig } from '@/lib/config';
 import { formatPrice, cn } from '@/lib/utils';
@@ -102,6 +102,9 @@ export default function PassCatalog() {
       )}
 
       <TestModeBanner />
+
+      {/* 클래스 없이도 누구나 쓸 수 있는 트레이닝 허브 안내 */}
+      <TrainingHubPromo />
 
       {total === 0 && (
         <div className="bg-white border border-[var(--color-border)] rounded-md py-16 text-center">
@@ -468,6 +471,45 @@ function MembershipDiscountBanner() {
         <p className="text-amber-800 mt-0.5">
           런클럽 멤버십(월 10,000원) 하나만 보유하면, 아래 모든 전문 클래스를 결제 시 상시 10% 할인된 가격으로 수강할 수 있습니다.
         </p>
+      </div>
+    </button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// TrainingHubPromo — 수강권을 사지 않아도 활동기록·마일리지·건강관리·연동·주기화를
+// 바로 써볼 수 있다는 사실을 구매 화면에서 깔끔하게 알려준다.
+// "단순히 이 기능만 쓰려고 오는 회원"을 위한 진입점.
+// ─────────────────────────────────────────────────────────────────────
+function TrainingHubPromo() {
+  const go = () => {
+    window.dispatchEvent(new CustomEvent('member:navigate', { detail: 'training' }));
+  };
+  return (
+    <button
+      onClick={go}
+      className="group w-full text-left rounded-lg border border-[var(--color-primary)]/25 bg-gradient-to-br from-[var(--color-primary-bg)] to-white p-4 transition-all hover:shadow-sm hover:-translate-y-[1px]"
+    >
+      <div className="flex items-center gap-3">
+        <div
+          className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 text-white"
+          style={{ background: 'var(--color-primary)' }}
+          aria-hidden
+        >
+          <Sparkles size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[13.5px] font-semibold text-[var(--color-text)]">
+            수강권이 없어도 괜찮아요 — 트레이닝 허브
+          </p>
+          <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5 leading-relaxed">
+            활동 기록·마일리지 적립·건강 관리·데이터 연동·9.5일 주기화를 클래스 없이 바로 써볼 수 있어요.
+          </p>
+        </div>
+        <ArrowRight
+          size={16}
+          className="shrink-0 text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] group-hover:translate-x-0.5 transition-all"
+        />
       </div>
     </button>
   );

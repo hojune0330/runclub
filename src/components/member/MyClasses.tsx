@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import {
   Target, Users, Trophy, ChevronRight, ChevronLeft, Plus, Loader2,
   Flag, UserPlus, Clock, CheckCircle2, XCircle, Compass, Activity, ClipboardCheck,
-  HeartPulse,
+  HeartPulse, Repeat,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/AuthContext';
@@ -15,10 +15,11 @@ import ClassLeaderboard from './ClassLeaderboard';
 import HealthLog from './HealthLog';
 import { MileageGuide, IntegrationGuide, GlucoseGuardrailCard, MileagePolicyBadge } from '@/components/coaching/PolicyInfo';
 import IntegrationsPanel from '@/components/coaching/IntegrationsPanel';
+import TrainingCycle from '@/components/coaching/TrainingCycle';
 import { CLASS_KIND_INTRO } from '@/lib/policy';
 import type { CoachingClass, ClassTeam, ClassEnrollment, TeamRequest } from '@/types';
 
-type DetailTab = 'overview' | 'feed' | 'homework' | 'health' | 'leaderboard';
+type DetailTab = 'overview' | 'feed' | 'cycle' | 'homework' | 'health' | 'leaderboard';
 
 const isHealthKind = (k?: string) => k === 'glucose' || k === 'health';
 
@@ -196,6 +197,7 @@ function ClassCard({ cls, enrolled, onClick }: { cls: CoachingClass; enrolled: b
 
 // ─── 상세 화면 ───
 function ClassDetail({ classId, onBack }: { classId: string; onBack: () => void }) {
+  const { user } = useAuth();
   const [cls, setCls] = useState<CoachingClass | null>(null);
   const [enrollments, setEnrollments] = useState<ClassEnrollment[]>([]);
   const [myEnrollment, setMyEnrollment] = useState<ClassEnrollment | null>(null);
@@ -296,6 +298,7 @@ function ClassDetail({ classId, onBack }: { classId: string; onBack: () => void 
           {(([
             ['overview', '개요', Flag],
             ['feed', '활동', Activity],
+            ['cycle', '주기화', Repeat],
             ...(isHealthKind(cls.kind) ? [['health', '건강', HeartPulse] as const] : []),
             ['homework', '과제', ClipboardCheck],
             ['leaderboard', '리더보드', Trophy],
@@ -401,6 +404,9 @@ function ClassDetail({ classId, onBack }: { classId: string; onBack: () => void 
       )}
 
       {enrolled && detailTab === 'feed' && <ClassFeed classId={classId} />}
+      {enrolled && detailTab === 'cycle' && (
+        <TrainingCycle classId={classId} canManage={user?.role === 'admin' || cls.coachId === user?.id} />
+      )}
       {enrolled && detailTab === 'health' && isHealthKind(cls.kind) && <HealthLog classId={classId} />}
       {enrolled && detailTab === 'homework' && <ClassHomeworks classId={classId} />}
       {enrolled && detailTab === 'leaderboard' && <ClassLeaderboard classId={classId} defaultMetric={cls.metricFocus} />}

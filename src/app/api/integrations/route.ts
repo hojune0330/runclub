@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { dbAll, dbGet, dbRun, genId, ensureSchema } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse } from '@/lib/auth';
 import { INTEGRATION_PROVIDERS } from '@/lib/policy';
+import { isStravaConfigured } from '@/lib/strava';
 
 const PROVIDER_IDS = INTEGRATION_PROVIDERS.map(p => p.id);
 
@@ -22,14 +23,17 @@ export async function GET(req: NextRequest) {
     .filter(p => p.id !== 'manual')
     .map(p => {
       const mine = byProvider.get(p.id);
+      // Strava 는 env 설정이 되어 있으면 실제 OAuth 연동 가능('available').
+      const availability = p.id === 'strava' && isStravaConfigured() ? 'available' : p.status;
       return {
         provider: p.id,
         name: p.name,
         category: p.category,
         color: p.color,
         desc: p.desc,
-        // 제공자 자체가 아직 자동연동 미오픈이면 'coming_soon'
-        availability: p.status, // 'available' | 'coming_soon'
+        availability, // 'available' | 'coming_soon'
+        // OAuth 가 필요한 제공자(현재 strava)는 별도 시작 URL 사용
+        oauth: p.id === 'strava' && isStravaConfigured(),
         connected: mine?.status === 'connected',
         status: mine?.status ?? null, // 'connected' | 'pending' | 'revoked' | null
         lastSyncedAt: mine?.last_synced_at ?? null,

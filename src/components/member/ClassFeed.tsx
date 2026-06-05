@@ -15,16 +15,18 @@ const RUN_KINDS = [
   { value: 'walk_run', label: '걷기/달리기' },
 ];
 
-export default function ClassFeed({ classId }: { classId: string }) {
+// classId 미지정 시: 내 개인 활동 피드(클래스 무관). 누구나 사용 가능.
+export default function ClassFeed({ classId }: { classId?: string }) {
   const { user } = useAuth();
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const personal = !classId;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.activities.list({ classId, limit: 50 });
+      const res = await api.activities.list(classId ? { classId, limit: 50 } : { limit: 50 });
       setActivities(res.activities);
     } finally {
       setLoading(false);
@@ -37,7 +39,7 @@ export default function ClassFeed({ classId }: { classId: string }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-[13px] font-semibold text-[var(--color-text)] flex items-center gap-1.5">
-          <Activity size={14} className="text-[var(--color-primary)]" /> 활동 피드
+          <Activity size={14} className="text-[var(--color-primary)]" /> {personal ? '내 활동 기록' : '활동 피드'}
         </h3>
         <button onClick={() => setShowForm(true)}
           className="inline-flex items-center gap-1 px-3 py-1.5 text-[12.5px] font-medium text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded">
@@ -55,7 +57,7 @@ export default function ClassFeed({ classId }: { classId: string }) {
             <Activity size={20} className="text-[var(--color-text-muted)]" />
           </div>
           <p className="text-[13px] text-[var(--color-text)] font-medium mb-1">아직 기록이 없어요</p>
-          <p className="text-[12px] text-[var(--color-text-muted)]">‘기록 추가’로 첫 러닝을 공유하고 마일리지를 모아보세요!</p>
+          <p className="text-[12px] text-[var(--color-text-muted)]">‘기록 추가’로 첫 러닝을 {personal ? '남기고' : '공유하고'} 마일리지를 모아보세요!</p>
         </div>
       ) : (
         <ul className="space-y-3">
@@ -188,7 +190,7 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ActivityForm({ classId, onClose, onSaved }: { classId: string; onClose: () => void; onSaved: () => void }) {
+function ActivityForm({ classId, onClose, onSaved }: { classId?: string; onClose: () => void; onSaved: () => void }) {
   const [kind, setKind] = useState('run');
   const [activityDate, setActivityDate] = useState(new Date().toISOString().slice(0, 10));
   const [distanceKm, setDistanceKm] = useState('');
@@ -204,7 +206,7 @@ function ActivityForm({ classId, onClose, onSaved }: { classId: string; onClose:
       const distanceM = distanceKm ? Math.round(parseFloat(distanceKm) * 1000) : undefined;
       const durationS = durationMin ? Math.round(parseFloat(durationMin) * 60) : undefined;
       const res = await api.activities.create({
-        classId, kind, activityDate, distanceM, durationS,
+        classId: classId || undefined, kind, activityDate, distanceM, durationS,
         avgHr: avgHr ? parseInt(avgHr) : undefined,
         note: note.trim() || undefined,
         photoUrl: photoUrl.trim() || undefined,

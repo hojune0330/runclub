@@ -859,6 +859,42 @@ async function initCoachingSchema(): Promise<void> {
     )
   `);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_metric_defs_class ON class_metric_defs(class_id)`);
+
+  // ── P-b: 주기화(periodization) — 9.5일 주기 등 반복 트레이닝 사이클 ──
+  // training_plans: 클래스(또는 개인)의 반복 사이클 정의. cycle_days 합 = 블록 day_span 합.
+  //   anchor_date 부터 cycle_days 간격으로 반복 → 오늘이 사이클 며칠째인지 계산.
+  // training_blocks: 사이클 내 순서대로 배치되는 단계(블록). intensity: 'rest'|'easy'|'moderate'|'hard'|'peak'
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS training_plans (
+      id          TEXT PRIMARY KEY,
+      class_id    TEXT REFERENCES classes(id) ON DELETE CASCADE,
+      member_id   TEXT REFERENCES members(id) ON DELETE CASCADE,
+      name        TEXT NOT NULL DEFAULT '9.5일 주기화',
+      cycle_days  NUMERIC NOT NULL DEFAULT 9.5,
+      anchor_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+      note        TEXT,
+      created_by  TEXT REFERENCES members(id) ON DELETE SET NULL,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_training_plans_class ON training_plans(class_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_training_plans_member ON training_plans(member_id)`);
+
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS training_blocks (
+      id          TEXT PRIMARY KEY,
+      plan_id     TEXT NOT NULL REFERENCES training_plans(id) ON DELETE CASCADE,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      label       TEXT NOT NULL,
+      day_span    NUMERIC NOT NULL DEFAULT 1,
+      intensity   TEXT NOT NULL DEFAULT 'moderate',
+      focus       TEXT,
+      target_distance_m INTEGER,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_training_blocks_plan ON training_blocks(plan_id)`);
 }
 
 /**
