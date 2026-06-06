@@ -3,9 +3,8 @@
 import { useMemo } from 'react';
 import {
   ArrowRight,
-  Calendar,
-  MapPin,
   Ticket,
+  CalendarCheck,
   Sparkles,
   Compass,
   Activity,
@@ -266,135 +265,78 @@ function ClubCard({
 
   const stats = getClubStats(type, myPasses, myReservations, sessions, todayIso);
 
-  // 다가오는 이 클럽의 가장 가까운 세션 1건
-  const nextSession = useMemo(() => {
-    return sessions
-      .filter(s => s.type === type && s.status !== 'cancelled' && s.date >= todayIso)
-      .sort((a, b) =>
-        (a.date + a.startTime).localeCompare(b.date + b.startTime)
-      )[0];
-  }, [sessions, type, todayIso]);
+  const hasPass = stats.passes.length > 0;
+  const hasReservation = stats.upcomingCount > 0;
+  const isMember = hasPass || hasReservation;
 
   return (
     <button
       onClick={onClick}
       className={cn(
-        'group text-left rounded-lg border transition-all p-4 bg-white flex flex-col gap-3',
+        'group relative text-center rounded-2xl border transition-all p-5 bg-white',
+        'flex flex-col items-center justify-center gap-2.5 overflow-hidden',
         'hover:shadow-md hover:-translate-y-[1px] active:translate-y-0',
-        'border-[var(--color-border)]',
+        isMember ? 'border-[var(--color-border)]' : 'border-[var(--color-border-subtle)]',
         muted && 'opacity-90'
       )}
-      style={{ minHeight: 176 }}
+      style={{ minHeight: 168 }}
     >
-      <div className="flex items-start gap-3">
-        <div
-          className="w-11 h-11 rounded-md flex items-center justify-center text-[22px] shrink-0"
-          style={{ background: meta.bgColor }}
-          aria-hidden
-        >
-          {meta.heroEmoji}
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <h3
-              className="text-[14.5px] font-semibold leading-tight"
-              style={{ color: meta.textColor }}
-            >
-              {meta.name}
-            </h3>
-            {membership?.fromPass && (
-              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-[var(--color-primary-bg)] text-[var(--color-primary)]">
-                내 수강권
-              </span>
-            )}
-          </div>
-          <p className="text-[11.5px] text-[var(--color-text-muted)] mt-0.5 leading-snug line-clamp-2">
-            {meta.summary}
-          </p>
-        </div>
-      </div>
+      {/* 살짝 깔리는 클럽 컬러 (상단 얇은 라인) */}
+      <span
+        className="absolute inset-x-0 top-0 h-1"
+        style={{ background: meta.color }}
+        aria-hidden
+      />
 
-      <div className="grid grid-cols-3 gap-1.5 text-center">
-        <Stat label="다음 세션" value={stats.openSessionCount} unit="건" />
-        <Stat label="내 예약" value={stats.upcomingCount} unit="건" highlight={stats.upcomingCount > 0} />
-        <Stat label="최근 출석" value={stats.recentAttended} unit="회" />
-      </div>
-
-      <div className="flex items-center gap-1.5 text-[11.5px] text-[var(--color-text-muted)] border-t border-[var(--color-border)] pt-2">
-        {nextSession ? (
-          <>
-            <Calendar size={12} />
-            <span className="tabular-nums">
-              {nextSession.date.slice(5)} {nextSession.startTime}
-            </span>
-            <span className="w-[3px] h-[3px] rounded-full bg-[var(--color-text-muted)]" />
-            <MapPin size={12} />
-            <span className="truncate">{nextSession.location}</span>
-          </>
-        ) : (
-          <>
-            <Calendar size={12} />
-            <span>{meta.dayLabel} · {meta.timeLabel}</span>
-          </>
-        )}
-        <ArrowRight
-          size={13}
-          className="ml-auto text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] group-hover:translate-x-0.5 transition-all"
-        />
-      </div>
-
-      {stats.passes.length > 0 && (
-        <div className="flex items-center gap-1.5 text-[11px] text-[var(--color-success)] -mt-1">
-          <Ticket size={11} />
-          <span>
-            활성 수강권 {stats.passes.length}개
-            {stats.passes[0].remainingCount !== undefined
-              ? ` · 잔여 ${stats.passes.reduce(
-                  (sum, p) => sum + (p.remainingCount ?? 0),
-                  0
-                )}회`
-              : ''}
-          </span>
-        </div>
-      )}
-    </button>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  unit,
-  highlight = false,
-}: {
-  label: string;
-  value: number;
-  unit: string;
-  highlight?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        'rounded-md py-1.5 px-1 border',
-        highlight
-          ? 'bg-[var(--color-primary-bg)] border-[var(--color-primary)]/30'
-          : 'bg-[var(--color-bg-subtle)] border-transparent'
-      )}
-    >
-      <p
-        className={cn(
-          'text-[15px] font-semibold tabular-nums leading-none',
-          highlight
-            ? 'text-[var(--color-primary)]'
-            : 'text-[var(--color-text)]'
-        )}
+      {/* 이모지 — 큰 원형 배지 */}
+      <div
+        className="w-16 h-16 rounded-2xl flex items-center justify-center text-[34px] shrink-0 mt-1"
+        style={{ background: meta.bgColor }}
+        aria-hidden
       >
-        {value}
-        <span className="text-[10.5px] font-medium text-[var(--color-text-muted)] ml-0.5">
-          {unit}
-        </span>
+        {meta.heroEmoji}
+      </div>
+
+      {/* 타이틀 — 메인(가장 큼, 중앙) */}
+      <h3
+        className="text-[19px] md:text-[20px] font-bold leading-tight tracking-tight"
+        style={{ color: meta.textColor }}
+      >
+        {meta.name}
+      </h3>
+
+      {/* 설명 — 아주 짧게, 부가적으로 (한 줄) */}
+      <p className="text-[11.5px] text-[var(--color-text-muted)] leading-snug line-clamp-1 max-w-[90%]">
+        {meta.short} · {meta.dayLabel}
       </p>
-      <p className="text-[10.5px] text-[var(--color-text-muted)] mt-1">{label}</p>
-    </div>
+
+      {/* 단 하나의 신호: 수강권 보유 / 예약 여부 */}
+      <div className="flex flex-wrap items-center justify-center gap-1.5 mt-0.5 min-h-[24px]">
+        {hasPass && (
+          <span className="inline-flex items-center gap-1 text-[11.5px] font-semibold px-2.5 py-1 rounded-full bg-[var(--color-success-bg)] text-[var(--color-success)]">
+            <Ticket size={12} />
+            수강권 보유
+          </span>
+        )}
+        {hasReservation && (
+          <span className="inline-flex items-center gap-1 text-[11.5px] font-semibold px-2.5 py-1 rounded-full bg-[var(--color-primary-bg)] text-[var(--color-primary)]">
+            <CalendarCheck size={12} />
+            예약 {stats.upcomingCount}건
+          </span>
+        )}
+        {!isMember && (
+          <span className="inline-flex items-center gap-1 text-[11.5px] font-medium px-2.5 py-1 rounded-full bg-[var(--color-bg-subtle)] text-[var(--color-text-muted)]">
+            <Compass size={12} />
+            둘러보기
+          </span>
+        )}
+      </div>
+
+      {/* 진입 화살표 — 우상단 은은하게 */}
+      <ArrowRight
+        size={16}
+        className="absolute top-3.5 right-3.5 text-[var(--color-text-muted)] group-hover:text-[var(--color-primary)] group-hover:translate-x-0.5 transition-all"
+      />
+    </button>
   );
 }
