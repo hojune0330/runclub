@@ -148,6 +148,22 @@ export const ACTIVITY_SOURCES: ActivitySource[] = [
 export const HOMEWORK_METRICS: HomeworkMetric[] = ['distance', 'count', 'duration', 'checkin', 'freeform'];
 export const ENCOURAGEMENT_KINDS: EncouragementKind[] = ['cheer', 'fire', 'comment'];
 
+/**
+ * 활동 출처(source) 라벨·색상.
+ * 수기·애플·가민·Strava 등 어떤 경로로 들어왔든 종합 수치엔 동일하게 집계되지만,
+ * 화면에선 "어디서 온 기록인지" 한눈에 구분되도록 작은 배지를 보여준다.
+ */
+export const ACTIVITY_SOURCE_META: Record<ActivitySource, { label: string; color: string }> = {
+  manual:             { label: '직접 입력', color: '#0ea5e9' },
+  strava:             { label: 'Strava',    color: '#fc4c02' },
+  garmin:             { label: 'Garmin',    color: '#007cc3' },
+  apple_health:       { label: 'Apple 건강', color: '#ff2d55' },
+  samsung_health:     { label: 'Samsung',   color: '#1428a0' },
+  barojaenfit_manual: { label: 'BaroJaenfit', color: '#22c55e' },
+  barojaenfit_api:    { label: 'BaroJaenfit', color: '#22c55e' },
+  libre_cgm:          { label: 'CGM',       color: '#ffd400' },
+};
+
 export const ACTIVITY_KIND_LABEL: Record<ActivityKind, string> = {
   run: '러닝',
   walk_run: '걷기/달리기',
@@ -196,6 +212,7 @@ export function mapActivityRow(r: any): ActivityLog {
     note: r.note ?? undefined,
     photoUrl: r.photo_url ?? undefined,
     createdAt: r.created_at ? new Date(r.created_at).toISOString() : undefined,
+    editedAt: r.edited_at ? new Date(r.edited_at).toISOString() : undefined,
     cheerCount: asNum(r.cheer_count),
     commentCount: asNum(r.comment_count),
   };

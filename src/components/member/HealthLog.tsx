@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/store/AuthContext';
 import { cn } from '@/lib/utils';
 import { GLUCOSE_TARGET, GLUCOSE_TARGET_LABEL } from '@/lib/policy';
+import { ACTIVITY_SOURCE_META } from '@/lib/coaching';
 import { GlucoseGuardrailCard } from '@/components/coaching/PolicyInfo';
 import type { ActivityLog } from '@/types';
 
@@ -127,10 +128,21 @@ function HealthCard({ log, defs, onDeleted }: { log: ActivityLog; defs: MetricDe
           <span className="grid place-items-center w-8 h-8 rounded-full bg-[var(--color-primary-bg)] text-[var(--color-primary)]"><Icon size={15} /></span>
           <div>
             <span className="text-[13px] font-medium text-[var(--color-text)]">{kind?.label ?? '건강'}</span>
-            <p className="text-[11px] text-[var(--color-text-muted)]">{log.activityDate}</p>
+            <p className="text-[11px] text-[var(--color-text-muted)] flex items-center gap-1.5">
+              {log.activityDate}
+              {(() => {
+                const sm = ACTIVITY_SOURCE_META[log.source] ?? ACTIVITY_SOURCE_META.manual;
+                return (
+                  <span className="inline-flex items-center gap-1 font-medium" style={{ color: sm.color }} title={`출처: ${sm.label}`}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: sm.color }} />{sm.label}
+                  </span>
+                );
+              })()}
+              {log.editedAt && <span title={`수정: ${new Date(log.editedAt).toLocaleString('ko-KR')}`}>· 수정됨</span>}
+            </p>
           </div>
         </div>
-        <button onClick={remove} className="text-[var(--color-text-muted)] hover:text-rose-600"><Trash2 size={14} /></button>
+        <button onClick={remove} className="text-[var(--color-text-muted)] hover:text-rose-600" title="삭제"><Trash2 size={14} /></button>
       </div>
 
       <div className="flex flex-wrap gap-1.5 mt-2.5">

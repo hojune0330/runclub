@@ -739,6 +739,19 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    // 부분 수정(거리·시간·날짜·심박·고도·메모·종류). 출처는 보존되고 "수정됨" 표시됨.
+    update: (
+      id: string,
+      data: {
+        kind?: string; activityDate?: string; distanceM?: number | null; durationS?: number | null;
+        avgPaceS?: number | null; elevationM?: number | null; avgHr?: number | null;
+        note?: string | null; photoUrl?: string | null;
+      }
+    ) =>
+      request<{ activity: ActivityLog }>('/activities', {
+        method: 'PATCH',
+        body: JSON.stringify({ id, ...data }),
+      }),
     remove: (id: string) =>
       request<{ ok: boolean }>(`/activities?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },

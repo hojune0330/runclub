@@ -133,6 +133,66 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// PATCH /api/activities  { id, ...수정필드 }
+//  본인(또는 관리자)의 기록을 수정. 출처(source)는 보존하고 edited_at 만 갱신한다.
+//  → 수기·애플·가민·Strava 어떤 출처든 동일하게 수정 가능(신뢰의 핵심).
+//  거리/시간이 바뀌면 페이스를 재계산. 마일리지는 재적립/회수하지 않는다(중복·악용 방지).
+export async function PATCH(req: NextRequest) {
+  const auth = await getAuthFromRequest(req);
+  if (!auth) return unauthorizedResponse();
+  await ensureSchema();
+
+  try {
+    const body = await req.json();
+    const id = body?.id ? String(body.id) : null;
+    if (!id) return NextResponse.json({ error: 'id가 필요합니다' }, { status: 400 });
+
+    const existing = await dbGet<any>(`SELECT * FROM activity_logs WHERE id = $1`, [id]);
+    if (!existing) return NextResponse.json({ error: '기록을 찾을 수 없습니다' }, { status: 404 });
+    if (existing.member_id !== auth.memberId && auth.role !== 'admin') return forbiddenResponse();
+
+    const toIntOrNull = (v: any) => (v != null && Number.isFinite(Number(v)) ? Math.round(Number(v)) : null);
+    const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
+
+    // 부분 수정: 전달된 필드만 갱신, 나머지는 기존값 유지
+    const kind = has('kind') && ACTIVITY_KINDS.includes(body.kind) ? body.kind : existing.kind;
+    const activityDate = has('activityDate') && body.activityDate
+      ? String(body.activityDate).slice(0, 10) : existing.activity_date;
+    const distanceM = has('distanceM') ? toIntOrNull(body.distanceM) : existing.distance_m;
+    const durationS = has('durationS') ? toIntOrNull(body.durationS) : existing.duration_s;
+    const elevationM = has('elevationM') ? toIntOrNull(body.elevationM) : existing.elevation_m;
+    const avgHr = has('avgHr') ? toIntOrNull(body.avgHr) : existing.avg_hr;
+    const note = has('note') ? (body.note ? String(body.note).slice(0, 500) : null) : existing.note;
+    const photoUrl = has('photoUrl') ? (body.photoUrl ? String(body.photoUrl).slice(0, 500) : null) : existing.photo_url;
+
+    // 페이스: 명시 전달이 있으면 사용, 없으면 거리·시간으로 재계산(둘 다 있을 때)
+    let avgPaceS: number | null;
+    if (has('avgPaceS')) avgPaceS = toIntOrNull(body.avgPaceS);
+    else if (distanceM && durationS && distanceM > 0) avgPaceS = Math.round((durationS / distanceM) * 1000);
+    else avgPaceS = existing.avg_pace_s;
+
+    await dbRun(
+      `UPDATE activity_logs
+          SET kind = $1, activity_date = $2, distance_m = $3, duration_s = $4, avg_pace_s = $5,
+              elevation_m = $6, avg_hr = $7, note = $8, photo_url = $9, edited_at = NOW()
+        WHERE id = $10`,
+      [kind, activityDate, distanceM, durationS, avgPaceS, elevationM, avgHr, note, photoUrl, id]
+    );
+
+    const row = await dbGet<any>(
+      `SELECT a.*, m.name AS member_name,
+              (SELECT COUNT(*) FROM encouragements e WHERE e.target_type='activity' AND e.target_id=a.id AND e.kind!='comment')::int AS cheer_count,
+              (SELECT COUNT(*) FROM encouragements e WHERE e.target_type='activity' AND e.target_id=a.id AND e.kind='comment')::int AS comment_count
+         FROM activity_logs a JOIN members m ON a.member_id = m.id WHERE a.id = $1`,
+      [id]
+    );
+    return NextResponse.json({ activity: row ? mapActivityRow(row) : null });
+  } catch (e) {
+    console.error('[activities PATCH] error:', e);
+    return NextResponse.json({ error: '수정에 실패했습니다' }, { status: 500 });
+  }
+}
+
 // DELETE /api/activities?id=...  — 본인 기록 삭제(관리자도 가능)
 export async function DELETE(req: NextRequest) {
   const auth = await getAuthFromRequest(req);

@@ -389,6 +389,8 @@ export interface ActivityLog {
   note?: string;
   photoUrl?: string;
   createdAt?: string;
+  /** 사용자가 값을 수정한 시각(출처 무관). 있으면 "수정됨" 표시 */
+  editedAt?: string;
   // 집계 시 채워짐
   cheerCount?: number;
   commentCount?: number;

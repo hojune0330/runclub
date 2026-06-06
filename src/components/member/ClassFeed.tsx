@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Loader2, Trash2, Activity, Heart, Flame, MessageCircle, X, Clock } from 'lucide-react';
+import { Plus, Loader2, Trash2, Activity, Heart, Flame, MessageCircle, X, Clock, Pencil } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/store/AuthContext';
 import { cn } from '@/lib/utils';
-import { ACTIVITY_KIND_LABEL, formatDistance, formatPace, formatDuration } from '@/lib/coaching';
+import { ACTIVITY_KIND_LABEL, ACTIVITY_SOURCE_META, formatDistance, formatPace, formatDuration } from '@/lib/coaching';
 import type { ActivityLog, Encouragement } from '@/types';
 
 const RUN_KINDS = [
@@ -77,7 +77,9 @@ function ActivityCard({ activity, myId, onChanged }: { activity: ActivityLog; my
   const [comments, setComments] = useState<Encouragement[]>([]);
   const [commentText, setCommentText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
   const isMine = activity.memberId === myId;
+  const sourceMeta = ACTIVITY_SOURCE_META[activity.source] ?? ACTIVITY_SOURCE_META.manual;
 
   const toggleCheer = async (kind: 'cheer' | 'fire') => {
     try {
@@ -122,14 +124,40 @@ function ActivityCard({ activity, myId, onChanged }: { activity: ActivityLog; my
             {activity.memberName}
             <span className="ml-2 text-[11px] font-normal text-[var(--color-text-muted)]">{activity.activityDate}</span>
           </p>
-          <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[11px] bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]">
-            {ACTIVITY_KIND_LABEL[activity.kind] ?? '활동'}
-          </span>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <span className="inline-block px-1.5 py-0.5 rounded text-[11px] bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]">
+              {ACTIVITY_KIND_LABEL[activity.kind] ?? '활동'}
+            </span>
+            {/* 출처 배지 — 종합 수치엔 동일 집계되지만 어디서 온 기록인지 구분 */}
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium"
+              style={{ color: sourceMeta.color, background: `${sourceMeta.color}14` }}
+              title={`출처: ${sourceMeta.label}`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: sourceMeta.color }} />
+              {sourceMeta.label}
+            </span>
+            {activity.editedAt && (
+              <span className="text-[10.5px] text-[var(--color-text-muted)]" title={`수정: ${new Date(activity.editedAt).toLocaleString('ko-KR')}`}>· 수정됨</span>
+            )}
+          </div>
         </div>
         {isMine && (
-          <button onClick={remove} className="text-[var(--color-text-muted)] hover:text-rose-500"><Trash2 size={14} /></button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setEditing(true)} className="text-[var(--color-text-muted)] hover:text-[var(--color-primary)]" title="수정"><Pencil size={14} /></button>
+            <button onClick={remove} className="text-[var(--color-text-muted)] hover:text-rose-500" title="삭제"><Trash2 size={14} /></button>
+          </div>
         )}
       </div>
+
+      {editing && (
+        <ActivityForm
+          classId={activity.classId}
+          existing={activity}
+          onClose={() => setEditing(false)}
+          onSaved={() => { setEditing(false); onChanged(); }}
+        />
+      )}
 
       {isRun && (activity.distanceM || activity.durationS) && (
         <div className="flex items-center gap-4 mt-3 text-[12.5px]">
@@ -190,28 +218,43 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ActivityForm({ classId, onClose, onSaved }: { classId?: string; onClose: () => void; onSaved: () => void }) {
-  const [kind, setKind] = useState('run');
-  const [activityDate, setActivityDate] = useState(new Date().toISOString().slice(0, 10));
-  const [distanceKm, setDistanceKm] = useState('');
-  const [durationMin, setDurationMin] = useState('');
-  const [avgHr, setAvgHr] = useState('');
-  const [note, setNote] = useState('');
-  const [photoUrl, setPhotoUrl] = useState('');
+// existing 가 있으면 "수정" 모드(어떤 출처의 기록이든 수정 가능), 없으면 "추가" 모드.
+function ActivityForm({ classId, existing, onClose, onSaved }: { classId?: string; existing?: ActivityLog; onClose: () => void; onSaved: () => void }) {
+  const isEdit = !!existing;
+  const [kind, setKind] = useState<string>(existing?.kind ?? 'run');
+  const [activityDate, setActivityDate] = useState(existing?.activityDate ?? new Date().toISOString().slice(0, 10));
+  const [distanceKm, setDistanceKm] = useState(existing?.distanceM != null ? String(existing.distanceM / 1000) : '');
+  const [durationMin, setDurationMin] = useState(existing?.durationS != null ? String(Math.round(existing.durationS / 60 * 10) / 10) : '');
+  const [avgHr, setAvgHr] = useState(existing?.avgHr != null ? String(existing.avgHr) : '');
+  const [note, setNote] = useState(existing?.note ?? '');
+  const [photoUrl, setPhotoUrl] = useState(existing?.photoUrl ?? '');
   const [busy, setBusy] = useState(false);
+  // 수정 모드에서 비RUN 종류(혈당 등)는 종류칩을 바꾸지 않고 보존
+  const isRunKindForm = ['run', 'long_run', 'interval', 'walk_run'].includes(kind);
+  const sourceMeta = existing ? (ACTIVITY_SOURCE_META[existing.source] ?? ACTIVITY_SOURCE_META.manual) : null;
 
   const submit = async () => {
     setBusy(true);
     try {
-      const distanceM = distanceKm ? Math.round(parseFloat(distanceKm) * 1000) : undefined;
-      const durationS = durationMin ? Math.round(parseFloat(durationMin) * 60) : undefined;
-      const res = await api.activities.create({
-        classId: classId || undefined, kind, activityDate, distanceM, durationS,
-        avgHr: avgHr ? parseInt(avgHr) : undefined,
-        note: note.trim() || undefined,
-        photoUrl: photoUrl.trim() || undefined,
-      });
-      if (res.mileageEarned > 0) alert(`기록 완료! +${res.mileageEarned}P 적립되었어요 🎉`);
+      const distanceM = distanceKm !== '' ? Math.round(parseFloat(distanceKm) * 1000) : (isEdit ? null : undefined);
+      const durationS = durationMin !== '' ? Math.round(parseFloat(durationMin) * 60) : (isEdit ? null : undefined);
+      if (isEdit) {
+        await api.activities.update(existing!.id, {
+          kind, activityDate, distanceM, durationS,
+          avgHr: avgHr !== '' ? parseInt(avgHr) : null,
+          note: note.trim() || null,
+          photoUrl: photoUrl.trim() || null,
+        });
+      } else {
+        const res = await api.activities.create({
+          classId: classId || undefined, kind, activityDate,
+          distanceM: distanceM ?? undefined, durationS: durationS ?? undefined,
+          avgHr: avgHr ? parseInt(avgHr) : undefined,
+          note: note.trim() || undefined,
+          photoUrl: photoUrl.trim() || undefined,
+        });
+        if (res.mileageEarned > 0) alert(`기록 완료! +${res.mileageEarned}P 적립되었어요 🎉`);
+      }
       onSaved();
     } catch (e: any) {
       alert(e?.message ?? '저장에 실패했어요');
@@ -224,19 +267,34 @@ function ActivityForm({ classId, onClose, onSaved }: { classId?: string; onClose
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div className="bg-white rounded-lg w-full max-w-md p-5 space-y-3.5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between">
-          <h2 className="text-[15px] font-bold text-[var(--color-text)] flex items-center gap-1.5"><Activity size={16} className="text-[var(--color-primary)]" /> 활동 기록</h2>
+          <h2 className="text-[15px] font-bold text-[var(--color-text)] flex items-center gap-1.5">
+            {isEdit ? <Pencil size={16} className="text-[var(--color-primary)]" /> : <Activity size={16} className="text-[var(--color-primary)]" />}
+            {isEdit ? '기록 수정' : '활동 기록'}
+          </h2>
           <button onClick={onClose} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]"><X size={18} /></button>
         </div>
 
-        <div className="flex gap-1.5 flex-wrap">
-          {RUN_KINDS.map(k => (
-            <button key={k.value} onClick={() => setKind(k.value)}
-              className={cn('px-2.5 py-1.5 rounded text-[12px] font-medium border',
-                kind === k.value ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]' : 'bg-white text-[var(--color-text-secondary)] border-[var(--color-border)]')}>
-              {k.label}
-            </button>
-          ))}
-        </div>
+        {/* 수정 모드: 출처 안내(외부 연동 기록도 자유롭게 고칠 수 있음) */}
+        {isEdit && sourceMeta && (
+          <p className="text-[11.5px] text-[var(--color-text-muted)] bg-[var(--color-bg-subtle)] rounded px-2.5 py-1.5">
+            <span className="inline-flex items-center gap-1 font-medium" style={{ color: sourceMeta.color }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: sourceMeta.color }} />{sourceMeta.label}
+            </span>
+            <span className="ml-1">에서 가져온 기록이에요. 값을 고치면 ‘수정됨’으로 표시되고, 종합 수치에도 동일하게 반영돼요.</span>
+          </p>
+        )}
+
+        {isRunKindForm && (
+          <div className="flex gap-1.5 flex-wrap">
+            {RUN_KINDS.map(k => (
+              <button key={k.value} onClick={() => setKind(k.value)}
+                className={cn('px-2.5 py-1.5 rounded text-[12px] font-medium border',
+                  kind === k.value ? 'bg-[var(--color-primary)] text-white border-[var(--color-primary)]' : 'bg-white text-[var(--color-text-secondary)] border-[var(--color-border)]')}>
+                {k.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <Field label="날짜">
           <input type="date" value={activityDate} onChange={e => setActivityDate(e.target.value)}
@@ -265,13 +323,20 @@ function ActivityForm({ classId, onClose, onSaved }: { classId?: string; onClose
             className="w-full px-3 py-2 text-[13px] border border-[var(--color-border)] rounded focus:border-[var(--color-primary)] outline-none" />
         </Field>
 
-        <p className="text-[11px] text-[var(--color-text-muted)] flex items-center gap-1">
-          <Clock size={11} /> 활동 +10P(하루 2건), 10km+ 롱런 +20P 적립돼요.
-        </p>
+        {!isEdit && (
+          <p className="text-[11px] text-[var(--color-text-muted)] flex items-center gap-1">
+            <Clock size={11} /> 활동 +10P(하루 2건), 10km+ 롱런 +20P 적립돼요.
+          </p>
+        )}
+        {isEdit && (
+          <p className="text-[11px] text-[var(--color-text-muted)] flex items-center gap-1">
+            <Clock size={11} /> 수정해도 이미 적립된 마일리지는 그대로 유지돼요.
+          </p>
+        )}
 
         <button onClick={submit} disabled={busy}
           className="w-full py-2.5 text-[13.5px] font-medium text-white bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] rounded disabled:opacity-50 inline-flex items-center justify-center gap-1.5">
-          {busy ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} 기록 저장
+          {busy ? <Loader2 size={15} className="animate-spin" /> : isEdit ? <Pencil size={15} /> : <Plus size={15} />} {isEdit ? '수정 저장' : '기록 저장'}
         </button>
       </div>
     </div>

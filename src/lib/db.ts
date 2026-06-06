@@ -771,6 +771,9 @@ async function initCoachingSchema(): Promise<void> {
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_class ON activity_logs(class_id)`);
   // 외부 동기화 중복 방지(같은 소스+외부ID는 1건). source_ref NULL(수동 입력)은 제약 없음.
   await dbRun(`CREATE UNIQUE INDEX IF NOT EXISTS uq_activity_source_ref ON activity_logs(member_id, source, source_ref) WHERE source_ref IS NOT NULL`);
+  // 수정 이력 표식: 사용자가 (출처 무관) 값을 손본 시각. NULL=미수정.
+  // 외부 연동(애플/가민/Strava) 기록도 자유롭게 수정할 수 있고, 수정 시 "수정됨" 으로 표시한다.
+  await dbRun(`ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`);
 
   // ── P2: 과제(숙제) — 목표 지향 수업의 핵심 ──
   await dbRun(`
