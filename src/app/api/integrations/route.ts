@@ -34,6 +34,8 @@ export async function GET(req: NextRequest) {
         availability, // 'available' | 'coming_soon'
         // OAuth 가 필요한 제공자(현재 strava)는 별도 시작 URL 사용
         oauth: p.id === 'strava' && isStravaConfigured(),
+        // 파일 내보내기 업로드로 "지금 바로" 가져올 수 있는 제공자(애플 건강·가민)
+        fileImport: p.fileImport ?? null,
         connected: mine?.status === 'connected',
         status: mine?.status ?? null, // 'connected' | 'pending' | 'revoked' | null
         lastSyncedAt: mine?.last_synced_at ?? null,

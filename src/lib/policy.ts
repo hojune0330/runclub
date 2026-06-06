@@ -159,6 +159,18 @@ export interface IntegrationProvider {
   desc: string;
   /** 브랜드 컬러(점/배지) */
   color: string;
+  /**
+   * 파일 내보내기 → 업로드로 "지금 바로" 가져올 수 있는 제공자 여부.
+   * 애플 건강·가민은 웹 OAuth 가 (사실상) 불가하지만, 사용자가 직접 데이터를
+   * 내보낸 파일을 올리면 가져올 수 있다. 이 값이 있으면 UI 에 "파일 가져오기"
+   * 액션과 안내를 노출한다. (자동 동기화는 status 로 별도 표현)
+   */
+  fileImport?: {
+    /** 허용 확장자 안내 */
+    accept: string;
+    /** 사용자가 파일을 어떻게 만드는지 짧은 안내 */
+    howto: string;
+  };
 }
 
 /**
@@ -188,16 +200,24 @@ export const INTEGRATION_PROVIDERS: IntegrationProvider[] = [
     name: 'Garmin',
     category: 'run',
     status: 'coming_soon',
-    desc: '가민 워치의 운동·심박 데이터를 동기화해요.',
+    desc: '가민 워치의 운동 기록을 파일로 가져올 수 있어요. (자동 동기화는 준비 중)',
     color: '#007cc3',
+    fileImport: {
+      accept: '.tcx, .gpx, .zip',
+      howto: 'Garmin Connect → 활동 → 내보내기(TCX/GPX), 또는 계정 데이터 내보내기 ZIP을 올려주세요.',
+    },
   },
   {
     id: 'apple_health',
     name: 'Apple 건강',
     category: 'health',
     status: 'coming_soon',
-    desc: 'iPhone·Apple Watch의 건강 데이터를 가져와요.',
+    desc: 'iPhone 건강 앱에서 내보낸 파일로 운동 기록을 가져올 수 있어요. (자동 동기화는 준비 중)',
     color: '#ff2d55',
+    fileImport: {
+      accept: '.zip, .xml',
+      howto: 'iPhone 건강 앱 → 프로필 → "모든 건강 데이터 내보내기" → 생성된 export.zip을 올려주세요.',
+    },
   },
   {
     id: 'samsung_health',

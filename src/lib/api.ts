@@ -825,6 +825,7 @@ export const api = {
         accounts: {
           provider: string; name: string; category: string; color: string; desc: string;
           availability: 'available' | 'coming_soon'; oauth?: boolean;
+          fileImport?: { accept: string; howto: string } | null;
           connected: boolean; status: string | null; lastSyncedAt: string | null;
         }[];
       }>('/integrations'),
@@ -842,6 +843,29 @@ export const api = {
       request<{ ok: boolean; imported: number; mileageEarned: number }>('/integrations/strava/sync', {
         method: 'POST', body: JSON.stringify({ classId }),
       }),
+    // 파일 가져오기(애플 건강 export.zip / 가민 tcx·gpx·zip). multipart 업로드.
+    importFile: async (
+      provider: 'apple_health' | 'garmin',
+      file: File,
+      classId?: string
+    ): Promise<{
+      ok: boolean; imported: number; duplicate: number; mileageEarned: number;
+      truncated: boolean; skipped: number; message?: string;
+    }> => {
+      const fd = new FormData();
+      fd.append('provider', provider);
+      fd.append('file', file);
+      if (classId) fd.append('classId', classId);
+      const res = await fetch(`${BASE}/integrations/import`, {
+        method: 'POST',
+        body: fd, // Content-Type 은 브라우저가 boundary 와 함께 자동 설정
+        credentials: 'include',
+      });
+      let data: any;
+      try { data = await res.json(); } catch { data = {}; }
+      if (!res.ok) throw new Error(data.error || `가져오기에 실패했습니다 (${res.status})`);
+      return data;
+    },
   },
 
   // ─── 마일리지 조회(코칭 허브에서 잔액/내역 표시) ───
