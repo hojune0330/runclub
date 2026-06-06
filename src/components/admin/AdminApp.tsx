@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, Calendar, Users, Ticket, Megaphone, BarChart3, QrCode, LogOut, ChevronDown, HelpCircle, Menu, X, Shield, Tag, BookOpen, Target } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, Ticket, Megaphone, BarChart3, QrCode, LogOut, ChevronDown, HelpCircle, Menu, X, Shield, Tag, BookOpen, Target, Eye } from 'lucide-react';
 import { useAuth } from '@/store/AuthContext';
+import { api } from '@/lib/api';
+import { useToast } from '@/components/ui';
 import Dashboard from './Dashboard';
 import SessionManagement from './SessionManagement';
 import MemberManagement from './MemberManagement';
@@ -71,9 +73,11 @@ const bottomNav: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[]
 
 export default function AdminApp() {
   const { user, logout } = useAuth();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
 
   // Allow Dashboard widgets (and other children) to programmatically switch tabs
   useEffect(() => {
@@ -119,6 +123,27 @@ export default function AdminApp() {
   const handleLogout = async () => {
     if (confirm('로그아웃 하시겠습니까?')) {
       await logout();
+    }
+  };
+
+  // 테스트 회원(010-1111-1111)으로 전환해 방금 반영한 사항을 회원 화면에서 바로 확인.
+  // 성공 시 세션 쿠키가 교체되므로 페이지를 새로고침해 회원 화면으로 진입한다.
+  const handlePreviewAsMember = async () => {
+    if (previewing) return;
+    const ok = confirm(
+      '테스트 회원(010-1111-1111) 화면으로 전환합니다.\n관리자로 돌아오려면 회원 화면에서 로그아웃 후 다시 로그인하세요.\n계속할까요?'
+    );
+    if (!ok) return;
+    setPreviewing(true);
+    try {
+      await api.auth.impersonateTestMember();
+      toast.success('테스트 회원으로 전환했어요', '회원 화면으로 이동합니다…');
+      // AuthContext는 마운트 시 한 번만 /api/auth/me 를 읽으므로, 쿠키 교체 후
+      // 가장 확실한 반영 방법은 전체 새로고침이다.
+      setTimeout(() => window.location.assign('/app'), 350);
+    } catch (e: any) {
+      toast.error('전환에 실패했어요', e?.message ?? '잠시 후 다시 시도해주세요');
+      setPreviewing(false);
     }
   };
 
@@ -185,6 +210,15 @@ export default function AdminApp() {
           </button>
           {userMenuOpen && (
             <div className="absolute bottom-full left-2 right-2 mb-1 bg-white border border-[var(--color-border)] rounded shadow-md py-1 animate-slide-up">
+              <button
+                onClick={() => { setUserMenuOpen(false); handlePreviewAsMember(); }}
+                disabled={previewing}
+                className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-primary)] transition-colors disabled:opacity-50"
+              >
+                <Eye size={13} />
+                {previewing ? '전환 중…' : '테스트 회원으로 보기'}
+              </button>
+              <div className="my-1 border-t border-[var(--color-border-subtle)]" />
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center gap-2 px-3 py-2 text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-danger)] transition-colors"
@@ -327,6 +361,14 @@ export default function AdminApp() {
                   <p className="text-[11.5px] text-[var(--color-text-muted)]">관리자</p>
                 </div>
               </div>
+              <button
+                onClick={() => { setDrawerOpen(false); handlePreviewAsMember(); }}
+                disabled={previewing}
+                className="w-full h-10 mb-2 rounded-md border border-[var(--color-primary)] text-[13px] text-[var(--color-primary)] font-medium active:bg-[var(--color-primary-bg)] inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+              >
+                <Eye size={13} />
+                {previewing ? '전환 중…' : '테스트 회원으로 보기'}
+              </button>
               <button
                 onClick={handleLogout}
                 className="w-full h-10 rounded-md border border-[var(--color-border)] text-[13px] text-[var(--color-text-secondary)] active:bg-[var(--color-bg-hover)] active:text-[var(--color-danger)] inline-flex items-center justify-center gap-1.5"

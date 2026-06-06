@@ -149,6 +149,10 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(data),
       }),
+    // 관리자 전용: 테스트 회원(010-1111-1111) 세션으로 전환. 성공 시 쿠키가 교체되므로
+    // 호출 후 페이지를 새로고침하면 회원 화면으로 진입한다.
+    impersonateTestMember: () =>
+      request<{ member: any }>('/admin/impersonate', { method: 'POST' }),
   },
 
   passwordResetRequests: {
