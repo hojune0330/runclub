@@ -461,16 +461,16 @@ function SessionRow({
         </p>
       </div>
       <div className="flex-1 min-w-0">
+        {/* 홈에서는 세션명 + 최소 정보만. 상세는 눌러 들어가면 보인다. */}
         <p className="text-[13px] font-medium text-[var(--color-text)] truncate">
-          {session.location}
+          {session.name}
         </p>
-        <p className="text-[11.5px] text-[var(--color-text-muted)] mt-0.5 inline-flex items-center gap-2">
-          <span className="inline-flex items-center gap-0.5">
+        <p className="text-[11.5px] text-[var(--color-text-muted)] mt-0.5 inline-flex items-center gap-1.5 truncate">
+          {session.location && <span className="truncate">{session.location}</span>}
+          <span className="inline-flex items-center gap-0.5 shrink-0 tabular-nums">
             <Users size={11} />
             {session.currentReservations}/{session.maxCapacity}
           </span>
-          {session.isIndoor && <span>· 실내</span>}
-          {session.endTime && <span>· ~{session.endTime}</span>}
         </p>
       </div>
       {reserved ? (

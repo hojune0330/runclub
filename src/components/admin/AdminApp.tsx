@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { LayoutDashboard, Calendar, Users, Ticket, Megaphone, BarChart3, QrCode, LogOut, ChevronDown, HelpCircle, Menu, X, Shield, Tag, BookOpen, Target, Eye } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, Ticket, Megaphone, BarChart3, QrCode, LogOut, ChevronDown, HelpCircle, Menu, X, Shield, Tag, BookOpen, Target, Eye, Sun } from 'lucide-react';
 import { useAuth } from '@/store/AuthContext';
 import { api } from '@/lib/api';
 import { useToast } from '@/components/ui';
 import Dashboard from './Dashboard';
+import TodayDashboard from './TodayDashboard';
 import SessionManagement from './SessionManagement';
 import MemberManagement from './MemberManagement';
 import PassManagement from './PassManagement';
@@ -20,7 +21,7 @@ import ClassManagement from './ClassManagement';
 import { cn } from '@/lib/utils';
 import BusinessFooter from '@/components/public/BusinessFooter';
 
-type AdminTab = 'dashboard' | 'sessions' | 'members' | 'passes' | 'notices' | 'stats' | 'qr' | 'audit' | 'tags' | 'help' | 'manual' | 'classes';
+type AdminTab = 'today' | 'dashboard' | 'sessions' | 'members' | 'passes' | 'notices' | 'stats' | 'qr' | 'audit' | 'tags' | 'help' | 'manual' | 'classes';
 
 const navGroups: { label: string; items: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] }[] = [
   {
@@ -33,6 +34,7 @@ const navGroups: { label: string; items: { id: AdminTab; label: string; icon: ty
   {
     label: '운영',
     items: [
+      { id: 'today', label: '오늘', icon: Sun },
       { id: 'sessions', label: '세션 관리', icon: Calendar },
       { id: 'classes', label: '코칭 클래스', icon: Target },
       { id: 'qr', label: '출석 체크', icon: QrCode },
@@ -64,17 +66,17 @@ const navGroups: { label: string; items: { id: AdminTab; label: string; icon: ty
 
 // Bottom navigation (mobile) — top 5 admin tabs
 const bottomNav: { id: AdminTab; label: string; icon: typeof LayoutDashboard }[] = [
-  { id: 'dashboard', label: '홈', icon: LayoutDashboard },
+  { id: 'today', label: '오늘', icon: Sun },
   { id: 'sessions', label: '세션', icon: Calendar },
   { id: 'qr', label: '출석', icon: QrCode },
   { id: 'members', label: '회원', icon: Users },
-  { id: 'stats', label: '통계', icon: BarChart3 },
+  { id: 'dashboard', label: '대시보드', icon: LayoutDashboard },
 ];
 
 export default function AdminApp() {
   const { user, logout } = useAuth();
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
+  const [activeTab, setActiveTab] = useState<AdminTab>('today');
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -105,6 +107,7 @@ export default function AdminApp() {
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'today': return <TodayDashboard />;
       case 'dashboard': return <Dashboard />;
       case 'sessions': return <SessionManagement />;
       case 'members': return <MemberManagement />;

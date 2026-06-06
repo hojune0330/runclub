@@ -20,6 +20,9 @@ export default function QRCheckin() {
   const [showFallback, setShowFallback] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  // 스캔 루프 정리를 위한 ref (BarcodeDetector interval / jsQR rAF / canvas 재사용)
+  const scanLoopRef = useRef<{ stop: () => void } | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const today = format(new Date(), 'yyyy-MM-dd');
 
@@ -44,18 +47,25 @@ export default function QRCheckin() {
 
   // Detect browser support on mount
   useEffect(() => {
-    // getUserMedia support
-    if (typeof navigator !== 'undefined') {
-      const mediaSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    // getUserMedia 지원 여부 — 이것만 되면 스캔 시도 가능(없으면 jsQR 폴백 사용).
+    // 보안 컨텍스트(https/localhost)가 아니면 브라우저가 mediaDevices를 막으므로 함께 확인.
+    if (typeof navigator !== 'undefined' && typeof window !== 'undefined') {
+      const secure = window.isSecureContext !== false; // 명시적으로 false일 때만 불가
+      const mediaSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia) && secure;
       setCameraSupported(mediaSupported);
     }
-    // BarcodeDetector support
+    // BarcodeDetector는 "빠른 경로"일 뿐. 없으면(아이폰 Safari 등) jsQR로 대체하므로
+    // 버튼을 막지 않는다. 여기서는 단지 어떤 디코더를 쓸지 판단용으로만 저장.
     if (typeof window !== 'undefined') {
       setDetectorSupported('BarcodeDetector' in window);
     }
   }, []);
 
   const stopCamera = () => {
+    if (scanLoopRef.current) {
+      scanLoopRef.current.stop();
+      scanLoopRef.current = null;
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -63,12 +73,70 @@ export default function QRCheckin() {
     setScanning(false);
   };
 
+  // BarcodeDetector(빠른 경로)로 스캔 루프 시작. 지원 시에만 호출.
+  const startBarcodeDetectorLoop = () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+    let active = true;
+    const interval = setInterval(async () => {
+      if (!active || !videoRef.current || !streamRef.current) return;
+      try {
+        const barcodes = await detector.detect(videoRef.current);
+        if (barcodes.length > 0 && barcodes[0].rawValue) {
+          handleQRData(barcodes[0].rawValue);
+        }
+      } catch {
+        /* 다음 틱에 재시도 */
+      }
+    }, 300);
+    scanLoopRef.current = { stop: () => { active = false; clearInterval(interval); } };
+  };
+
+  // jsQR 폴백 루프 — iOS Safari/Firefox 등 BarcodeDetector 미지원 브라우저용.
+  // 동적 import 로 초기 번들에 영향 주지 않는다.
+  const startJsQrLoop = async () => {
+    const jsQR = (await import('jsqr')).default;
+    const canvas = canvasRef.current ?? document.createElement('canvas');
+    canvasRef.current = canvas;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    let active = true;
+    let raf = 0;
+
+    const tick = () => {
+      if (!active) return;
+      const video = videoRef.current;
+      if (video && ctx && video.readyState >= 2 && video.videoWidth > 0) {
+        // 성능: 분석 해상도를 최대 640px 변으로 다운스케일.
+        const scale = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight));
+        const w = Math.round(video.videoWidth * scale);
+        const h = Math.round(video.videoHeight * scale);
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
+        try {
+          const imageData = ctx.getImageData(0, 0, w, h);
+          const result = jsQR(imageData.data, w, h, { inversionAttempts: 'dontInvert' });
+          if (result && result.data) {
+            handleQRData(result.data);
+            return; // handleQRData → stopCamera 가 루프를 정리
+          }
+        } catch {
+          /* 프레임 디코딩 실패는 무시하고 계속 */
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    scanLoopRef.current = { stop: () => { active = false; cancelAnimationFrame(raf); } };
+  };
+
   const startScanning = async () => {
     setError('');
     setScanned(false);
 
-    if (detectorSupported === false) {
-      setError('이 브라우저는 앱 내 QR 자동 스캔을 지원하지 않습니다. 휴대폰 기본 카메라로 QR을 열거나, 아래 "현장 체크인이 안 되나요?"를 눌러주세요.');
+    // 카메라 자체가 불가한 환경(보안 컨텍스트 아님/미지원)에서만 막는다.
+    if (!cameraSupported) {
+      setError('이 브라우저·환경에서는 카메라를 열 수 없어요. 휴대폰 기본 카메라로 코치 QR을 비추거나, 아래 "현장 체크인이 안 되나요?"를 이용하세요.');
       setShowFallback(true);
       return;
     }
@@ -82,26 +150,14 @@ export default function QRCheckin() {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // iOS Safari는 명시적 play() 호출이 필요한 경우가 있다.
+        try { await videoRef.current.play(); } catch { /* autoplay 정책상 무시 가능 */ }
       }
 
       if (detectorSupported) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
-        const scanInterval = setInterval(async () => {
-          if (!videoRef.current || !streamRef.current) {
-            clearInterval(scanInterval);
-            return;
-          }
-          try {
-            const barcodes = await detector.detect(videoRef.current);
-            if (barcodes.length > 0) {
-              clearInterval(scanInterval);
-              handleQRData(barcodes[0].rawValue);
-            }
-          } catch {
-            // retry next tick
-          }
-        }, 300);
+        startBarcodeDetectorLoop();
+      } else {
+        await startJsQrLoop();
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
@@ -273,7 +329,7 @@ export default function QRCheckin() {
               ) : (
                 <button
                   onClick={startScanning}
-                  disabled={!cameraSupported || detectorSupported === false}
+                  disabled={!cameraSupported}
                   className="w-full h-full flex flex-col items-center justify-center gap-3 border-2 border-dashed border-[var(--color-border-strong)] rounded-md bg-[var(--color-bg-subtle)] hover:border-[var(--color-primary)] hover:bg-[var(--color-primary-bg)]/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-[var(--color-border-strong)] disabled:hover:bg-[var(--color-bg-subtle)]"
                 >
                   <div className="w-12 h-12 rounded-full bg-white border border-[var(--color-border)] flex items-center justify-center">
@@ -304,7 +360,7 @@ export default function QRCheckin() {
                         setError('');
                         startScanning();
                       }}
-                      disabled={!cameraSupported || detectorSupported === false}
+                      disabled={!cameraSupported}
                       className="inline-flex items-center gap-1 text-[12px] font-medium text-[var(--color-danger)] hover:underline disabled:opacity-50"
                     >
                       <RefreshCw size={11} />
@@ -325,9 +381,14 @@ export default function QRCheckin() {
               </div>
             )}
 
-            <p className="mt-4 text-[12px] text-[var(--color-text-muted)] leading-relaxed">
-              앱 스캐너가 안 되면 <span className="font-medium text-[var(--color-text-secondary)]">휴대폰 기본 카메라</span>로 코치 QR을 비춰도 체크인 링크가 열려요.
-            </p>
+            <div className="mt-4 flex items-start gap-2 rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-subtle)] px-3 py-2.5">
+              <Camera size={14} className="shrink-0 mt-0.5 text-[var(--color-text-secondary)]" />
+              <p className="text-[12px] text-[var(--color-text-secondary)] leading-relaxed">
+                <span className="font-medium text-[var(--color-text)]">아이폰</span>은 위 스캔이 막히면
+                <span className="font-medium text-[var(--color-text)]"> 휴대폰 기본 카메라 앱</span>으로 코치 화면의 QR을 비추세요.
+                체크인 링크가 자동으로 열려 출석돼요. (앱 스캐너도 이제 아이폰에서 동작합니다)
+              </p>
+            </div>
           </div>
         </section>
 

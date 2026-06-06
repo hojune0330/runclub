@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MapPin, Clock, Check } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig } from '@/lib/config';
 import {
@@ -20,6 +20,8 @@ import {
 import type { CalendarView as CalendarViewType, Session } from '@/types';
 import SessionDetail from './SessionDetail';
 
+const DAY_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
+
 export default function CalendarView() {
   const { sessions, reservations, currentMember, notices } = useApp();
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -31,10 +33,19 @@ export default function CalendarView() {
   const monthDays = useMemo(() => getMonthDays(currentDate), [currentDate]);
 
   const sessionsForDate = useMemo(
-    () => getSessionsForDate(sessions, selectedDate),
+    () => getSessionsForDate(sessions, selectedDate)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime)),
     [sessions, selectedDate]
   );
   const latestNotice = notices.find(n => !n.isRead);
+
+  const reservedIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of reservations) {
+      if (r.memberId === currentMember.id && r.status === 'reserved') set.add(r.sessionId);
+    }
+    return set;
+  }, [reservations, currentMember.id]);
 
   const navigate = (dir: 'prev' | 'next') => {
     setCurrentDate(navigateDate(currentDate, view, dir));
@@ -51,15 +62,13 @@ export default function CalendarView() {
     return <SessionDetail session={liveSession} onBack={() => setSelectedSession(null)} />;
   }
 
-  const dayLabels = ['일', '월', '화', '수', '목', '금', '토'];
-
   return (
-    <div className="space-y-6 max-w-[1400px]">
-      {/* Page heading */}
+    <div className="space-y-5 max-w-[1100px]">
+      {/* Heading */}
       <div>
-        <h1 className="page-title">세션 일정</h1>
+        <h1 className="page-title">세션 일정·예약</h1>
         <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
-          {formatKoreanDate(new Date(), 'yyyy년 M월 d일 EEEE')} · 세션을 선택해 예약하세요.
+          날짜를 고르고 세션을 눌러 예약하세요.
         </p>
       </div>
 
@@ -71,9 +80,7 @@ export default function CalendarView() {
           </span>
           <div className="flex-1 min-w-0">
             <p className="text-[13px] text-[var(--color-text)] font-medium truncate">{latestNotice.title}</p>
-            <p className="text-[12px] text-[var(--color-text-secondary)] mt-0.5 line-clamp-1">
-              {latestNotice.content}
-            </p>
+            <p className="text-[12px] text-[var(--color-text-secondary)] mt-0.5 line-clamp-1">{latestNotice.content}</p>
           </div>
           <span className="text-[12px] text-[var(--color-text-muted)] shrink-0 tabular-nums">
             {formatKoreanDate(latestNotice.createdAt, 'M.d')}
@@ -81,436 +88,262 @@ export default function CalendarView() {
         </div>
       )}
 
-      {/* Calendar Panel */}
-      <section className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
-        {/* Calendar toolbar */}
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--color-border)]">
-          <div className="flex items-center gap-3">
-            <div className="inline-flex border border-[var(--color-border)] rounded overflow-hidden">
-              {(['week', 'month'] as const).map(v => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={cn(
-                    'h-9 md:h-7 px-3 text-[12.5px] md:text-[12px] transition-colors',
-                    view === v
-                      ? 'bg-[var(--color-text)] text-white'
-                      : 'bg-white text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'
-                  )}
-                >
-                  {v === 'week' ? '주간' : '월간'}
-                </button>
-              ))}
-            </div>
+      {/* Toolbar */}
+      <div className="flex items-center justify-between">
+        <div className="inline-flex border border-[var(--color-border)] rounded-md overflow-hidden">
+          {(['week', 'month'] as const).map(v => (
             <button
-              onClick={goToday}
-              className="h-9 md:h-7 text-[12.5px] md:text-[12px] px-3 border border-[var(--color-border)] rounded text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"
-            >
-              오늘
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => navigate('prev')}
-              aria-label="이전"
-              className="w-10 h-10 inline-flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-hover)] active:bg-[var(--color-bg-hover)] rounded"
-            >
-              <ChevronLeft size={18} />
-            </button>
-            <span className="text-[13px] font-medium text-[var(--color-text)] min-w-[160px] text-center tabular-nums">
-              {view === 'week'
-                ? `${format(weekDays[0], 'yyyy.M.d')} — ${format(weekDays[6], 'M.d')}`
-                : format(currentDate, 'yyyy년 M월')}
-            </span>
-            <button
-              onClick={() => navigate('next')}
-              aria-label="다음"
-              className="w-10 h-10 inline-flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-hover)] active:bg-[var(--color-bg-hover)] rounded"
-            >
-              <ChevronRight size={18} />
-            </button>
-          </div>
-        </div>
-
-        {/* Weekday header */}
-        <div className="grid grid-cols-7 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
-          {dayLabels.map((d, i) => (
-            <div
-              key={d}
+              key={v}
+              onClick={() => setView(v)}
               className={cn(
-                'text-center text-[12px] py-2 font-medium',
-                i === 0
-                  ? 'text-[var(--color-danger)]'
-                  : i === 6
-                  ? 'text-[var(--color-primary)]'
-                  : 'text-[var(--color-text-secondary)]'
+                'h-9 px-3.5 text-[13px] font-medium transition-colors',
+                view === v ? 'bg-[var(--color-text)] text-white' : 'bg-white text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'
               )}
             >
-              {d}
-            </div>
+              {v === 'week' ? '주간' : '월간'}
+            </button>
           ))}
         </div>
 
-        {/* Week grid */}
-        {view === 'week' && (
-          <div className="grid grid-cols-7">
-            {weekDays.map(day => {
+        <div className="flex items-center gap-1.5">
+          <button onClick={goToday} className="h-9 px-3 text-[13px] border border-[var(--color-border)] rounded-md text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">
+            오늘
+          </button>
+          <button onClick={() => navigate('prev')} aria-label="이전" className="w-9 h-9 inline-flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-hover)] rounded-md border border-[var(--color-border)]">
+            <ChevronLeft size={17} />
+          </button>
+          <span className="text-[13px] font-medium text-[var(--color-text)] min-w-[120px] text-center tabular-nums">
+            {view === 'week' ? `${format(weekDays[0], 'M.d')} – ${format(weekDays[6], 'M.d')}` : format(currentDate, 'yyyy년 M월')}
+          </span>
+          <button onClick={() => navigate('next')} aria-label="다음" className="w-9 h-9 inline-flex items-center justify-center text-[var(--color-text-muted)] hover:text-[var(--color-text)] hover:bg-[var(--color-bg-hover)] rounded-md border border-[var(--color-border)]">
+            <ChevronRight size={17} />
+          </button>
+        </div>
+      </div>
+
+      {/* ─── WEEK VIEW: date strip + card list ─── */}
+      {view === 'week' && (
+        <>
+          {/* Date strip */}
+          <div className="grid grid-cols-7 gap-1.5">
+            {weekDays.map((day, i) => {
               const daySessions = getSessionsForDate(sessions, day);
               const selected = isSameDay(day, selectedDate);
               const tod = isToday(day);
-              const dayNum = day.getDay();
               return (
                 <button
                   key={day.toISOString()}
                   onClick={() => setSelectedDate(day)}
                   className={cn(
-                    'min-h-[140px] border-r border-b border-[var(--color-border-subtle)] last:border-r-0 p-2 text-left transition-colors flex flex-col',
+                    'flex flex-col items-center gap-1 rounded-xl py-2.5 border transition-colors',
                     selected
-                      ? 'bg-[var(--color-primary-bg)]'
-                      : 'bg-white hover:bg-[var(--color-bg-subtle)]'
+                      ? 'bg-[var(--color-primary)] border-[var(--color-primary)] text-white'
+                      : 'bg-white border-[var(--color-border)] hover:bg-[var(--color-bg-subtle)]'
                   )}
                 >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span
-                      className={cn(
-                        'inline-flex items-center justify-center text-[13px] font-medium tabular-nums',
-                        tod
-                          ? 'w-6 h-6 rounded-full bg-[var(--color-primary)] text-white'
-                          : dayNum === 0
-                          ? 'text-[var(--color-danger)]'
-                          : dayNum === 6
-                          ? 'text-[var(--color-primary)]'
-                          : 'text-[var(--color-text)]'
-                      )}
-                    >
+                  <span className={cn(
+                    'text-[11px] font-medium',
+                    selected ? 'text-white/80' : i === 5 ? 'text-[var(--color-primary)]' : i === 6 ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-muted)]'
+                  )}>
+                    {DAY_LABELS[i]}
+                  </span>
+                  <span className={cn(
+                    'text-[16px] font-bold tabular-nums leading-none',
+                    selected ? 'text-white' : tod ? 'text-[var(--color-primary)]' : 'text-[var(--color-text)]'
+                  )}>
+                    {format(day, 'd')}
+                  </span>
+                  {/* session dots */}
+                  <span className="h-1.5 flex items-center gap-0.5">
+                    {daySessions.slice(0, 3).map(s => (
+                      <span
+                        key={s.id}
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{ backgroundColor: selected ? 'rgba(255,255,255,0.9)' : sessionTypeConfig[s.type].color }}
+                      />
+                    ))}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Selected day card list */}
+          <SessionCardList
+            dateLabel={formatKoreanDate(selectedDate, 'M월 d일 EEEE')}
+            sessions={sessionsForDate}
+            reservedIds={reservedIds}
+            onSelect={setSelectedSession}
+            onGoToday={goToday}
+          />
+        </>
+      )}
+
+      {/* ─── MONTH VIEW: clean dot grid + selected day list ─── */}
+      {view === 'month' && (
+        <>
+          <section className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
+            <div className="grid grid-cols-7 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+              {DAY_LABELS.map((d, i) => (
+                <div key={d} className={cn('text-center text-[12px] py-2 font-medium', i === 5 ? 'text-[var(--color-primary)]' : i === 6 ? 'text-[var(--color-danger)]' : 'text-[var(--color-text-secondary)]')}>
+                  {d}
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7">
+              {Array.from({ length: (monthDays[0].getDay() + 6) % 7 }).map((_, i) => (
+                <div key={`pad-${i}`} className="min-h-[64px] border-r border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-subtle)]" />
+              ))}
+              {monthDays.map(day => {
+                const daySessions = getSessionsForDate(sessions, day);
+                const selected = isSameDay(day, selectedDate);
+                const tod = isToday(day);
+                const dayNum = day.getDay();
+                return (
+                  <button
+                    key={day.toISOString()}
+                    onClick={() => setSelectedDate(day)}
+                    className={cn(
+                      'min-h-[64px] border-r border-b border-[var(--color-border-subtle)] p-1.5 flex flex-col items-center gap-1 transition-colors',
+                      selected ? 'bg-[var(--color-primary-bg)]' : 'bg-white hover:bg-[var(--color-bg-subtle)]'
+                    )}
+                  >
+                    <span className={cn(
+                      'inline-flex items-center justify-center text-[12.5px] font-medium tabular-nums w-6 h-6 rounded-full',
+                      tod ? 'bg-[var(--color-primary)] text-white' : dayNum === 0 ? 'text-[var(--color-danger)]' : dayNum === 6 ? 'text-[var(--color-primary)]' : 'text-[var(--color-text)]'
+                    )}>
                       {format(day, 'd')}
                     </span>
                     {daySessions.length > 0 && (
-                      <span className="text-[11px] text-[var(--color-text-muted)] tabular-nums">
-                        {daySessions.length}개
+                      <span className="flex items-center gap-0.5 flex-wrap justify-center">
+                        {daySessions.slice(0, 4).map(s => (
+                          <span key={s.id} className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: sessionTypeConfig[s.type].color }} />
+                        ))}
+                        {daySessions.length > 4 && <span className="text-[9px] text-[var(--color-text-muted)] leading-none">+</span>}
                       </span>
                     )}
-                  </div>
-                  <div className="space-y-1 flex-1">
-                    {daySessions.slice(0, 3).map(s => {
-                      const config = sessionTypeConfig[s.type];
-                      return (
-                        <div
-                          key={s.id}
-                          className="text-[11px] px-1.5 py-0.5 rounded truncate border"
-                          style={{
-                            backgroundColor: config.bgColor,
-                            color: config.textColor,
-                            borderColor: config.bgColor,
-                          }}
-                        >
-                          <span className="tabular-nums">{s.startTime}</span> {s.name}
-                        </div>
-                      );
-                    })}
-                    {daySessions.length > 3 && (
-                      <div className="text-[11px] text-[var(--color-text-muted)] px-1">
-                        + {daySessions.length - 3}개 더
-                      </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Month grid */}
-        {view === 'month' && (
-          <div className="grid grid-cols-7">
-            {Array.from({ length: monthDays[0].getDay() }).map((_, i) => (
-              <div
-                key={`pad-${i}`}
-                className="min-h-[90px] border-r border-b border-[var(--color-border-subtle)] bg-[var(--color-bg-subtle)]"
-              />
-            ))}
-            {monthDays.map(day => {
-              const daySessions = getSessionsForDate(sessions, day);
-              const selected = isSameDay(day, selectedDate);
-              const tod = isToday(day);
-              const dayNum = day.getDay();
-              return (
-                <button
-                  key={day.toISOString()}
-                  onClick={() => setSelectedDate(day)}
-                  className={cn(
-                    'min-h-[90px] border-r border-b border-[var(--color-border-subtle)] p-1.5 text-left transition-colors flex flex-col',
-                    selected
-                      ? 'bg-[var(--color-primary-bg)]'
-                      : 'bg-white hover:bg-[var(--color-bg-subtle)]'
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'inline-flex items-center justify-center text-[12px] font-medium tabular-nums mb-1 self-start',
-                      tod
-                        ? 'w-5 h-5 rounded-full bg-[var(--color-primary)] text-white'
-                        : dayNum === 0
-                        ? 'text-[var(--color-danger)]'
-                        : dayNum === 6
-                        ? 'text-[var(--color-primary)]'
-                        : 'text-[var(--color-text)]'
-                    )}
-                  >
-                    {format(day, 'd')}
-                  </span>
-                  <div className="space-y-0.5 flex-1">
-                    {daySessions.slice(0, 2).map(s => {
-                      const config = sessionTypeConfig[s.type];
-                      return (
-                        <div
-                          key={s.id}
-                          className="text-[10px] leading-tight px-1 py-[1px] rounded truncate"
-                          style={{ backgroundColor: config.bgColor, color: config.textColor }}
-                        >
-                          {s.name}
-                        </div>
-                      );
-                    })}
-                    {daySessions.length > 2 && (
-                      <div className="text-[10px] text-[var(--color-text-muted)] px-1">
-                        + {daySessions.length - 2}
-                      </div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Legend */}
-        <div className="px-4 py-2.5 border-t border-[var(--color-border)] bg-[var(--color-bg-subtle)] flex items-center gap-4">
-          {Object.entries(sessionTypeConfig).map(([key, config]) => (
-            <div key={key} className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: config.color }} />
-              <span className="text-[12px] text-[var(--color-text-secondary)]">{config.label}</span>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* Session list for selected date */}
-      <section className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--color-border)]">
-          <h2 className="text-[14px] font-semibold text-[var(--color-text)]">
-            {formatKoreanDate(selectedDate, 'yyyy년 M월 d일 EEEE')} 세션
-          </h2>
-          <span className="text-[12px] text-[var(--color-text-muted)]">
-            {sessionsForDate.length > 0 ? `${sessionsForDate.length}개 세션` : '세션 없음'}
-          </span>
-        </div>
-
-        {sessionsForDate.length === 0 ? (
-          <div className="py-12 text-center">
-            <p className="text-[13px] text-[var(--color-text-muted)]">선택한 날짜에 예정된 세션이 없습니다.</p>
-            <button
-              onClick={goToday}
-              className="mt-2 text-[13px] text-[var(--color-primary)] hover:underline"
-            >
-              오늘로 이동
-            </button>
-          </div>
-        ) : (
-          <>
-          {/* Mobile card list */}
-          <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
-            {sessionsForDate.map(session => {
-              const config = sessionTypeConfig[session.type];
-              const full = isSessionFull(session);
-              const ratio = session.maxCapacity > 0
-                ? Math.round((session.currentReservations / session.maxCapacity) * 100)
-                : 0;
-              const statusLabel = getSessionStatusLabel(session);
-              const isReserved = reservations.some(
-                r =>
-                  r.sessionId === session.id &&
-                  r.memberId === currentMember.id &&
-                  r.status === 'reserved'
-              );
-              return (
-                <li
-                  key={session.id}
-                  onClick={() => setSelectedSession(session)}
-                  className="px-4 py-3 cursor-pointer hover:bg-[var(--color-bg-subtle)] transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-[13px] font-medium text-[var(--color-text)] tabular-nums shrink-0">
-                        {session.startTime}
-                      </span>
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium shrink-0"
-                        style={{ backgroundColor: config.bgColor, color: config.textColor }}
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: config.color }} />
-                        {config.label}
-                      </span>
-                      <p className="text-[13px] text-[var(--color-text)] truncate">
-                        {session.name}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        'text-[11.5px] shrink-0',
-                        full
-                          ? 'text-[var(--color-danger)]'
-                          : ratio >= 80
-                          ? 'text-[var(--color-warning)]'
-                          : 'text-[var(--color-success)]'
-                      )}
-                    >
-                      {statusLabel}
-                    </span>
-                  </div>
-                  <div className="flex items-center flex-wrap gap-x-3 gap-y-0.5 text-[12px] text-[var(--color-text-muted)]">
-                    {session.location && <span className="truncate">{session.location}</span>}
-                    {session.isIndoor && (
-                      <span className="text-[11px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded px-1 py-0">
-                        실내
-                      </span>
-                    )}
-                    {isReserved && (
-                      <span className="text-[11px] font-medium px-1 py-0 rounded bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary-border)]">
-                        예약됨
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <span className="text-[11.5px] tabular-nums text-[var(--color-text-secondary)]">
-                      {session.currentReservations} / {session.maxCapacity}
-                    </span>
-                    <div className="flex-1 h-1 bg-[var(--color-bg-hover)] rounded overflow-hidden max-w-[100px]">
-                      <div
-                        className="h-full rounded"
-                        style={{
-                          width: `${ratio}%`,
-                          backgroundColor: full
-                            ? 'var(--color-danger)'
-                            : ratio >= 80
-                            ? 'var(--color-warning)'
-                            : config.color,
-                        }}
-                      />
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-
-          {/* Desktop table */}
-          <div className="hidden sm:block scroll-x">
-          <table className="responsive-table" style={{ minWidth: 640 }}>
-            <thead>
-              <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
-                <th className="text-left font-medium px-4 py-2.5 w-[80px]">시간</th>
-                <th className="text-left font-medium px-4 py-2.5 w-[100px]">유형</th>
-                <th className="text-left font-medium px-4 py-2.5">세션명</th>
-                <th className="text-left font-medium px-4 py-2.5 w-[140px]">장소</th>
-                <th className="text-left font-medium px-4 py-2.5 w-[130px]">예약</th>
-                <th className="text-right font-medium px-4 py-2.5 w-[90px]">상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sessionsForDate.map(session => {
-                const config = sessionTypeConfig[session.type];
-                const full = isSessionFull(session);
-                const ratio = session.maxCapacity > 0
-                  ? Math.round((session.currentReservations / session.maxCapacity) * 100)
-                  : 0;
-                const statusLabel = getSessionStatusLabel(session);
-                const isReserved = reservations.some(
-                  r =>
-                    r.sessionId === session.id &&
-                    r.memberId === currentMember.id &&
-                    r.status === 'reserved'
-                );
-                return (
-                  <tr
-                    key={session.id}
-                    onClick={() => setSelectedSession(session)}
-                    className="border-b border-[var(--color-border-subtle)] last:border-0 hover:bg-[var(--color-bg-subtle)] transition-colors cursor-pointer"
-                  >
-                    <td className="px-4 py-3 text-[var(--color-text)] font-medium tabular-nums">
-                      {session.startTime}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[12px] font-medium"
-                        style={{ backgroundColor: config.bgColor, color: config.textColor }}
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: config.color }} />
-                        {config.label}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-[var(--color-text)] max-w-[280px]">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="truncate" title={session.name}>{session.name}</span>
-                        {session.isIndoor && (
-                          <span className="text-[11px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded px-1.5 py-0 shrink-0">
-                            실내
-                          </span>
-                        )}
-                        {isReserved && (
-                          <span className="text-[11px] font-medium px-1.5 py-0 rounded bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary-border)] shrink-0">
-                            예약됨
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-[var(--color-text-secondary)] max-w-[140px]">
-                      <span className="truncate block" title={session.location || undefined}>{session.location || '—'}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[12px] tabular-nums text-[var(--color-text)]">
-                          {session.currentReservations} / {session.maxCapacity}
-                        </span>
-                        <div className="flex-1 h-1.5 bg-[var(--color-bg-hover)] rounded overflow-hidden max-w-[80px]">
-                          <div
-                            className="h-full rounded"
-                            style={{
-                              width: `${ratio}%`,
-                              backgroundColor: full
-                                ? 'var(--color-danger)'
-                                : ratio >= 80
-                                ? 'var(--color-warning)'
-                                : config.color,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span
-                        className={cn(
-                          'text-[12px]',
-                          full
-                            ? 'text-[var(--color-danger)]'
-                            : ratio >= 80
-                            ? 'text-[var(--color-warning)]'
-                            : 'text-[var(--color-success)]'
-                        )}
-                      >
-                        {statusLabel}
-                      </span>
-                    </td>
-                  </tr>
+                  </button>
                 );
               })}
-            </tbody>
-          </table>
-          </div>
-          </>
-        )}
-      </section>
+            </div>
+            {/* Legend */}
+            <div className="px-4 py-2.5 border-t border-[var(--color-border)] bg-[var(--color-bg-subtle)] flex items-center gap-4 flex-wrap">
+              {Object.entries(sessionTypeConfig).map(([key, config]) => (
+                <div key={key} className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: config.color }} />
+                  <span className="text-[12px] text-[var(--color-text-secondary)]">{config.label}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <SessionCardList
+            dateLabel={formatKoreanDate(selectedDate, 'M월 d일 EEEE')}
+            sessions={sessionsForDate}
+            reservedIds={reservedIds}
+            onSelect={setSelectedSession}
+            onGoToday={goToday}
+          />
+        </>
+      )}
     </div>
+  );
+}
+
+// ─── 선택 날짜의 세션 카드 리스트 (주간/월간 공용) ───
+function SessionCardList({ dateLabel, sessions, reservedIds, onSelect, onGoToday }: {
+  dateLabel: string;
+  sessions: Session[];
+  reservedIds: Set<string>;
+  onSelect: (s: Session) => void;
+  onGoToday: () => void;
+}) {
+  return (
+    <section>
+      <div className="flex items-center justify-between mb-2.5">
+        <h2 className="text-[14px] font-semibold text-[var(--color-text)]">{dateLabel}</h2>
+        <span className="text-[12px] text-[var(--color-text-muted)]">
+          {sessions.length > 0 ? `${sessions.length}개 세션` : '세션 없음'}
+        </span>
+      </div>
+
+      {sessions.length === 0 ? (
+        <div className="bg-white border border-dashed border-[var(--color-border)] rounded-md py-12 text-center">
+          <p className="text-[13px] text-[var(--color-text-muted)]">선택한 날짜에 예정된 세션이 없습니다.</p>
+          <button onClick={onGoToday} className="mt-2 text-[13px] text-[var(--color-primary)] hover:underline">오늘로 이동</button>
+        </div>
+      ) : (
+        <ul className="space-y-2.5">
+          {sessions.map(s => (
+            <SessionCard key={s.id} session={s} reserved={reservedIds.has(s.id)} onClick={() => onSelect(s)} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function SessionCard({ session, reserved, onClick }: { session: Session; reserved: boolean; onClick: () => void }) {
+  const config = sessionTypeConfig[session.type];
+  const full = isSessionFull(session);
+  const ratio = session.maxCapacity > 0 ? Math.min(100, Math.round((session.currentReservations / session.maxCapacity) * 100)) : 0;
+  const statusLabel = getSessionStatusLabel(session);
+  const barColor = full ? 'var(--color-danger)' : ratio >= 80 ? 'var(--color-warning)' : config.color;
+
+  return (
+    <li>
+      <button
+        onClick={onClick}
+        className="w-full text-left bg-white border border-[var(--color-border)] rounded-xl p-3.5 flex items-stretch gap-3.5 hover:border-[var(--color-primary)] hover:shadow-sm transition-all"
+      >
+        {/* time + color bar */}
+        <div className="flex flex-col items-center justify-center shrink-0 w-[52px]">
+          <span className="text-[16px] font-bold text-[var(--color-text)] tabular-nums leading-none">{session.startTime}</span>
+          {session.endTime && <span className="text-[11px] text-[var(--color-text-muted)] tabular-nums mt-1">{session.endTime}</span>}
+        </div>
+        <span className="w-1 rounded-full shrink-0" style={{ backgroundColor: config.color }} />
+
+        {/* main */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium" style={{ backgroundColor: config.bgColor, color: config.textColor }}>
+              {config.label}
+            </span>
+            {reserved && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-[var(--color-primary-bg)] text-[var(--color-primary)] border border-[var(--color-primary-border)]">
+                <Check size={10} />예약됨
+              </span>
+            )}
+            {session.isIndoor && (
+              <span className="text-[11px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded px-1.5 py-0">실내</span>
+            )}
+          </div>
+          <p className="text-[14px] font-semibold text-[var(--color-text)] mt-1 truncate">{session.name}</p>
+          {session.location && (
+            <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5 flex items-center gap-1 truncate">
+              <MapPin size={11} className="shrink-0" />{session.location}
+            </p>
+          )}
+          {/* capacity */}
+          <div className="flex items-center gap-2 mt-2">
+            <div className="flex-1 h-1.5 bg-[var(--color-bg-hover)] rounded-full overflow-hidden max-w-[160px]">
+              <div className="h-full rounded-full transition-all" style={{ width: `${ratio}%`, backgroundColor: barColor }} />
+            </div>
+            <span className="text-[11.5px] tabular-nums text-[var(--color-text-secondary)]">{session.currentReservations}/{session.maxCapacity}</span>
+          </div>
+        </div>
+
+        {/* status + chevron */}
+        <div className="shrink-0 flex flex-col items-end justify-between">
+          <span className={cn(
+            'text-[11.5px] font-medium px-2 py-0.5 rounded-full',
+            full ? 'bg-[var(--color-danger-bg)] text-[var(--color-danger)]' : ratio >= 80 ? 'bg-[var(--color-warning-bg)] text-[var(--color-warning)]' : 'bg-[var(--color-success-bg)] text-[var(--color-success)]'
+          )}>
+            {statusLabel}
+          </span>
+          <ChevronRight size={16} className="text-[var(--color-text-muted)] mt-2" />
+        </div>
+      </button>
+    </li>
   );
 }
