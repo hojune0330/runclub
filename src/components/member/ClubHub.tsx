@@ -160,7 +160,7 @@ function TrainingTeaser({ onGoToTraining }: { onGoToTraining: () => void }) {
     <button
       onClick={onGoToTraining}
       className={cn(
-        'group w-full text-left rounded-xl border transition-all p-4 md:p-5',
+        'group w-full text-left rounded-2xl border transition-all p-4 md:p-5',
         'border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary-bg)] to-white',
         'hover:shadow-md hover:-translate-y-[1px] active:translate-y-0'
       )}
@@ -218,7 +218,7 @@ function EmptyState({
 }) {
   return (
     <div>
-      <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-5 text-[12.5px] text-[var(--color-text-muted)] mb-3 leading-relaxed">
+      <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-5 text-[12.5px] text-[var(--color-text-muted)] mb-3 leading-relaxed">
         아직 활성 수강권이나 최근 예약이 없어요. 관심 있는 클럽을 먼저
         둘러보고, 세션 일정을 확인해보세요.
       </div>
@@ -273,13 +273,13 @@ function ClubCard({
     <button
       onClick={onClick}
       className={cn(
-        'group relative text-center rounded-2xl border transition-all p-5 bg-white',
-        'flex flex-col items-center justify-center gap-2.5 overflow-hidden',
+        'group relative text-center rounded-2xl border transition-all p-4 md:p-5 bg-white',
+        'flex flex-col items-center justify-center gap-2 overflow-hidden',
         'hover:shadow-md hover:-translate-y-[1px] active:translate-y-0',
         isMember ? 'border-[var(--color-border)]' : 'border-[var(--color-border-subtle)]',
         muted && 'opacity-90'
       )}
-      style={{ minHeight: 168 }}
+      style={{ minHeight: 150 }}
     >
       {/* 살짝 깔리는 클럽 컬러 (상단 얇은 라인) */}
       <span
@@ -290,7 +290,7 @@ function ClubCard({
 
       {/* 이모지 — 큰 원형 배지 */}
       <div
-        className="w-16 h-16 rounded-2xl flex items-center justify-center text-[34px] shrink-0 mt-1"
+        className="w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center text-[30px] md:text-[34px] shrink-0 mt-0.5"
         style={{ background: meta.bgColor }}
         aria-hidden
       >
@@ -299,7 +299,7 @@ function ClubCard({
 
       {/* 타이틀 — 메인(가장 큼, 중앙) */}
       <h3
-        className="text-[19px] md:text-[20px] font-bold leading-tight tracking-tight"
+        className="text-[18px] md:text-[20px] font-bold leading-tight tracking-tight"
         style={{ color: meta.textColor }}
       >
         {meta.name}

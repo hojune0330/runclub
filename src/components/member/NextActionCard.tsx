@@ -122,7 +122,7 @@ export default function NextActionCard() {
 
   return (
     <section
-      className="rounded-lg border p-4 sm:p-5"
+      className="rounded-2xl border p-4 sm:p-5"
       style={{ background: c.accentBg, borderColor: `color-mix(in srgb, ${c.accent} 30%, transparent)` }}
     >
       <div className="flex items-start gap-3.5">
