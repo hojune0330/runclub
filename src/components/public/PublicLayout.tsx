@@ -10,13 +10,14 @@ import BusinessFooter from './BusinessFooter';
 const NAV = [
   { href: '/', label: '홈' },
   { href: '/sessions', label: '세션 일정' },
+  { href: '/training', label: '트레이닝 허브' },
   { href: '/about', label: '런클럽 소개' },
 ];
 
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const mobilePrimaryCta = pathname === '/'
+  const mobilePrimaryCta = pathname === '/' || pathname === '/training'
     ? { href: '/login?mode=register', label: '시작하기', icon: ArrowRight }
     : { href: '/login', label: '로그인', icon: LogIn };
   const MobilePrimaryIcon = mobilePrimaryCta.icon;

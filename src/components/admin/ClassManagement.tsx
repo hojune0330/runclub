@@ -3,7 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Target, Plus, Users, Trophy, Flag, Loader2, ChevronLeft, ChevronRight,
-  Inbox, CheckCircle2, XCircle, Clock, Trash2, X, ClipboardCheck, Settings, HeartPulse,
+  Inbox, CheckCircle2, XCircle, Trash2, X, ClipboardCheck, Settings, HeartPulse,
+  Database, Brain,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -34,6 +35,7 @@ const METRIC_OPTIONS: { value: string; label: string }[] = [
 ];
 const KIND_LABEL = Object.fromEntries(KIND_OPTIONS.map(o => [o.value, o.label]));
 const METRIC_LABEL = Object.fromEntries(METRIC_OPTIONS.map(o => [o.value, o.label]));
+const errorMessage = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback;
 
 export default function ClassManagement() {
   const [view, setView] = useState<'list' | 'detail'>('list');
@@ -68,10 +70,10 @@ export default function ClassManagement() {
       <header className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-[18px] font-bold text-[var(--color-text)] flex items-center gap-2">
-            <Target size={18} className="text-[var(--color-primary)]" /> 코칭 클래스
+            <Target size={18} className="text-[var(--color-primary)]" /> 트레이닝 허브 운영
           </h1>
           <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
-            목표 지향 수업(마라톤·하이록스·건강관리 등)을 만들고, 팀을 구성하고, 팀 요청을 검토해요.
+            클래스, 과제, 건강 신호, 데이터 출처를 운영자 관점에서 가볍게 관리합니다.
           </p>
         </div>
         <button onClick={() => setShowCreate(true)}
@@ -79,6 +81,8 @@ export default function ClassManagement() {
           <Plus size={15} /> 클래스 만들기
         </button>
       </header>
+
+      <TrainingOpsPanel classes={classes} pendingCount={pendingReqs.length} loading={loading} />
 
       {/* 검토 대기 팀 요청 */}
       <PendingRequests requests={pendingReqs} onResolved={() => void load()} />
@@ -122,6 +126,51 @@ export default function ClassManagement() {
   );
 }
 
+function TrainingOpsPanel({ classes, pendingCount, loading }: { classes: CoachingClass[]; pendingCount: number; loading: boolean }) {
+  const activeCount = classes.filter(c => c.status === 'active').length;
+  const participantCount = classes.reduce((sum, c) => sum + (c.memberCount ?? 0), 0);
+  const healthSignalCount = classes.filter(c => c.kind === 'glucose' || c.kind === 'health').length;
+
+  const cards = [
+    { label: 'Active classes', value: activeCount, desc: '진행 중 목표 훈련', icon: Target },
+    { label: 'Participants', value: participantCount, desc: '기록을 남길 사람', icon: Users },
+    { label: 'Coach inbox', value: pendingCount, desc: '검토 대기 요청', icon: Inbox },
+    { label: 'Body signals', value: healthSignalCount, desc: '건강 신호 클래스', icon: Database },
+  ];
+
+  return (
+    <section className="border bg-white p-4" style={{ borderColor: '#D9D6CE' }}>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <p className="font-mono text-[11px] text-[var(--color-text-muted)]">§1 OPERATOR DASHBOARD</p>
+          <h2 className="mt-1 text-[14.5px] font-semibold text-[var(--color-text)]">기록이 분석으로 넘어가기 전 운영자가 보는 상태</h2>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--color-text-secondary)]">
+            Train Oracle식으로 말하면 아직 AI 판정 이전 단계입니다. 현재 앱에서는 클래스와 기록 흐름을 정리하고, 정밀 분석은 이후 연동 지점으로 남깁니다.
+          </p>
+        </div>
+        <span className="hidden shrink-0 items-center gap-1 border px-2 py-1 font-mono text-[10.5px] uppercase tracking-[0.08em] text-[var(--color-text-muted)] sm:inline-flex">
+          <Brain size={12} /> oracle-ready
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-0 border md:grid-cols-4" style={{ borderColor: '#E8E6DF' }}>
+        {cards.map((card, index) => {
+          const Icon = card.icon;
+          return (
+            <div key={card.label} className="border-b border-r px-3 py-3 md:border-b-0 [&:nth-child(2n)]:border-r-0 md:[&:nth-child(2n)]:border-r md:last:border-r-0" style={{ borderColor: '#E8E6DF' }}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">{card.label}</span>
+                <Icon size={13} className={index === 2 && pendingCount > 0 ? 'text-amber-700' : 'text-[var(--color-text-muted)]'} />
+              </div>
+              <p className="font-mono text-[22px] font-semibold leading-none text-[var(--color-text)]">{loading ? '—' : card.value.toLocaleString()}</p>
+              <p className="mt-1.5 text-[11.5px] text-[var(--color-text-muted)]">{card.desc}</p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function PendingRequests({ requests, onResolved }: { requests: TeamRequest[]; onResolved: () => void }) {
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -134,8 +183,8 @@ function PendingRequests({ requests, onResolved }: { requests: TeamRequest[]; on
     try {
       await api.teamRequests.resolve(id, action, note);
       onResolved();
-    } catch (e: any) {
-      alert(e?.message ?? '처리에 실패했어요');
+    } catch (e: unknown) {
+      alert(errorMessage(e, '처리에 실패했어요'));
     } finally {
       setBusyId(null);
     }
@@ -197,8 +246,8 @@ function CreateClassModal({ onClose, onCreated }: { onClose: () => void; onCreat
         endDate: endDate || undefined,
       });
       onCreated();
-    } catch (e: any) {
-      alert(e?.message ?? '생성에 실패했어요');
+    } catch (e: unknown) {
+      alert(errorMessage(e, '생성에 실패했어요'));
     } finally {
       setBusy(false);
     }
@@ -294,7 +343,7 @@ function ClassDetailAdmin({ classId, onBack }: { classId: string; onBack: () => 
       await api.classes.createTeam(classId, { name: newTeamName.trim(), color: newTeamColor });
       setNewTeamName('');
       await load();
-    } catch (e: any) { alert(e?.message ?? '팀 생성 실패'); }
+    } catch (e: unknown) { alert(errorMessage(e, '팀 생성 실패')); }
     finally { setBusy(false); }
   };
 
@@ -302,19 +351,19 @@ function ClassDetailAdmin({ classId, onBack }: { classId: string; onBack: () => 
     try {
       await api.classes.enroll(classId, { memberId, teamId: teamId || undefined });
       await load();
-    } catch (e: any) { alert(e?.message ?? '팀 배정 실패'); }
+    } catch (e: unknown) { alert(errorMessage(e, '팀 배정 실패')); }
   };
 
   const archive = async () => {
     if (!confirm('이 클래스를 보관 처리할까요? (목록에서 숨겨집니다)')) return;
     try { await api.classes.update(classId, { status: 'archived' }); await load(); }
-    catch (e: any) { alert(e?.message ?? '실패'); }
+    catch (e: unknown) { alert(errorMessage(e, '실패')); }
   };
 
   const remove = async () => {
     if (!confirm('정말 삭제하시겠어요? 팀·등록·요청이 모두 삭제됩니다. (되돌릴 수 없음)')) return;
     try { await api.classes.remove(classId); onBack(); }
-    catch (e: any) { alert(e?.message ?? '삭제 실패'); }
+    catch (e: unknown) { alert(errorMessage(e, '삭제 실패')); }
   };
 
   if (loading) return <div className="flex items-center justify-center py-20"><Loader2 size={22} className="animate-spin text-[var(--color-text-muted)]" /></div>;

@@ -96,6 +96,12 @@ export default async function LandingPage() {
               >
                 이미 회원이에요 →
               </Link>
+              <Link
+                href="/training"
+                className="inline-flex items-center justify-center h-12 sm:h-[52px] px-2 sm:px-3 text-[14px] font-medium text-[var(--color-text-secondary)] sm:hover:text-[var(--color-text)]"
+              >
+                훈련 기록만 보러 왔어요 →
+              </Link>
             </div>
           </div>
         </div>
@@ -136,10 +142,10 @@ export default async function LandingPage() {
               desc="초보자도 시작 순서를 알 수 있어요"
             />
             <PurposeCard
-              href="/login?mode=register"
+              href="/training"
               icon={ArrowRight}
-              title="회원가입하기"
-              desc="가입 후 예약과 QR 출석을 써요"
+              title="훈련 기록하기"
+              desc="트레이닝 허브만 먼저 볼 수 있어요"
               strong
             />
           </nav>

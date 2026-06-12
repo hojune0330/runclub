@@ -36,7 +36,7 @@ const navGroups: { label: string; items: { id: AdminTab; label: string; icon: ty
     items: [
       { id: 'today', label: '오늘', icon: Sun },
       { id: 'sessions', label: '세션 관리', icon: Calendar },
-      { id: 'classes', label: '코칭 클래스', icon: Target },
+      { id: 'classes', label: '트레이닝 허브', icon: Target },
       { id: 'qr', label: '출석 체크', icon: QrCode },
       { id: 'notices', label: '공지사항', icon: Megaphone },
       { id: 'tags', label: '세션 태그', icon: Tag },
@@ -144,8 +144,8 @@ export default function AdminApp() {
       // AuthContext는 마운트 시 한 번만 /api/auth/me 를 읽으므로, 쿠키 교체 후
       // 가장 확실한 반영 방법은 전체 새로고침이다.
       setTimeout(() => window.location.assign('/app'), 350);
-    } catch (e: any) {
-      toast.error('전환에 실패했어요', e?.message ?? '잠시 후 다시 시도해주세요');
+    } catch (e: unknown) {
+      toast.error('전환에 실패했어요', e instanceof Error ? e.message : '잠시 후 다시 시도해주세요');
       setPreviewing(false);
     }
   };
