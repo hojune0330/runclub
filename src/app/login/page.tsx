@@ -17,7 +17,11 @@ function LoginGate() {
   useEffect(() => {
     if (seeded.current) return;
     seeded.current = true;
-    api.seed().catch(() => {});
+    // /app과 동일하게 개발 환경에서만 자동 seed를 호출한다.
+    // 운영에서는 seed endpoint가 토큰/플래그로 막혀 있어 브라우저 403 노이즈만 만든다.
+    if (process.env.NODE_ENV !== 'production') {
+      api.seed().catch(() => {});
+    }
   }, []);
 
   // If already authenticated, send to the app root (which will route to the correct dashboard)
@@ -38,7 +42,7 @@ function LoginGate() {
       <div className="max-w-[440px] mx-auto px-4 pt-6">
         <Link
           href="/"
-          className="inline-flex items-center gap-1 text-[12.5px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] transition-colors"
+          className="inline-flex items-center gap-1 text-[12.5px] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] transition-colors"
         >
           <ArrowLeft size={13} /> 홈으로
         </Link>

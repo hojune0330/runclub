@@ -2,19 +2,23 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import {
-  Sun, Clock, MapPin, Users, Phone, Check, Ban, RotateCcw,
+  Sun, Clock, MapPin, Phone, Check, Ban, RotateCcw,
   Sprout, History, StickyNote, RefreshCw, ChevronRight, AlertTriangle,
 } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig, reservationStatusConfig } from '@/lib/config';
 import { formatKoreanDate, cn, format } from '@/lib/utils';
-import { useToast } from '@/components/ui';
+import { Button, ConfirmDialog, EmptyState, useToast } from '@/components/ui';
 import type { Session, Reservation, ReservationStatus, Member } from '@/types';
 
 // 회원별 과거 출석 이력 요약 — 전체 reservations 에서 한 번만 인덱싱.
 interface MemberHistory {
   attendedCount: number;
   lastAttendedDate: string | null; // YYYY-MM-DD
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : '잠시 후 다시 시도해주세요';
 }
 
 export default function TodayDashboard() {
@@ -88,6 +92,7 @@ export default function TodayDashboard() {
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
 
   const setStatus = async (r: Reservation, status: ReservationStatus) => {
     if (busyId) return;
@@ -95,23 +100,27 @@ export default function TodayDashboard() {
     try {
       await updateReservationStatus(r.id, status);
       await refreshReservations();
-    } catch (e: any) {
-      toast.error('처리 실패', e?.message ?? '잠시 후 다시 시도해주세요');
+    } catch (e: unknown) {
+      toast.error('처리 실패', getErrorMessage(e));
     } finally {
       setBusyId(null);
     }
   };
 
-  const handleBulkNoshow = async () => {
+  const navigateToSessions = () => {
+    window.dispatchEvent(new CustomEvent('admin:navigate', { detail: 'sessions' }));
+  };
+
+  const runBulkNoshow = async () => {
     if (!selected || bulkBusy) return;
-    if (!confirm(`'${selected.name}' 세션의 남은 예약 대기자를 모두 노쇼 처리할까요?`)) return;
     setBulkBusy(true);
     try {
       const n = await bulkMarkNoshow(selected.id);
       await refreshReservations();
       toast.success('노쇼 일괄 처리 완료', `${n}건을 노쇼로 표시했어요.`);
-    } catch (e: any) {
-      toast.error('처리 실패', e?.message ?? '잠시 후 다시 시도해주세요');
+      setBulkConfirmOpen(false);
+    } catch (e: unknown) {
+      toast.error('처리 실패', getErrorMessage(e));
     } finally {
       setBulkBusy(false);
     }
@@ -139,10 +148,18 @@ export default function TodayDashboard() {
       </div>
 
       {todaySessions.length === 0 ? (
-        <div className="bg-white border border-[var(--color-border)] rounded-md py-16 text-center">
+        <div className="bg-white border border-[var(--color-border)] rounded-md py-16 px-4">
           <Sun size={40} className="text-[var(--color-border-strong)] mx-auto mb-3" />
-          <p className="text-[14px] font-medium text-[var(--color-text)]">오늘 예정된 세션이 없습니다.</p>
-          <p className="text-[13px] text-[var(--color-text-muted)] mt-1">세션 관리에서 오늘 세션을 추가할 수 있어요.</p>
+          <EmptyState
+            message="오늘 예정된 세션이 없습니다."
+            description="세션 관리에서 오늘 일정을 추가하면 이 화면에서 바로 출석 처리를 시작할 수 있어요."
+            action={(
+              <Button type="button" variant="primary" onClick={navigateToSessions}>
+                세션 관리로 이동
+              </Button>
+            )}
+            className="py-0"
+          />
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 items-start">
@@ -180,7 +197,7 @@ export default function TodayDashboard() {
                   </div>
                   {counts.reserved > 0 && (
                     <button
-                      onClick={handleBulkNoshow}
+                      onClick={() => setBulkConfirmOpen(true)}
                       disabled={bulkBusy}
                       className="mt-3 inline-flex items-center gap-1.5 h-8 px-2.5 text-[12px] text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-hover)] disabled:opacity-50"
                     >
@@ -219,6 +236,18 @@ export default function TodayDashboard() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={bulkConfirmOpen}
+        title="남은 예약 대기자를 노쇼 처리할까요?"
+        description={selected ? `'${selected.name}' 세션의 남은 예약 대기자 ${counts.reserved}명을 모두 노쇼로 표시합니다. 이 작업은 출석 현황에 바로 반영돼요.` : undefined}
+        confirmLabel="노쇼 처리"
+        cancelLabel="취소"
+        tone="danger"
+        busy={bulkBusy}
+        onConfirm={runBulkNoshow}
+        onClose={() => setBulkConfirmOpen(false)}
+      />
     </div>
   );
 }

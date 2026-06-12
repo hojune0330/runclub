@@ -96,8 +96,8 @@ export default function LoginPage() {
         note: resetNote.trim() || undefined,
       });
       setResetMessage(res.message || '요청이 접수되었습니다. 관리자가 확인 후 안내드립니다.');
-    } catch (err: any) {
-      setResetError(err?.message || '요청 접수 중 오류가 발생했습니다');
+    } catch (err: unknown) {
+      setResetError(err instanceof Error ? err.message : '요청 접수 중 오류가 발생했습니다');
     } finally {
       setResetSubmitting(false);
     }
@@ -147,6 +147,7 @@ export default function LoginPage() {
                   onChange={e => setName(e.target.value)}
                   placeholder="홍길동"
                   required
+                  autoComplete="name"
                   className="input"
                 />
               </Field>
@@ -172,6 +173,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="email@example.com"
+                  autoComplete="email"
                   className="input"
                 />
               </Field>
@@ -199,6 +201,8 @@ export default function LoginPage() {
                 </button>
               </div>
             </Field>
+
+            {mode === 'register' && <RegisterFlowHint />}
 
             {error && (
               <div className="text-[13px] text-[var(--color-danger)] bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-3 py-2 rounded space-y-2">
@@ -304,6 +308,7 @@ export default function LoginPage() {
                     onChange={e => setResetName(e.target.value)}
                     placeholder="홍길동"
                     required
+                    autoComplete="name"
                     className="input"
                   />
                 </Field>
@@ -440,6 +445,17 @@ export default function LoginPage() {
           color: var(--color-text-disabled);
         }
       `}</style>
+    </div>
+  );
+}
+
+function RegisterFlowHint() {
+  return (
+    <div className="rounded-md border border-[var(--color-primary-border)] bg-[var(--color-primary-bg)] px-3 py-2.5 text-[12.5px] leading-relaxed text-[var(--color-primary)]">
+      <p className="font-semibold">가입 후 흐름</p>
+      <p className="mt-0.5 text-[12px]">
+        수강권 확인 → 세션 예약 → 현장 QR 출석 순서로 진행돼요.
+      </p>
     </div>
   );
 }

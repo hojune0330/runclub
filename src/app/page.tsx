@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { ArrowRight, Calendar, MapPin, Clock, Users, Ticket } from 'lucide-react';
+import { ArrowRight, Calendar, MapPin, Clock, Users, Ticket, type LucideIcon } from 'lucide-react';
 import PublicLayout from '@/components/public/PublicLayout';
 import PublicProductCard from '@/components/public/PublicProductCard';
 import { sessionTypeConfig } from '@/lib/config';
@@ -102,11 +102,56 @@ export default async function LandingPage() {
       </section>
 
       {/*
+        ── PURPOSE QUICK START ──
+        첫 방문자가 자기 목적에 맞는 첫 행동을 바로 고를 수 있도록 4개만 노출한다.
+        새 화면을 만들지 않고 기존 섹션/페이지로 연결해 홈이 과밀해지지 않게 유지.
+      */}
+      <section className="bg-[var(--color-bg-subtle)] border-y border-[var(--color-border-subtle)]">
+        <div className="max-w-[1200px] mx-auto px-5 md:px-6 py-5 md:py-6">
+          <div className="mb-3 md:mb-4">
+            <p className="text-[15px] md:text-[17px] font-bold text-[var(--color-text)] tracking-[-0.01em]">
+              무엇부터 볼까요?
+            </p>
+            <p className="mt-1 text-[12.5px] md:text-[13.5px] text-[var(--color-text-secondary)]">
+              목적에 맞는 입구를 먼저 고르면 더 빨리 시작할 수 있어요.
+            </p>
+          </div>
+          <nav className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 md:gap-3" aria-label="목적별 빠른 시작">
+            <PurposeCard
+              href="/sessions"
+              icon={Calendar}
+              title="일정 먼저 보기"
+              desc="날짜와 잔여 자리를 확인해요"
+            />
+            <PurposeCard
+              href="#products"
+              icon={Ticket}
+              title="수강권 보기"
+              desc="참여 전 필요한 상품을 확인해요"
+            />
+            <PurposeCard
+              href="#first-guide"
+              icon={Users}
+              title="처음이라면"
+              desc="초보자도 시작 순서를 알 수 있어요"
+            />
+            <PurposeCard
+              href="/login?mode=register"
+              icon={ArrowRight}
+              title="회원가입하기"
+              desc="가입 후 예약과 QR 출석을 써요"
+              strong
+            />
+          </nav>
+        </div>
+      </section>
+
+      {/*
         ── UPCOMING SESSIONS ──
         랜딩의 진짜 콘텐츠. 가입 전에도 일정·자리를 확인할 수 있다는 가치.
         섹션 헤더 톤 다운 (서브카피 줄임), 카드 그리드 그대로 유지.
       */}
-      <section className="bg-white border-t border-[var(--color-border-subtle)]">
+      <section id="upcoming-sessions" className="bg-white border-t border-[var(--color-border-subtle)] scroll-mt-20">
         <div className="max-w-[1200px] mx-auto px-5 md:px-6 py-10 md:py-16">
           <div className="flex items-end justify-between gap-3 mb-5 md:mb-7">
             <h2 className="text-[20px] md:text-[26px] font-bold tracking-[-0.01em] text-[var(--color-text)]">
@@ -161,7 +206,7 @@ export default async function LandingPage() {
         보여준다. compact 모드로 공간을 적게 차지하면서도 3종 대표 상품 노출.
         마케팅 목적: "가격이 이렇구나" → 가입 장벽 ↓
       */}
-      <section className="bg-white border-b border-[var(--color-border-subtle)]">
+      <section id="products" className="bg-white border-b border-[var(--color-border-subtle)] scroll-mt-20">
         <div className="max-w-[1200px] mx-auto px-5 md:px-6 py-10 md:py-14">
           <div className="flex items-end justify-between gap-3 mb-5 md:mb-7">
             <h2 className="text-[20px] md:text-[26px] font-bold tracking-[-0.01em] text-[var(--color-text)]">
@@ -184,7 +229,7 @@ export default async function LandingPage() {
         토스 패턴: 굵직한 숫자 + 짧은 헤드라인 + 한 줄 보조 설명.
         세번째 단계 끝에 단일 CTA로 다시 컨버전 회수.
       */}
-      <section className="bg-white">
+      <section id="first-guide" className="bg-white scroll-mt-20">
         <div className="max-w-[1200px] mx-auto px-5 md:px-6 py-12 md:py-20">
           <h2 className="text-[20px] md:text-[26px] font-bold tracking-[-0.01em] text-[var(--color-text)]">
             이렇게 사용해요
@@ -192,6 +237,21 @@ export default async function LandingPage() {
           <p className="mt-2 text-[13.5px] md:text-[14.5px] text-[var(--color-text-muted)]">
             세 단계면 첫 세션 예약까지 끝나요.
           </p>
+
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-2.5 md:gap-3">
+            <BeginnerNote
+              title="초보도 괜찮아요"
+              desc="일정에서 세션 유형을 보고 부담 없는 러닝부터 고를 수 있어요."
+            />
+            <BeginnerNote
+              title="먼저 확인할 것"
+              desc="날짜, 장소, 잔여 인원과 필요한 수강권을 가입 전에 볼 수 있어요."
+            />
+            <BeginnerNote
+              title="현장에서는 간단히"
+              desc="예약 후에는 앱에서 QR을 열고 출석하면 기록이 자동으로 남아요."
+            />
+          </div>
 
           <ol className="mt-7 md:mt-10 grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-5">
             <Step
@@ -242,6 +302,56 @@ function Stat({ value, suffix, label }: { value: number; suffix: string; label: 
         </span>
       </p>
       <p className="text-[11.5px] md:text-[12.5px] text-[var(--color-text-muted)] mt-1.5">{label}</p>
+    </div>
+  );
+}
+
+function PurposeCard({
+  href,
+  icon: Icon,
+  title,
+  desc,
+  strong = false,
+}: {
+  href: string;
+  icon: LucideIcon;
+  title: string;
+  desc: string;
+  strong?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex min-h-[112px] flex-col gap-2.5 rounded-md border border-[var(--color-border)] bg-white p-3 md:min-h-0 md:flex-row md:items-start md:gap-3 md:p-4 transition-all active:scale-[0.99] sm:hover:border-[var(--color-primary-border)] sm:hover:shadow-sm"
+    >
+      <span
+        className={strong
+          ? 'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary)] text-white md:mt-0.5'
+          : 'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-bg)] text-[var(--color-primary)] md:mt-0.5'}
+        aria-hidden
+      >
+        <Icon size={15} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 text-[13px] md:text-[14px] font-semibold text-[var(--color-text)]">
+          {title}
+          <ArrowRight size={12} className="opacity-0 -translate-x-1 transition-all group-hover:opacity-100 group-hover:translate-x-0" />
+        </span>
+        <span className="mt-1 block text-[11.5px] md:text-[12.5px] leading-relaxed text-[var(--color-text-secondary)]">
+          {desc}
+        </span>
+      </span>
+    </Link>
+  );
+}
+
+function BeginnerNote({ title, desc }: { title: string; desc: string }) {
+  return (
+    <div className="rounded-md border border-[var(--color-border-subtle)] bg-[var(--color-bg-subtle)] px-3.5 py-3">
+      <p className="text-[13px] md:text-[13.5px] font-semibold text-[var(--color-text)]">{title}</p>
+      <p className="mt-1 text-[12px] md:text-[12.5px] leading-relaxed text-[var(--color-text-secondary)]">
+        {desc}
+      </p>
     </div>
   );
 }

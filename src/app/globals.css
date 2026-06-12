@@ -12,7 +12,7 @@
 
   --color-text: #1a1d21;
   --color-text-secondary: #51585f;
-  --color-text-muted: #8a9098;
+  --color-text-muted: #69717a;
   --color-text-disabled: #b5bac0;
 
   /* ── Primary (Accent) ── */
@@ -27,7 +27,7 @@
   --color-success-bg: #e6f4ea;
   --color-success-border: #b7dfc3;
 
-  --color-warning: #d97706;
+  --color-warning: #92400e;
   --color-warning-bg: #fef3c7;
   --color-warning-border: #fcd89a;
 

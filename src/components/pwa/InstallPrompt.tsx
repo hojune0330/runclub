@@ -60,7 +60,12 @@ function wasRecentlyDismissed(): boolean {
   }
 }
 
-export default function InstallPrompt() {
+export default function InstallPrompt({
+  bottomOffsetClassName = 'bottom-[calc(76px+env(safe-area-inset-bottom))] md:bottom-4',
+}: {
+  /** 모바일 앱 하단 탭바와 겹치지 않도록 호출부가 위치를 조정할 수 있는 모듈화 지점 */
+  bottomOffsetClassName?: string;
+}) {
   const [bipEvent, setBipEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [showIosSheet, setShowIosSheet] = useState(false);
   const [visible, setVisible] = useState(false);
@@ -127,7 +132,8 @@ export default function InstallPrompt() {
       {!showIosSheet && (
         <div
           className={cn(
-            'fixed bottom-3 left-3 right-3 z-40 max-w-[420px] mx-auto',
+            'fixed left-3 right-3 z-40 max-w-[420px] mx-auto',
+            bottomOffsetClassName,
             'bg-white border border-[var(--color-border)] rounded-md shadow-lg',
             'flex items-center gap-3 p-3 animate-slide-up'
           )}
@@ -141,7 +147,7 @@ export default function InstallPrompt() {
             <p className="text-[13px] font-semibold text-[var(--color-text)] leading-tight">
               홈 화면에 추가하기
             </p>
-            <p className="text-[11.5px] text-[var(--color-text-muted)] mt-0.5 leading-tight">
+            <p className="text-[11.5px] text-[var(--color-text-secondary)] mt-0.5 leading-tight">
               매번 링크 찾지 마세요. 한 번 설치하면 앱처럼 바로 열려요.
             </p>
           </div>
@@ -154,7 +160,7 @@ export default function InstallPrompt() {
           <button
             onClick={dismiss}
             aria-label="닫기"
-            className="shrink-0 p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+            className="shrink-0 p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
           >
             <X size={14} />
           </button>
@@ -164,7 +170,7 @@ export default function InstallPrompt() {
       {/* iOS Safari용 안내 시트 */}
       {showIosSheet && (
         <div
-          className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center px-3 pb-3"
+          className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center px-3 pb-[calc(16px+env(safe-area-inset-bottom))] sm:pb-3"
           onClick={dismiss}
         >
           <div
@@ -176,21 +182,21 @@ export default function InstallPrompt() {
                 <p className="text-[14.5px] font-semibold text-[var(--color-text)]">
                   홈 화면에 추가하기
                 </p>
-                <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">
+                <p className="text-[12px] text-[var(--color-text-secondary)] mt-0.5">
                   Safari 하단의 단계를 따라하면 앱처럼 바로 열려요.
                 </p>
               </div>
               <button
                 onClick={dismiss}
                 aria-label="닫기"
-                className="shrink-0 p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                className="shrink-0 p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text)]"
               >
                 <X size={16} />
               </button>
             </div>
             <ol className="space-y-2 mt-3">
               <li className="flex items-center gap-2 text-[13px] text-[var(--color-text-secondary)]">
-                <span className="shrink-0 w-6 h-6 rounded-full bg-[var(--color-bg-subtle)] border border-[var(--color-border)] inline-flex items-center justify-center text-[11.5px] font-semibold text-[var(--color-text-muted)] tabular-nums">
+                <span className="shrink-0 w-6 h-6 rounded-full bg-[var(--color-bg-subtle)] border border-[var(--color-border)] inline-flex items-center justify-center text-[11.5px] font-semibold text-[var(--color-text-secondary)] tabular-nums">
                   1
                 </span>
                 <span className="inline-flex items-center gap-1">
@@ -198,7 +204,7 @@ export default function InstallPrompt() {
                 </span>
               </li>
               <li className="flex items-center gap-2 text-[13px] text-[var(--color-text-secondary)]">
-                <span className="shrink-0 w-6 h-6 rounded-full bg-[var(--color-bg-subtle)] border border-[var(--color-border)] inline-flex items-center justify-center text-[11.5px] font-semibold text-[var(--color-text-muted)] tabular-nums">
+                <span className="shrink-0 w-6 h-6 rounded-full bg-[var(--color-bg-subtle)] border border-[var(--color-border)] inline-flex items-center justify-center text-[11.5px] font-semibold text-[var(--color-text-secondary)] tabular-nums">
                   2
                 </span>
                 <span className="inline-flex items-center gap-1">
@@ -206,7 +212,7 @@ export default function InstallPrompt() {
                 </span>
               </li>
               <li className="flex items-center gap-2 text-[13px] text-[var(--color-text-secondary)]">
-                <span className="shrink-0 w-6 h-6 rounded-full bg-[var(--color-bg-subtle)] border border-[var(--color-border)] inline-flex items-center justify-center text-[11.5px] font-semibold text-[var(--color-text-muted)] tabular-nums">
+                <span className="shrink-0 w-6 h-6 rounded-full bg-[var(--color-bg-subtle)] border border-[var(--color-border)] inline-flex items-center justify-center text-[11.5px] font-semibold text-[var(--color-text-secondary)] tabular-nums">
                   3
                 </span>
                 <span>오른쪽 위 추가를 누르면 끝!</span>

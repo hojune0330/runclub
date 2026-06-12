@@ -20,7 +20,6 @@ import {
   ALL_CLUB_TYPES,
   getMyClubs,
   getClubStats,
-  type ClubMembership,
 } from '@/lib/clubs';
 import { format, cn } from '@/lib/utils';
 import NextActionCard from './NextActionCard';
@@ -79,9 +78,6 @@ export default function ClubHub({ onSelectClub, onGoToDashboard, onGoToTraining 
       {/* 다음 할 일 — 가장 중요한 행동 유도 */}
       <NextActionCard />
 
-      {/* 트레이닝 허브 디스커버리 — 클래스 없이도 누구나 */}
-      {onGoToTraining && <TrainingTeaser onGoToTraining={onGoToTraining} />}
-
       {/* 내 클럽 */}
       <section>
         <div className="flex items-end justify-between mb-2.5">
@@ -92,7 +88,7 @@ export default function ClubHub({ onSelectClub, onGoToDashboard, onGoToTraining 
           {memberships.length > 0 && (
             <button
               onClick={onGoToDashboard}
-              className="h-9 px-2.5 -mr-2 text-[12px] text-[var(--color-text-muted)] hover:text-[var(--color-text)] active:bg-[var(--color-bg-hover)] rounded inline-flex items-center gap-1"
+              className="h-9 px-2.5 -mr-2 text-[12px] text-[var(--color-text-secondary)] hover:text-[var(--color-text)] active:bg-[var(--color-bg-hover)] rounded inline-flex items-center gap-1"
             >
               내 활동 통계
               <ArrowRight size={12} />
@@ -108,7 +104,6 @@ export default function ClubHub({ onSelectClub, onGoToDashboard, onGoToTraining 
               <ClubCard
                 key={m.type}
                 type={m.type}
-                membership={m}
                 onClick={() => onSelectClub(m.type)}
                 todayIso={todayIso}
               />
@@ -116,6 +111,9 @@ export default function ClubHub({ onSelectClub, onGoToDashboard, onGoToTraining 
           </div>
         )}
       </section>
+
+      {/* 트레이닝 허브 디스커버리 — 즉시 할 일/내 클럽 확인 후 보조 행동으로 제안 */}
+      {onGoToTraining && <TrainingTeaser onGoToTraining={onGoToTraining} />}
 
       {/* 다른 클럽 둘러보기 */}
       {otherClubs.length > 0 && memberships.length > 0 && (
@@ -129,7 +127,6 @@ export default function ClubHub({ onSelectClub, onGoToDashboard, onGoToTraining 
               <ClubCard
                 key={t}
                 type={t}
-                membership={null}
                 onClick={() => onSelectClub(t)}
                 todayIso={todayIso}
                 muted
@@ -182,7 +179,7 @@ function TrainingTeaser({ onGoToTraining }: { onGoToTraining: () => void }) {
               누구나 무료
             </span>
           </div>
-          <p className="text-[12px] text-[var(--color-text-muted)] mt-1 leading-relaxed">
+          <p className="text-[12px] text-[var(--color-text-secondary)] mt-1 leading-relaxed">
             클래스를 듣지 않아도 괜찮아요. 활동 기록·마일리지·건강 관리·데이터
             연동을 <span className="font-medium text-[var(--color-text)]">지금 바로</span> 써볼 수 있어요.
           </p>
@@ -218,7 +215,7 @@ function EmptyState({
 }) {
   return (
     <div>
-      <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-5 text-[12.5px] text-[var(--color-text-muted)] mb-3 leading-relaxed">
+      <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-4 py-5 text-[12.5px] text-[var(--color-text-secondary)] mb-3 leading-relaxed">
         아직 활성 수강권이나 최근 예약이 없어요. 관심 있는 클럽을 먼저
         둘러보고, 세션 일정을 확인해보세요.
       </div>
@@ -227,7 +224,6 @@ function EmptyState({
           <ClubCard
             key={t}
             type={t}
-            membership={null}
             onClick={() => onSelectClub(t)}
             todayIso={format(new Date(), 'yyyy-MM-dd')}
             muted
@@ -240,13 +236,11 @@ function EmptyState({
 
 function ClubCard({
   type,
-  membership,
   onClick,
   todayIso,
   muted = false,
 }: {
   type: SessionType;
-  membership: ClubMembership | null;
   onClick: () => void;
   todayIso: string;
   muted?: boolean;
@@ -306,7 +300,7 @@ function ClubCard({
       </h3>
 
       {/* 설명 — 아주 짧게, 부가적으로 (한 줄) */}
-      <p className="text-[11.5px] text-[var(--color-text-muted)] leading-snug line-clamp-1 max-w-[90%]">
+      <p className="text-[11.5px] text-[var(--color-text-secondary)] leading-snug line-clamp-1 max-w-[90%]">
         {meta.short} · {meta.dayLabel}
       </p>
 
@@ -325,7 +319,7 @@ function ClubCard({
           </span>
         )}
         {!isMember && (
-          <span className="inline-flex items-center gap-1 text-[11.5px] font-medium px-2.5 py-1 rounded-full bg-[var(--color-bg-subtle)] text-[var(--color-text-muted)]">
+          <span className="inline-flex items-center gap-1 text-[11.5px] font-medium px-2.5 py-1 rounded-full bg-[var(--color-bg-subtle)] text-[var(--color-text-secondary)]">
             <Compass size={12} />
             둘러보기
           </span>

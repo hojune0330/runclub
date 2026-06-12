@@ -8,6 +8,7 @@ import {
   DialogContent as RadixDialogContent,
   DialogHeader as RadixDialogHeader,
   DialogTitle as RadixDialogTitle,
+  DialogDescription as RadixDialogDescription,
   DialogBody as RadixDialogBody,
 } from '@/components/ui/shadcn/dialog';
 import {
@@ -127,6 +128,73 @@ export function Button({
     >
       {children}
     </button>
+  );
+}
+
+// ─── ConfirmDialog ───
+// 브라우저 기본 confirm() 대신 Radix Dialog 기반으로 확인 UX를 통일한다.
+// 포커스 트랩/ESC/aria 처리는 Dialog 어댑터가 담당하고, 호출부는 의미와 액션만 넘긴다.
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel = '확인',
+  cancelLabel = '취소',
+  tone = 'primary',
+  busy = false,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean;
+  title: string;
+  description?: ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: 'primary' | 'danger';
+  busy?: boolean;
+  onConfirm: () => void | Promise<void>;
+  onClose: () => void;
+}) {
+  return (
+    <RadixDialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && !busy) onClose();
+      }}
+    >
+      <RadixDialogContent size="sm" showCloseButton={!busy}>
+        <RadixDialogHeader>
+          <RadixDialogTitle>{title}</RadixDialogTitle>
+        </RadixDialogHeader>
+        <RadixDialogBody>
+          {description && (
+            <RadixDialogDescription className="leading-relaxed">
+              {description}
+            </RadixDialogDescription>
+          )}
+          <div className="mt-5 flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onClose}
+              disabled={busy}
+              className="sm:min-w-[76px]"
+            >
+              {cancelLabel}
+            </Button>
+            <Button
+              type="button"
+              variant={tone === 'danger' ? 'danger' : 'primary'}
+              onClick={onConfirm}
+              disabled={busy}
+              className="sm:min-w-[88px]"
+            >
+              {busy ? '처리 중…' : confirmLabel}
+            </Button>
+          </div>
+        </RadixDialogBody>
+      </RadixDialogContent>
+    </RadixDialog>
   );
 }
 

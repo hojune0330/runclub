@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { Menu, X, LogIn } from 'lucide-react';
+import { Menu, X, LogIn, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import BusinessFooter from './BusinessFooter';
 
@@ -16,11 +16,10 @@ const NAV = [
 export default function PublicLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-
-  // Close drawer on route change
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
+  const mobilePrimaryCta = pathname === '/'
+    ? { href: '/login?mode=register', label: '시작하기', icon: ArrowRight }
+    : { href: '/login', label: '로그인', icon: LogIn };
+  const MobilePrimaryIcon = mobilePrimaryCta.icon;
 
   // Lock scroll when drawer is open (mobile)
   useEffect(() => {
@@ -85,11 +84,11 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
           {/* Mobile: login shortcut + menu button */}
           <div className="flex md:hidden items-center gap-1">
             <Link
-              href="/login"
-              aria-label="로그인"
+              href={mobilePrimaryCta.href}
+              aria-label={mobilePrimaryCta.label}
               className="h-10 px-3 rounded-md text-[13px] font-semibold bg-[var(--color-primary)] text-white inline-flex items-center gap-1 active:opacity-90"
             >
-              <LogIn size={13} /> 로그인
+              <MobilePrimaryIcon size={13} /> {mobilePrimaryCta.label}
             </Link>
             <button
               onClick={() => setOpen(v => !v)}
@@ -118,6 +117,7 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
                     <Link
                       key={item.href}
                       href={item.href}
+                      onClick={() => setOpen(false)}
                       className={cn(
                         'px-3 h-11 rounded-md text-[14px] inline-flex items-center',
                         active
@@ -132,12 +132,14 @@ export default function PublicLayout({ children }: { children: React.ReactNode }
                 <div className="border-t border-[var(--color-border)] mt-2 pt-2 flex gap-2">
                   <Link
                     href="/login"
+                    onClick={() => setOpen(false)}
                     className="flex-1 text-center h-11 rounded-md text-[13.5px] font-medium border border-[var(--color-border)] text-[var(--color-text)] inline-flex items-center justify-center active:bg-[var(--color-bg-hover)]"
                   >
                     로그인
                   </Link>
                   <Link
                     href="/login?mode=register"
+                    onClick={() => setOpen(false)}
                     className="flex-1 text-center h-11 rounded-md text-[13.5px] font-semibold bg-[var(--color-primary)] text-white inline-flex items-center justify-center active:opacity-90"
                   >
                     가입하기
