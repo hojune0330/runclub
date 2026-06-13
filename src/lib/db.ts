@@ -73,9 +73,9 @@ function getPool(): Pool {
  * Run a parameterised query and return all rows.
  * Replaces `db.prepare(sql).all(...params)`.
  */
-export async function dbAll<T extends QueryResultRow = any>(
+export async function dbAll<T extends QueryResultRow = QueryResultRow>(
   sql: string,
-  params: any[] = []
+  params: unknown[] = []
 ): Promise<T[]> {
   const result: QueryResult<T> = await getPool().query<T>(sql, params);
   return result.rows;
@@ -85,9 +85,9 @@ export async function dbAll<T extends QueryResultRow = any>(
  * Run a parameterised query and return the first row (or undefined).
  * Replaces `db.prepare(sql).get(...params)`.
  */
-export async function dbGet<T extends QueryResultRow = any>(
+export async function dbGet<T extends QueryResultRow = QueryResultRow>(
   sql: string,
-  params: any[] = []
+  params: unknown[] = []
 ): Promise<T | undefined> {
   const result: QueryResult<T> = await getPool().query<T>(sql, params);
   return result.rows[0];
@@ -97,7 +97,7 @@ export async function dbGet<T extends QueryResultRow = any>(
  * Execute a statement (INSERT/UPDATE/DELETE) and return rowCount.
  * Replaces `db.prepare(sql).run(...params)`.
  */
-export async function dbRun(sql: string, params: any[] = []): Promise<number> {
+export async function dbRun(sql: string, params: unknown[] = []): Promise<number> {
   const result = await getPool().query(sql, params);
   return result.rowCount ?? 0;
 }
@@ -769,11 +769,56 @@ async function initCoachingSchema(): Promise<void> {
   `);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_member_date ON activity_logs(member_id, activity_date DESC)`);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_class ON activity_logs(class_id)`);
+  // 피드/개인 로그 조회는 날짜 역순 + 같은 날짜 내 생성 역순으로 고정한다.
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_member_date_created ON activity_logs(member_id, activity_date DESC, created_at DESC)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_class_date_created ON activity_logs(class_id, activity_date DESC, created_at DESC)`);
   // 외부 동기화 중복 방지(같은 소스+외부ID는 1건). source_ref NULL(수동 입력)은 제약 없음.
   await dbRun(`CREATE UNIQUE INDEX IF NOT EXISTS uq_activity_source_ref ON activity_logs(member_id, source, source_ref) WHERE source_ref IS NOT NULL`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_source_ref ON activity_logs(source, source_ref) WHERE source_ref IS NOT NULL`);
   // 수정 이력 표식: 사용자가 (출처 무관) 값을 손본 시각. NULL=미수정.
   // 외부 연동(애플/가민/Strava) 기록도 자유롭게 수정할 수 있고, 수정 시 "수정됨" 으로 표시한다.
   await dbRun(`ALTER TABLE activity_logs ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ`);
+
+  // ── P2-ops: 가져오기 작업 이력 — 대용량 Garmin/Apple 파일 운영 관찰용 ──
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS import_jobs (
+      id              TEXT PRIMARY KEY,
+      member_id       TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      provider        TEXT NOT NULL,
+      filename        TEXT,
+      file_size       BIGINT,
+      status          TEXT NOT NULL DEFAULT 'processing'
+                        CHECK (status IN ('processing','succeeded','failed')),
+      imported_count  INTEGER NOT NULL DEFAULT 0,
+      duplicate_count INTEGER NOT NULL DEFAULT 0,
+      skipped_count   INTEGER NOT NULL DEFAULT 0,
+      error_message   TEXT,
+      started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      finished_at     TIMESTAMPTZ
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_import_jobs_member_started ON import_jobs(member_id, started_at DESC)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_import_jobs_provider_status ON import_jobs(provider, status, started_at DESC)`);
+
+  // ── P2-ops: 활동 첨부 메타데이터 — 파일 본문은 R2/S3 등 Object Storage 에만 저장 ──
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS activity_attachments (
+      id              TEXT PRIMARY KEY,
+      activity_log_id TEXT NOT NULL REFERENCES activity_logs(id) ON DELETE CASCADE,
+      member_id       TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      storage_key     TEXT NOT NULL,
+      public_url      TEXT,
+      signed_url      TEXT,
+      mime_type       TEXT NOT NULL,
+      size_bytes      BIGINT NOT NULL,
+      width           INTEGER,
+      height          INTEGER,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      deleted_at      TIMESTAMPTZ
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_attachments_activity ON activity_attachments(activity_log_id, created_at DESC) WHERE deleted_at IS NULL`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_activity_attachments_member ON activity_attachments(member_id, created_at DESC) WHERE deleted_at IS NULL`);
 
   // ── P2: 과제(숙제) — 목표 지향 수업의 핵심 ──
   await dbRun(`
@@ -820,6 +865,7 @@ async function initCoachingSchema(): Promise<void> {
     )
   `);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_encouragement_target ON encouragements(target_type, target_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_encouragement_target_kind ON encouragements(target_type, target_id, kind)`);
 
   // ── P4: 외부 데이터 연동 계정 ──
   // provider: 'strava' | 'garmin' | 'apple_health' | 'samsung_health' | 'libre_cgm' | 'barojaenfit_api'
@@ -844,6 +890,38 @@ async function initCoachingSchema(): Promise<void> {
     )
   `);
   await dbRun(`CREATE INDEX IF NOT EXISTS idx_connected_member ON connected_accounts(member_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_connected_provider_external ON connected_accounts(provider, external_id) WHERE external_id IS NOT NULL`);
+
+  // ── P4-b: OAuth state 보관(콜백 위조/재사용 방지) ──
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS integration_oauth_states (
+      id          TEXT PRIMARY KEY,
+      member_id   TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      provider    TEXT NOT NULL,
+      class_id    TEXT,
+      expires_at  TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_oauth_states_member_provider ON integration_oauth_states(member_id, provider, created_at DESC)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_oauth_states_expiry ON integration_oauth_states(provider, expires_at) WHERE consumed_at IS NULL`);
+
+  // ── P4-c: Apple HealthKit / Shortcut / native app ingest token ──
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS integration_ingest_tokens (
+      id           TEXT PRIMARY KEY,
+      member_id    TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+      provider     TEXT NOT NULL,
+      token_hash   TEXT NOT NULL UNIQUE,
+      label        TEXT,
+      last_used_at TIMESTAMPTZ,
+      revoked_at   TIMESTAMPTZ,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_ingest_tokens_member_provider ON integration_ingest_tokens(member_id, provider, created_at DESC)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_ingest_tokens_provider_hash ON integration_ingest_tokens(provider, token_hash) WHERE revoked_at IS NULL`);
 
   // ── P5: 건강 클래스 지표 정의(BaroJaenfit 등 동적 지표) ──
   // 클래스별로 "어떤 건강 지표를 입력받을지"를 코치가 정의. activity_logs.metrics(JSONB)에 저장됨.

@@ -39,8 +39,10 @@ export interface ParseResult {
 
 // 한 번의 업로드에서 받아들이는 최대 운동 수(메모리·DB 보호). 넉넉하지만 폭주 방지.
 const MAX_ACTIVITIES = 5000;
-// 업로드 파일 최대 바이트(라우트에서도 한번 더 체크). 기본 60MB.
-export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024;
+// 업로드 파일 최대 바이트(라우트에서도 한번 더 체크).
+// Render Starter 메모리 보호를 위해 MVP 기본값은 30MB, 운영 env 로 5~60MB 사이에서 조정한다.
+export const MAX_UPLOAD_MB = Math.max(5, Math.min(60, Number(process.env.IMPORT_MAX_UPLOAD_MB) || 30));
+export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
 // ─────────────────────────────────────────────────────────────────────
 // 공통 유틸
@@ -200,7 +202,7 @@ export function parseTcxStream(stream: NodeJS.ReadableStream, sourceHint: string
     let truncated = false;
 
     let cur: (Partial<ParsedActivity> & { _sumTime?: number; _sumDist?: number; _hrSum?: number; _hrN?: number }) | null = null;
-    let path: string[] = [];
+    const path: string[] = [];
     let text = '';
 
     parser.on('opentag', (node) => {
@@ -264,7 +266,7 @@ export function parseGpxStream(stream: NodeJS.ReadableStream, sourceHint: string
     let date: string | null = null;
     let name: string | null = null;
     let maxEle: number | null = null;
-    let path: string[] = [];
+    const path: string[] = [];
     let text = '';
 
     parser.on('opentag', (node) => { path.push(node.name); text = ''; });
