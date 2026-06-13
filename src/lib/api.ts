@@ -2,7 +2,7 @@
 
 import type {
   CoachingClass, ClassTeam, ClassEnrollment, TeamRequest,
-  ActivityLog, Homework, HomeworkSubmission, Encouragement, LeaderboardResult,
+  ActivityLog, ActivityDistanceStats, Homework, HomeworkSubmission, Encouragement, LeaderboardResult,
 } from '@/types';
 
 const BASE = '/api';
@@ -758,6 +758,7 @@ export const api = {
       }),
     remove: (id: string) =>
       request<{ ok: boolean }>(`/activities?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    stats: () => request<ActivityDistanceStats>('/activities/stats'),
   },
 
   // ─── P2: 과제 ───
@@ -842,6 +843,17 @@ export const api = {
         accounts: {
           provider: string; name: string; category: string; color: string; desc: string;
           availability: 'available' | 'coming_soon'; oauth?: boolean;
+          automation?: {
+            mode: 'oauth_live' | 'business_review' | 'native_app' | 'partner_api';
+            label: string;
+            checklist: string[];
+          } | null;
+          readiness?: {
+            configured: boolean;
+            env: string[];
+            redirectUri: string | null;
+            note: string;
+          } | null;
           fileImport?: { accept: string; howto: string } | null;
           connected: boolean; status: string | null; lastSyncedAt: string | null;
         }[];
@@ -857,16 +869,34 @@ export const api = {
     stravaStartUrl: (classId?: string) =>
       `/api/integrations/strava/start${classId ? `?classId=${encodeURIComponent(classId)}` : ''}`,
     stravaSync: (classId?: string) =>
-      request<{ ok: boolean; imported: number; mileageEarned: number }>('/integrations/strava/sync', {
+      request<{ ok: boolean; imported: number; duplicate: number; mileageEarned: number }>('/integrations/strava/sync', {
         method: 'POST', body: JSON.stringify({ classId }),
       }),
+    appleHealthTokenInfo: () =>
+      request<{
+        endpoint: string;
+        tokens: { id: string; label: string | null; lastUsedAt: string | null; revokedAt: string | null; createdAt: string }[];
+      }>('/integrations/apple-health/token'),
+    createAppleHealthToken: (label?: string) =>
+      request<{
+        ok: boolean;
+        id: string;
+        token: string;
+        endpoint: string;
+        note: string;
+        samplePayload: unknown;
+      }>('/integrations/apple-health/token', {
+        method: 'POST', body: JSON.stringify({ label }),
+      }),
+    revokeAppleHealthToken: (id: string) =>
+      request<{ ok: boolean }>(`/integrations/apple-health/token?id=${encodeURIComponent(id)}`, { method: 'DELETE' }),
     // 파일 가져오기(애플 건강 export.zip / 가민 tcx·gpx·zip). multipart 업로드.
     importFile: async (
       provider: 'apple_health' | 'garmin',
       file: File,
       classId?: string
     ): Promise<{
-      ok: boolean; imported: number; duplicate: number; mileageEarned: number;
+      ok: boolean; jobId?: string; imported: number; duplicate: number; mileageEarned: number;
       truncated: boolean; skipped: number; message?: string;
     }> => {
       const fd = new FormData();

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureSchema } from '@/lib/db';
-import { isStravaConfigured, exchangeCode, saveStravaConnection, syncStravaActivities } from '@/lib/strava';
+import { isStravaConfigured, exchangeCode, saveStravaConnection, syncStravaActivities, consumeStravaOAuthState } from '@/lib/strava';
 
 // GET /api/integrations/strava/callback?code=&state=
 //  Strava 인증 후 호출됨. 토큰 교환 → 저장 → 첫 동기화 → 앱으로 리디렉션.
@@ -18,20 +18,15 @@ export async function GET(req: NextRequest) {
   if (error || !code || !stateRaw) return redirectBack('cancelled');
   if (!isStravaConfigured()) return redirectBack('unavailable');
 
-  let memberId = '', classId = '';
-  try {
-    const s = JSON.parse(Buffer.from(stateRaw, 'base64url').toString());
-    memberId = String(s.m ?? '');
-    classId = String(s.c ?? '');
-  } catch { return redirectBack('error'); }
-  if (!memberId) return redirectBack('error');
+  const state = await consumeStravaOAuthState(stateRaw);
+  if (!state) return redirectBack('state_expired');
 
   try {
     const tok = await exchangeCode(code);
-    await saveStravaConnection(memberId, tok);
+    await saveStravaConnection(state.memberId, tok);
     // 첫 동기화(실패해도 연동 자체는 성공 처리)
     try {
-      await syncStravaActivities(memberId, { classId: classId || null, perPage: 30 });
+      await syncStravaActivities(state.memberId, { classId: state.classId, perPage: 30 });
     } catch (e) {
       console.error('[strava callback] initial sync failed:', e);
     }

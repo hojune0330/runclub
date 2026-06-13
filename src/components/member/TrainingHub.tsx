@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   Activity, Trophy, Gift, HeartPulse, Repeat, Link2, ChevronRight, Loader2,
-  Compass, Database, FileText, type LucideIcon,
+  Compass, Database, FileText, BarChart3, type LucideIcon,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -12,7 +12,7 @@ import HealthLog from './HealthLog';
 import TrainingCycle from '@/components/coaching/TrainingCycle';
 import IntegrationsPanel from '@/components/coaching/IntegrationsPanel';
 import { MileageGuide, GlucoseGuardrailCard } from '@/components/coaching/PolicyInfo';
-import type { ActivityLog, CoachingClass, TrainingPlan } from '@/types';
+import type { ActivityDistanceStats, ActivityLog, ActivityStatsPeriod, ActivityStatsBucket, CoachingClass, TrainingPlan } from '@/types';
 
 type HubTab = 'overview' | 'feed' | 'health' | 'cycle' | 'mileage' | 'connect';
 
@@ -71,22 +71,25 @@ export default function TrainingHub({ onOpenClasses }: { onOpenClasses?: () => v
   const [myClasses, setMyClasses] = useState<CoachingClass[]>([]);
   const [openClasses, setOpenClasses] = useState<CoachingClass[]>([]);
   const [recentLogs, setRecentLogs] = useState<ActivityLog[]>([]);
+  const [activityStats, setActivityStats] = useState<ActivityDistanceStats | null>(null);
   const [plan, setPlan] = useState<TrainingPlan | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [mil, mine, all, activities, trainingPlan] = await Promise.all([
+      const [mil, mine, all, activities, stats, trainingPlan] = await Promise.all([
         api.mileage.get().catch(() => ({ mileageBalance: 0 })),
         api.classes.list('mine').catch(() => ({ classes: [] as CoachingClass[] })),
         api.classes.list('all').catch(() => ({ classes: [] as CoachingClass[] })),
         api.activities.list({ limit: 8 }).catch(() => ({ activities: [] as ActivityLog[] })),
+        api.activities.stats().catch(() => null as ActivityDistanceStats | null),
         api.trainingPlans.get().catch(() => ({ plan: null as TrainingPlan | null })),
       ]);
       setMileage(mil.mileageBalance ?? 0);
       setMyClasses(mine.classes);
       setRecentLogs(activities.activities ?? []);
+      setActivityStats(stats);
       setPlan(trainingPlan.plan ?? null);
       const mineIds = new Set(mine.classes.map(c => c.id));
       setOpenClasses(all.classes.filter(c => !mineIds.has(c.id)));
@@ -169,8 +172,10 @@ export default function TrainingHub({ onOpenClasses }: { onOpenClasses?: () => v
             </div>
           </section>
 
+          <DistanceStatsPanel stats={activityStats} loading={loading} onAddLog={() => setTab('feed')} />
+
           <section className="border bg-white p-4" style={{ borderColor: '#D9D6CE' }}>
-            <SectionHeader no="§2" title="9.5-day cycle · 런클럽 경량 버전" />
+            <SectionHeader no="§3" title="9.5-day cycle · 런클럽 경량 버전" />
             <div className="mt-4">
               <CycleRail plan={plan} />
             </div>
@@ -204,7 +209,7 @@ export default function TrainingHub({ onOpenClasses }: { onOpenClasses?: () => v
           <TrainingClassPanel loading={loading} myClasses={myClasses} openClasses={openClasses} onOpenClasses={onOpenClasses} />
 
           <section className="border bg-white p-4" style={{ borderColor: '#D9D6CE' }}>
-            <SectionHeader no="§6" title="Mileage · 보조 지표" />
+            <SectionHeader no="§7" title="Mileage · 보조 지표" />
             <div className="mt-3 grid gap-3 md:grid-cols-[140px_1fr] md:items-start">
               <div className="border px-3 py-2 text-center" style={{ borderColor: HAIR }}>
                 <p className="text-[11px] uppercase tracking-[0.08em] text-[var(--color-text-muted)]">Balance</p>
@@ -258,6 +263,234 @@ function MetricCell({ label, value }: { label: string; value: string }) {
       <p className="mt-1 font-mono text-[17px] font-semibold text-[var(--color-text)] tabular-nums">{value}</p>
     </div>
   );
+}
+
+function DistanceStatsPanel({ stats, loading, onAddLog }: { stats: ActivityDistanceStats | null; loading: boolean; onAddLog: () => void }) {
+  const calendarWeek = getPeriod(stats, 'calendar_week');
+  const rolling7 = getPeriod(stats, 'rolling_7');
+  const calendarMonth = getPeriod(stats, 'calendar_month');
+  const rolling30 = getPeriod(stats, 'rolling_30');
+  const calendarYear = getPeriod(stats, 'calendar_year');
+  const rolling365 = getPeriod(stats, 'rolling_365');
+  const hasDistance = Boolean(stats?.periods.some(period => period.distanceM > 0));
+
+  return (
+    <section className="border bg-white p-4 md:p-5" style={{ borderColor: '#D9D6CE', boxShadow: 'inset 0 1px 0 #FAFAF7' }}>
+      <SectionHeader no="§2" title="Distance board · 쌓이는 훈련량" action="calendar + rolling" />
+      <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+        <p className="max-w-2xl text-[12.5px] leading-relaxed text-[var(--color-text-secondary)]">
+          주간·월간·연간을 <strong className="text-[var(--color-text)]">달력 기준</strong>과 <strong className="text-[var(--color-text)]">오늘 기준 rolling</strong>으로 같이 봅니다. 월초/연초에는 이번 달 수치가 작아도 최근 30일·365일 흐름으로 실제 훈련량을 놓치지 않게 합니다.
+        </p>
+        <button onClick={onAddLog} className="inline-flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-3 py-2 text-[12.5px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg-hover)]">
+          <Activity size={14} /> 기록 추가
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="mt-4 flex justify-center border py-8" style={{ borderColor: HAIR }}>
+          <Loader2 size={18} className="animate-spin text-[var(--color-text-muted)]" />
+        </div>
+      ) : !stats ? (
+        <DistanceStatsEmpty onAddLog={onAddLog} message="거리 통계를 불러오지 못했어요. 기록 탭은 계속 사용할 수 있습니다." />
+      ) : !hasDistance ? (
+        <DistanceStatsEmpty onAddLog={onAddLog} message="아직 거리 기록이 없습니다. 첫 러닝을 남기면 주간·월간 보드가 바로 살아납니다." />
+      ) : (
+        <div className="mt-4 space-y-4">
+          <div className="grid gap-3 lg:grid-cols-3">
+            <DistancePeriodPair title="주간 거리" primary={calendarWeek} secondary={rolling7} accent="#4A8FC7" />
+            <DistancePeriodPair title="월간 거리" primary={calendarMonth} secondary={rolling30} accent={ORACLE_BRAND} featured />
+            <DistancePeriodPair title="연간 거리" primary={calendarYear} secondary={rolling365} accent="#C7761C" />
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[1.15fr_0.85fr]">
+            <div className="border p-3.5" style={{ borderColor: HAIR }}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--color-text)]"><BarChart3 size={14} style={{ color: ORACLE_BRAND }} /> 최근 30일 일별 거리</p>
+                  <p className="mt-0.5 text-[11.5px] text-[var(--color-text-muted)]">오늘 기준 rolling 월간 흐름</p>
+                </div>
+                <span className="font-mono text-[15px] font-semibold text-[var(--color-text)] tabular-nums">{formatKm(rolling30?.distanceM ?? 0)}</span>
+              </div>
+              <MiniDistanceBars buckets={stats.rolling30Daily} />
+            </div>
+
+            <div className="border p-3.5" style={{ borderColor: HAIR }}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[13px] font-semibold text-[var(--color-text)]">올해 월별 누적</p>
+                  <p className="mt-0.5 text-[11.5px] text-[var(--color-text-muted)]">달력 기준 연간 흐름</p>
+                </div>
+                <span className="font-mono text-[15px] font-semibold text-[var(--color-text)] tabular-nums">{formatKm(calendarYear?.distanceM ?? 0)}</span>
+              </div>
+              <MonthlyDistanceBars buckets={stats.calendarYearMonthly} />
+            </div>
+          </div>
+
+          <div className="grid gap-3 lg:grid-cols-[0.85fr_1.15fr]">
+            <div className="border p-3.5" style={{ borderColor: HAIR, background: '#FAFAF7' }}>
+              <p className="text-[13px] font-semibold text-[var(--color-text)]">훈련 구성</p>
+              <div className="mt-3 space-y-2">
+                {stats.kindBreakdown.length === 0 ? (
+                  <p className="text-[12px] text-[var(--color-text-muted)]">거리 기록이 쌓이면 러닝/롱런/인터벌 비중이 표시됩니다.</p>
+                ) : stats.kindBreakdown.slice(0, 4).map(item => (
+                  <div key={item.kind} className="space-y-1">
+                    <div className="flex justify-between gap-2 text-[12px]">
+                      <span className="text-[var(--color-text-secondary)]">{item.label}</span>
+                      <span className="font-mono text-[var(--color-text)] tabular-nums">{formatKm(item.distanceM)} · {item.activityCount}회</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-[#ECE9E1]">
+                      <div className="h-full rounded-full" style={{ width: `${Math.max(5, Math.min(100, (item.distanceM / Math.max(1, rolling365?.distanceM ?? item.distanceM)) * 100))}%`, background: ORACLE_BRAND }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border p-3.5" style={{ borderColor: HAIR }}>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-[13px] font-semibold text-[var(--color-text)]">최근 훈련 내용</p>
+                <button onClick={onAddLog} className="text-[11.5px] font-medium text-[var(--color-primary)]">더 남기기 →</button>
+              </div>
+              {stats.latestTrainingNotes.length === 0 ? (
+                <p className="text-[12px] text-[var(--color-text-muted)]">거리뿐 아니라 메모가 쌓이면 “무엇을 했는지”까지 한눈에 남습니다.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {stats.latestTrainingNotes.slice(0, 4).map(note => (
+                    <li key={note.id} className="border-l-2 pl-2" style={{ borderColor: ORACLE_BRAND }}>
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12px]">
+                        <span className="font-semibold text-[var(--color-text)]">{formatShortDate(note.activityDate)}</span>
+                        <span className="text-[var(--color-text-muted)]">{note.label}</span>
+                        <span className="font-mono text-[var(--color-text)] tabular-nums">{formatKm(note.distanceM)}</span>
+                        {note.durationS > 0 && <span className="font-mono text-[var(--color-text-muted)]">{formatDuration(note.durationS)}</span>}
+                      </div>
+                      <p className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">{note.note?.trim() || `${SOURCE_LABEL[note.source] ?? note.source}에서 가져온 훈련 기록`}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function DistanceStatsEmpty({ message, onAddLog }: { message: string; onAddLog: () => void }) {
+  return (
+    <div className="mt-4 border p-4 text-center" style={{ borderColor: HAIR, background: '#FAFAF7' }}>
+      <p className="text-[13px] font-semibold text-[var(--color-text)]">주간·월간 거리 보드를 준비해뒀어요</p>
+      <p className="mx-auto mt-1 max-w-lg text-[12.5px] leading-relaxed text-[var(--color-text-secondary)]">{message}</p>
+      <button onClick={onAddLog} className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-[var(--color-primary)] px-3 py-2 text-[13px] font-semibold text-white hover:bg-[var(--color-primary-hover)]">
+        <Activity size={14} /> 첫 거리 기록 남기기
+      </button>
+    </div>
+  );
+}
+
+function DistancePeriodPair({ title, primary, secondary, accent, featured = false }: { title: string; primary?: ActivityStatsPeriod; secondary?: ActivityStatsPeriod; accent: string; featured?: boolean }) {
+  return (
+    <div className={cn('border p-3.5', featured && 'ring-1 ring-[var(--color-primary)]')} style={{ borderColor: featured ? ORACLE_BRAND : HAIR }}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] font-semibold text-[var(--color-text)]">{title}</p>
+        <span className="h-2 w-2 rounded-full" style={{ background: accent }} />
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <DistancePeriodCard period={primary} fallbackLabel="달력 기준" accent={accent} />
+        <DistancePeriodCard period={secondary} fallbackLabel="오늘 기준" accent={accent} subtle />
+      </div>
+    </div>
+  );
+}
+
+function DistancePeriodCard({ period, fallbackLabel, accent, subtle = false }: { period?: ActivityStatsPeriod; fallbackLabel: string; accent: string; subtle?: boolean }) {
+  return (
+    <div className="border px-2.5 py-2" style={{ borderColor: HAIR, background: subtle ? '#FAFAF7' : '#FFFFFF' }}>
+      <p className="text-[11px] font-semibold text-[var(--color-text-secondary)]">{period?.label ?? fallbackLabel}</p>
+      <p className="mt-1 font-mono text-[19px] font-semibold text-[var(--color-text)] tabular-nums">{formatKm(period?.distanceM ?? 0)}</p>
+      <p className="mt-0.5 font-mono text-[10.5px] text-[var(--color-text-muted)]">{period ? formatPeriodRange(period) : '—'}</p>
+      <div className="mt-2 flex items-center justify-between gap-2 text-[10.5px] text-[var(--color-text-muted)]">
+        <span>{period?.activityCount ?? 0}회</span>
+        <span>{formatPace(period?.avgPaceS ?? null)}</span>
+      </div>
+      <div className="mt-2 h-1 rounded-full bg-[#ECE9E1]"><div className="h-full rounded-full" style={{ width: `${period?.distanceM ? 100 : 0}%`, background: accent }} /></div>
+    </div>
+  );
+}
+
+function MiniDistanceBars({ buckets }: { buckets: ActivityStatsBucket[] }) {
+  const max = Math.max(1, ...buckets.map(bucket => bucket.distanceM));
+  return (
+    <div className="flex h-24 items-end gap-1 border-b border-l px-1 pt-2" style={{ borderColor: '#E8E6DF' }}>
+      {buckets.map((bucket, index) => {
+        const height = bucket.distanceM > 0 ? Math.max(8, Math.round((bucket.distanceM / max) * 88)) : 2;
+        const showLabel = index === 0 || index === buckets.length - 1 || index % 7 === 0;
+        return (
+          <div key={bucket.date ?? index} className="flex min-w-0 flex-1 flex-col items-center justify-end gap-1">
+            <div title={`${bucket.date ?? ''} · ${formatKm(bucket.distanceM)}`} className="w-full rounded-t-sm" style={{ height, background: bucket.distanceM > 0 ? ORACLE_BRAND : '#E6E1D7' }} />
+            <span className="h-3 text-[9px] text-[var(--color-text-muted)]">{showLabel ? formatDayLabel(bucket.date) : ''}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MonthlyDistanceBars({ buckets }: { buckets: ActivityStatsBucket[] }) {
+  const max = Math.max(1, ...buckets.map(bucket => bucket.distanceM));
+  return (
+    <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-12">
+      {buckets.map(bucket => {
+        const height = bucket.distanceM > 0 ? Math.max(10, Math.round((bucket.distanceM / max) * 70)) : 3;
+        return (
+          <div key={bucket.month ?? bucket.label} className="flex flex-col items-center gap-1">
+            <div className="flex h-20 w-full items-end rounded-sm bg-[#F4F1EA] px-1">
+              <div title={`${bucket.label ?? `${bucket.month}월`} · ${formatKm(bucket.distanceM)}`} className="w-full rounded-t-sm" style={{ height, background: bucket.distanceM > 0 ? '#C7761C' : '#E6E1D7' }} />
+            </div>
+            <span className="font-mono text-[9.5px] text-[var(--color-text-muted)]">{bucket.label ?? `${bucket.month}월`}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function getPeriod(stats: ActivityDistanceStats | null, key: ActivityStatsPeriod['key']) {
+  return stats?.periods.find(period => period.key === key);
+}
+
+function formatKm(distanceM: number) {
+  const km = distanceM / 1000;
+  return `${km.toLocaleString('ko-KR', { minimumFractionDigits: km > 0 && km < 10 ? 1 : 0, maximumFractionDigits: km >= 100 ? 0 : 1 })}km`;
+}
+
+function formatDuration(seconds: number) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+function formatPace(seconds: number | null) {
+  if (!seconds || seconds <= 0) return 'pace —';
+  const minutes = Math.floor(seconds / 60);
+  const rest = Math.round(seconds % 60).toString().padStart(2, '0');
+  return `${minutes}'${rest}\"/km`;
+}
+
+function formatPeriodRange(period: ActivityStatsPeriod) {
+  return `${formatShortDate(period.from)}–${formatShortDate(period.to)}`;
+}
+
+function formatShortDate(value?: string) {
+  if (!value) return '—';
+  const [, month, day] = value.slice(0, 10).split('-');
+  return `${Number(month)}.${Number(day)}`;
+}
+
+function formatDayLabel(value?: string) {
+  if (!value) return '';
+  return String(Number(value.slice(8, 10)));
 }
 
 function OracleVerdict({ verdict, confidence, hasPlan, logCount }: { verdict: 'RECOMMEND' | 'UNC' | 'LACK'; confidence: number; hasPlan: boolean; logCount: number }) {
@@ -339,7 +572,7 @@ function TrainingClassPanel({
   return (
     <section className="border bg-white p-4" style={{ borderColor: '#D9D6CE' }}>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <SectionTitle icon={Trophy} title="§5 Coaching class" />
+        <SectionTitle icon={Trophy} title="§6 Coaching class" />
         {onOpenClasses && (
           <button onClick={onOpenClasses} className="inline-flex items-center gap-0.5 text-[12.5px] font-medium text-[var(--color-primary)]">
             전체 보기 <ChevronRight size={13} />

@@ -159,6 +159,12 @@ export interface IntegrationProvider {
   desc: string;
   /** 브랜드 컬러(점/배지) */
   color: string;
+  /** 실제 자동 연동까지의 경로. 사업자/심사/네이티브 앱 필요 여부를 사용자에게 숨기지 않는다. */
+  automation?: {
+    mode: 'oauth_live' | 'business_review' | 'native_app' | 'partner_api';
+    label: string;
+    checklist: string[];
+  };
   /**
    * 파일 내보내기 → 업로드로 "지금 바로" 가져올 수 있는 제공자 여부.
    * 애플 건강·가민은 웹 OAuth 가 (사실상) 불가하지만, 사용자가 직접 데이터를
@@ -194,14 +200,24 @@ export const INTEGRATION_PROVIDERS: IntegrationProvider[] = [
     status: 'coming_soon',
     desc: '러닝/사이클 기록을 자동으로 불러와요.',
     color: '#fc4c02',
+    automation: {
+      mode: 'oauth_live',
+      label: 'Strava API 앱 승인/키 입력 후 즉시 OAuth 가능',
+      checklist: ['Strava API Application 생성', 'Authorization Callback Domain 등록', 'STRAVA_CLIENT_ID / STRAVA_CLIENT_SECRET 설정'],
+    },
   },
   {
     id: 'garmin',
     name: 'Garmin',
     category: 'run',
     status: 'coming_soon',
-    desc: '가민 워치의 운동 기록을 파일로 가져올 수 있어요. (자동 동기화는 준비 중)',
+    desc: '가민 워치의 운동 기록은 파일로 바로 가져오고, 사업자 승인 후 Garmin API 자동 동기화를 열 수 있어요.',
     color: '#007cc3',
+    automation: {
+      mode: 'business_review',
+      label: 'Garmin Connect Developer Program 사업자 심사 필요',
+      checklist: ['Garmin Health/Activity API 사용 목적 제출', 'OAuth2 앱/redirect URI 승인', '운동 요약 수신 webhook 또는 polling 정책 확정'],
+    },
     fileImport: {
       accept: '.tcx, .gpx, .zip',
       howto: 'Garmin Connect → 활동 → 내보내기(TCX/GPX), 또는 계정 데이터 내보내기 ZIP을 올려주세요.',
@@ -212,8 +228,13 @@ export const INTEGRATION_PROVIDERS: IntegrationProvider[] = [
     name: 'Apple 건강',
     category: 'health',
     status: 'coming_soon',
-    desc: 'iPhone 건강 앱에서 내보낸 파일로 운동 기록을 가져올 수 있어요. (자동 동기화는 준비 중)',
+    desc: 'iPhone 건강 앱 내보내기 파일은 바로 가져오고, Shortcut/API beta 또는 향후 HealthKit iOS 앱으로 자동화할 수 있어요.',
     color: '#ff2d55',
+    automation: {
+      mode: 'native_app',
+      label: '웹 OAuth 없음 · Shortcut/API beta 즉시 가능 · iOS HealthKit 앱으로 확장',
+      checklist: ['지금: ingest token 발급 후 iPhone 단축어/앱에서 JSON 업로드', '다음: Apple Developer Program 등록', 'iOS 앱 Bundle ID 및 HealthKit capability 설정', '사용자 동의 후 서버 업로드/백그라운드 동기화 설계'],
+    },
     fileImport: {
       accept: '.zip, .xml',
       howto: 'iPhone 건강 앱 → 프로필 → "모든 건강 데이터 내보내기" → 생성된 export.zip을 올려주세요.',
@@ -246,7 +267,7 @@ export const INTEGRATION_PROVIDERS: IntegrationProvider[] = [
 ];
 
 export const INTEGRATION_PRINCIPLE_NOTE =
-  '지금은 직접 입력으로 시작하고, 자동 연동(Strava·Garmin·Apple·Samsung 등)은 순차적으로 열립니다. 어떤 방식으로 들어온 기록이든 동일하게 리더보드·마일리지에 반영돼요.';
+  'Strava는 API 키가 있으면 바로 OAuth로 연결하고, Garmin은 사업자 심사 후 자동 동기화, Apple 건강은 파일 가져오기와 Shortcut/API beta를 지금 쓰고 iOS HealthKit 앱으로 확장합니다. 어떤 방식으로 들어온 기록이든 동일하게 리더보드·마일리지에 반영돼요.';
 
 /* ────────────────────────────────────────────────────────────
  * 4) 클래스 종류별 "이런 분께 좋아요" 소개(구매 화면용)

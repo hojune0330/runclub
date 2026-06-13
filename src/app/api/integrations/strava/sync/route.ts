@@ -10,15 +10,16 @@ export async function POST(req: NextRequest) {
   if (!auth) return unauthorizedResponse();
   await ensureSchema();
 
-  let body: any = {};
+  let body: { classId?: string } = {};
   try { body = await req.json(); } catch { /* body optional */ }
   const classId = body?.classId ? String(body.classId) : null;
 
   try {
     const result = await syncStravaActivities(auth.memberId, { classId, perPage: 30 });
     return NextResponse.json({ ok: true, ...result });
-  } catch (e: any) {
+  } catch (e: unknown) {
     console.error('[strava sync] error:', e);
-    return NextResponse.json({ error: e?.message ?? 'Strava 동기화 실패' }, { status: 400 });
+    const message = e instanceof Error ? e.message : 'Strava 동기화 실패';
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

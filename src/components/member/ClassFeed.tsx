@@ -15,6 +15,10 @@ const RUN_KINDS = [
   { value: 'walk_run', label: '걷기/달리기' },
 ];
 
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 // classId 미지정 시: 내 개인 활동 피드(클래스 무관). 누구나 사용 가능.
 export default function ClassFeed({ classId }: { classId?: string }) {
   const { user } = useAuth();
@@ -86,7 +90,7 @@ function ActivityCard({ activity, myId, onChanged }: { activity: ActivityLog; my
       const res = await api.encouragements.add({ targetType: 'activity', targetId: activity.id, kind });
       if (res.toggled === 'on') { setCheers(c => c + 1); setCheered(true); }
       else { setCheers(c => Math.max(0, c - 1)); setCheered(false); }
-    } catch (e: any) { alert(e?.message ?? '실패'); }
+    } catch (e: unknown) { alert(errorMessage(e, '실패')); }
   };
 
   const loadComments = async () => {
@@ -104,14 +108,14 @@ function ActivityCard({ activity, myId, onChanged }: { activity: ActivityLog; my
       const res = await api.encouragements.add({ targetType: 'activity', targetId: activity.id, kind: 'comment', comment: commentText.trim() });
       if (res.encouragement) setComments(c => [...c, res.encouragement!]);
       setCommentText('');
-    } catch (e: any) { alert(e?.message ?? '실패'); }
+    } catch (e: unknown) { alert(errorMessage(e, '실패')); }
     finally { setBusy(false); }
   };
 
   const remove = async () => {
     if (!confirm('이 기록을 삭제할까요?')) return;
     try { await api.activities.remove(activity.id); onChanged(); }
-    catch (e: any) { alert(e?.message ?? '실패'); }
+    catch (e: unknown) { alert(errorMessage(e, '실패')); }
   };
 
   const isRun = ['run', 'long_run', 'interval', 'walk_run'].includes(activity.kind);
@@ -170,7 +174,7 @@ function ActivityCard({ activity, myId, onChanged }: { activity: ActivityLog; my
 
       {activity.note && <p className="text-[12.5px] text-[var(--color-text-secondary)] mt-2">{activity.note}</p>}
       {activity.photoUrl && (
-        <img src={activity.photoUrl} alt="인증샷" className="mt-2 rounded-md max-h-60 w-full object-cover" />
+        <img src={activity.photoUrl} alt="인증샷" loading="lazy" referrerPolicy="no-referrer" className="mt-2 rounded-md max-h-60 w-full object-cover" />
       )}
 
       <div className="flex items-center gap-3 mt-3 pt-3 border-t border-[var(--color-border-subtle)]">
@@ -256,8 +260,8 @@ function ActivityForm({ classId, existing, onClose, onSaved }: { classId?: strin
         if (res.mileageEarned > 0) alert(`기록 완료! +${res.mileageEarned}P 적립되었어요 🎉`);
       }
       onSaved();
-    } catch (e: any) {
-      alert(e?.message ?? '저장에 실패했어요');
+    } catch (e: unknown) {
+      alert(errorMessage(e, '저장에 실패했어요'));
     } finally {
       setBusy(false);
     }
@@ -318,9 +322,12 @@ function ActivityForm({ classId, existing, onClose, onSaved }: { classId?: strin
           <textarea value={note} onChange={e => setNote(e.target.value)} maxLength={500} rows={2} placeholder="오늘 컨디션, 코스, 느낀 점..."
             className="w-full px-3 py-2 text-[13px] border border-[var(--color-border)] rounded focus:border-[var(--color-primary)] outline-none resize-none" />
         </Field>
-        <Field label="인증샷 URL (선택)">
-          <input value={photoUrl} onChange={e => setPhotoUrl(e.target.value)} placeholder="https://... (스트라바 캡처 등)"
+        <Field label="인증샷 URL (선택 · 임시)">
+          <input type="url" value={photoUrl} onChange={e => setPhotoUrl(e.target.value)} placeholder="https://... (외부에 이미 올린 이미지)"
             className="w-full px-3 py-2 text-[13px] border border-[var(--color-border)] rounded focus:border-[var(--color-primary)] outline-none" />
+          <span className="block mt-1 text-[10.5px] leading-relaxed text-[var(--color-text-muted)]">
+            직접 사진 업로드는 R2/S3 같은 Object Storage 연결 후 열 예정이에요. DB에는 사진 파일이 아니라 저장소 key/URL/용량 같은 메타데이터만 남기는 구조로 준비해둘게요.
+          </span>
         </Field>
 
         {!isEdit && (
