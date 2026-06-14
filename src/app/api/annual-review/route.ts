@@ -13,6 +13,24 @@ import { dbAll, dbGet } from '@/lib/db';
 // 실제 DB 쿼리를 사용하며, 연도 파라미터가 없으면 현재 연도 기준.
 // ─────────────────────────────────────────────────────────────────────
 
+type SummaryRow = {
+  total_members: number;
+  new_members: number;
+  total_sessions: number;
+  total_checkins: number;
+  total_passes_sold: number;
+  total_revenue: number;
+};
+type PopularTypeRow = { type: string; cnt: number };
+type AttendanceRateRow = { attended: number; total: number };
+type CountRow = { cnt: number };
+type AttendanceRow = { month: string; total: number; ebw: number; slowrun: number; marathon: number };
+type SessionTypeRow = { type: string; count: number; total_attendance: number };
+type TopMemberRow = { id: string; name: string; attendance_count: number; total_mileage: number };
+type PassSaleProductRow = { product_id: string; product_name: string; count: number; revenue: number };
+type PassSaleMonthRow = { month: string; count: number; revenue: number };
+type PeakMomentRow = { date: string; session_name: string; attendance_count: number; type: string };
+
 export async function GET(req: NextRequest) {
   const yearParam = req.nextUrl.searchParams.get('year');
   const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
@@ -44,7 +62,7 @@ export async function GET(req: NextRequest) {
       passSales,
       peakMoments,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[annual-review] error:', error);
     return NextResponse.json(
       { error: '연간 회고 데이터를 불러오는 중 오류가 발생했습니다' },
@@ -55,7 +73,7 @@ export async function GET(req: NextRequest) {
 
 // ─── Summary ───
 async function buildSummary(year: number) {
-  const row = await dbGet<any>(
+  const row = await dbGet<SummaryRow>(
     `SELECT
        (SELECT COUNT(*)::int FROM members WHERE is_active = TRUE) AS total_members,
        (SELECT COUNT(*)::int FROM members
@@ -76,7 +94,7 @@ async function buildSummary(year: number) {
   );
 
   // Most popular session type
-  const popular = await dbGet<any>(
+  const popular = await dbGet<PopularTypeRow>(
     `SELECT s.type, COUNT(*)::int AS cnt
        FROM reservations r
        JOIN sessions s ON r.session_id = s.id
@@ -86,7 +104,7 @@ async function buildSummary(year: number) {
   );
 
   // Attendance rate
-  const rate = await dbGet<any>(
+  const rate = await dbGet<AttendanceRateRow>(
     `SELECT
        COUNT(*) FILTER (WHERE r.status = 'attended')::int AS attended,
        COUNT(*)::int AS total
@@ -98,7 +116,7 @@ async function buildSummary(year: number) {
   );
 
   // Active members (attended at least once)
-  const active = await dbGet<any>(
+  const active = await dbGet<CountRow>(
     `SELECT COUNT(DISTINCT r.member_id)::int AS cnt
        FROM reservations r
        JOIN sessions s ON r.session_id = s.id
@@ -118,7 +136,7 @@ async function buildSummary(year: number) {
     newMembers: row?.new_members ?? 0,
     totalSessions: row?.total_sessions ?? 0,
     totalCheckins: row?.total_checkins ?? 0,
-    mostPopularSession: typeLabel[popular?.type] ?? 'N/A',
+    mostPopularSession: typeLabel[String(popular?.type ?? '')] ?? 'N/A',
     totalPassesSold: row?.total_passes_sold ?? 0,
     totalRevenue: row?.total_revenue ?? 0,
     avgAttendanceRate: totalRes > 0 ? Math.round((attended / totalRes) * 100) : 0,
@@ -129,7 +147,7 @@ async function buildSummary(year: number) {
 
 // ─── Attendance Trend ───
 async function buildAttendance(year: number) {
-  return dbAll<any>(
+  return dbAll<AttendanceRow>(
     `SELECT
        TO_CHAR(s.date, 'YYYY-MM') AS month,
        COUNT(*) FILTER (WHERE r.status = 'attended')::int AS total,
@@ -146,7 +164,7 @@ async function buildAttendance(year: number) {
 
 // ─── Session Type Breakdown ───
 async function buildSessionTypes(year: number) {
-  return dbAll<any>(
+  return dbAll<SessionTypeRow>(
     `SELECT
        s.type,
        COUNT(DISTINCT s.id)::int AS count,
@@ -156,19 +174,20 @@ async function buildSessionTypes(year: number) {
      WHERE EXTRACT(YEAR FROM s.date) = $1
      GROUP BY s.type ORDER BY count DESC`,
     [year]
-  ).then(rows =>
-    rows.map(r => ({
+  ).then(rows => {
+    const typeLabels: Record<string, string> = { ebw: 'EBW', slowrun: '런클럽', marathon: '러닝클래스' };
+    return rows.map(r => ({
       type: r.type,
-      label: { ebw: 'EBW', slowrun: '런클럽', marathon: '러닝클래스' }[r.type] ?? r.type,
+      label: typeLabels[String(r.type)] ?? r.type,
       count: r.count,
       totalAttendance: r.total_attendance,
-    }))
-  );
+    }));
+  });
 }
 
 // ─── Top Members ───
 async function buildTopMembers(year: number) {
-  return dbAll<any>(
+  return dbAll<TopMemberRow>(
     `SELECT
        m.id, m.name,
        COUNT(*)::int AS attendance_count,
@@ -184,7 +203,7 @@ async function buildTopMembers(year: number) {
     // Get favorite type for each top member
     const enriched = await Promise.all(
       rows.map(async m => {
-        const fav = await dbGet<any>(
+        const fav = await dbGet<PopularTypeRow>(
           `SELECT s.type, COUNT(*)::int AS cnt
              FROM reservations r
              JOIN sessions s ON r.session_id = s.id
@@ -200,7 +219,7 @@ async function buildTopMembers(year: number) {
           id: m.id,
           name: m.name,
           attendanceCount: m.attendance_count,
-          favoriteType: typeLabel[fav?.type] ?? 'N/A',
+          favoriteType: typeLabel[String(fav?.type ?? '')] ?? 'N/A',
           totalMileage: m.total_mileage,
           avatarUrl: null,
         };
@@ -212,7 +231,7 @@ async function buildTopMembers(year: number) {
 
 // ─── Pass Sales ───
 async function buildPassSales(year: number) {
-  const byProduct = await dbAll<any>(
+  const byProduct = await dbAll<PassSaleProductRow>(
     `SELECT
        mp.product_id,
        pp.name AS product_name,
@@ -226,7 +245,7 @@ async function buildPassSales(year: number) {
      ORDER BY count DESC`,
     [year]
   );
-  const byMonth = await dbAll<any>(
+  const byMonth = await dbAll<PassSaleMonthRow>(
     `SELECT
        TO_CHAR(mp.issued_date, 'YYYY-MM') AS month,
        COUNT(*)::int AS count,
@@ -243,7 +262,7 @@ async function buildPassSales(year: number) {
 // ─── Peak Moments ───
 // 상위 5개 최다 출석 세션
 async function buildPeakMoments(year: number) {
-  return dbAll<any>(
+  return dbAll<PeakMomentRow>(
     `SELECT
        s.date::text AS date,
        s.name AS session_name,

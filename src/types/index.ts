@@ -397,6 +397,58 @@ export interface ActivityLog {
   encouragements?: Encouragement[];
 }
 
+export interface ActivityStatsPeriod {
+  key: 'calendar_week' | 'rolling_7' | 'calendar_month' | 'rolling_30' | 'calendar_year' | 'rolling_365';
+  label: string;
+  mode: 'calendar' | 'rolling';
+  from: string;
+  to: string;
+  distanceM: number;
+  durationS: number;
+  activityCount: number;
+  longestDistanceM: number;
+  avgPaceS: number | null;
+}
+
+export interface ActivityStatsBucket {
+  date?: string;
+  month?: number;
+  label?: string;
+  from?: string;
+  distanceM: number;
+  durationS: number;
+  activityCount: number;
+}
+
+export interface ActivityStatsKindBreakdown {
+  kind: ActivityKind;
+  label: string;
+  distanceM: number;
+  durationS: number;
+  activityCount: number;
+}
+
+export interface ActivityStatsLatestTraining {
+  id: string;
+  kind: ActivityKind;
+  label: string;
+  source: string;
+  activityDate: string;
+  distanceM: number;
+  durationS: number;
+  note: string | null;
+}
+
+export interface ActivityDistanceStats {
+  generatedAt: string;
+  today: string;
+  periods: ActivityStatsPeriod[];
+  rolling30Daily: ActivityStatsBucket[];
+  calendarYearMonthly: ActivityStatsBucket[];
+  kindBreakdown: ActivityStatsKindBreakdown[];
+  latestTrainingNotes: ActivityStatsLatestTraining[];
+}
+
 export type HomeworkMetric = 'distance' | 'count' | 'duration' | 'checkin' | 'freeform';
 
 export interface Homework {

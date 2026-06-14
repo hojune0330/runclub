@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureSchema } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse } from '@/lib/auth';
-import { isStravaConfigured, buildAuthUrl } from '@/lib/strava';
+import { isStravaConfigured, buildAuthUrl, createStravaOAuthState } from '@/lib/strava';
 
 // GET /api/integrations/strava/start?classId=
 //  Strava 인증 페이지로 리디렉션. state 에 memberId(+classId) 를 실어 보냄.
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
   const classId = req.nextUrl.searchParams.get('classId') ?? '';
   const origin = req.nextUrl.origin;
-  const state = Buffer.from(JSON.stringify({ m: auth.memberId, c: classId })).toString('base64url');
+  const state = await createStravaOAuthState(auth.memberId, classId || null);
   const url = buildAuthUrl(origin, state);
   return NextResponse.redirect(url);
 }

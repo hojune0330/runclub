@@ -22,5 +22,5 @@ export async function POST(req: Request) {
   });
 
   // ストリーミングレスポンスとして返す
-  return result.toDataStreamResponse();
+  return result.toTextStreamResponse();
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { dbAll, dbGet, dbRun, genId } from '@/lib/db';
-import { getAuthFromRequest, requireAdmin } from '@/lib/auth';
+import { getAuthFromRequest } from '@/lib/auth';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-DISCOUNT: Admin coupon CRUD
@@ -11,12 +11,47 @@ import { getAuthFromRequest, requireAdmin } from '@/lib/auth';
 // DELETE /api/coupons?id=xxx   — soft-delete (deactivate) coupon
 // ─────────────────────────────────────────────────────────────────────
 
+type CouponRow = {
+  id: string;
+  code: string;
+  name: string;
+  discount_type: string;
+  discount_value: number;
+  min_order: number | null;
+  max_discount: number | null;
+  total_quantity: number | null;
+  used_count: number | null;
+  per_member: number | null;
+  starts_at: string | null;
+  expires_at: string | null;
+  target_products: string | null;
+  target_grades: string | null;
+  is_active: boolean;
+  created_at: string;
+};
+
+type CouponPayload = {
+  code?: string;
+  name?: string;
+  discountType?: string;
+  discountValue?: number;
+  minOrder?: number;
+  maxDiscount?: number | null;
+  totalQuantity?: number;
+  perMember?: number;
+  startsAt?: string | null;
+  expiresAt?: string | null;
+  targetProducts?: unknown;
+  targetGrades?: unknown;
+  isActive?: boolean;
+};
+
 export async function GET(req: NextRequest) {
   const auth = await getAuthFromRequest(req);
   if (!auth) return NextResponse.json({ error: '인증이 필요합니다' }, { status: 401 });
   if (auth.role !== 'admin') return NextResponse.json({ error: '관리자 권한이 필요합니다' }, { status: 403 });
 
-  const coupons = await dbAll<any>(
+  const coupons = await dbAll<CouponRow>(
     `SELECT * FROM coupons ORDER BY created_at DESC`
   );
 
@@ -48,7 +83,7 @@ export async function POST(req: NextRequest) {
   if (auth.role !== 'admin') return NextResponse.json({ error: '관리자 권한이 필요합니다' }, { status: 403 });
 
   try {
-    const body = await req.json();
+    const body = await req.json() as CouponPayload;
     const {
       code, name,
       discountType, discountValue,
@@ -94,7 +129,7 @@ export async function POST(req: NextRequest) {
     ]);
 
     return NextResponse.json({ id, code, name }, { status: 201 });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[coupons POST] error:', error);
     return NextResponse.json({ error: '쿠폰 생성 중 오류가 발생했습니다' }, { status: 500 });
   }
@@ -109,10 +144,10 @@ export async function PUT(req: NextRequest) {
     const id = req.nextUrl.searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'id 파라미터가 필요합니다' }, { status: 400 });
 
-    const body = await req.json();
+    const body = await req.json() as CouponPayload;
 
     const sets: string[] = [];
-    const vals: any[] = [];
+    const vals: unknown[] = [];
     let idx = 1;
 
     for (const [key, col] of [
@@ -157,7 +192,7 @@ export async function PUT(req: NextRequest) {
     await dbRun(`UPDATE coupons SET ${sets.join(', ')} WHERE id = $${idx}`, vals);
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[coupons PUT] error:', error);
     return NextResponse.json({ error: '쿠폰 수정 중 오류가 발생했습니다' }, { status: 500 });
   }
@@ -176,7 +211,7 @@ export async function DELETE(req: NextRequest) {
     await dbRun(`UPDATE coupons SET is_active = FALSE WHERE id = $1`, [id]);
 
     return NextResponse.json({ success: true });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[coupons DELETE] error:', error);
     return NextResponse.json({ error: '쿠폰 삭제 중 오류가 발생했습니다' }, { status: 500 });
   }

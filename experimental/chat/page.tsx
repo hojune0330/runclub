@@ -1,15 +1,23 @@
 'use client';
 
-import { useChat } from 'ai/react';
 import { Send, User, Bot, Loader2 } from 'lucide-react';
-import { useRef, useEffect } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+
+type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+function createId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export default function ChatPage() {
-  const { messages, input, handleInputChange, handleSubmit, isLoading, error } =
-    useChat({
-      api: '/chat/calmcode',
-    });
-
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -17,7 +25,65 @@ export default function ChatPage() {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, isLoading]);
+
+  const sendMessage = async () => {
+    const text = input.trim();
+    if (!text || isLoading) return;
+
+    const userMessage: ChatMessage = { id: createId(), role: 'user', content: text };
+    const assistantId = createId();
+    const nextMessages = [...messages, userMessage];
+    setMessages([...nextMessages, { id: assistantId, role: 'assistant', content: '' }]);
+    setInput('');
+    setIsLoading(true);
+    setError(false);
+
+    try {
+      const res = await fetch('/chat/calmcode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: nextMessages.map(({ role, content }) => ({ role, content })),
+        }),
+      });
+      if (!res.ok || !res.body) throw new Error(`Chat request failed: ${res.status}`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let content = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        content += decoder.decode(value, { stream: true });
+        setMessages(current => current.map(message => (
+          message.id === assistantId ? { ...message, content } : message
+        )));
+      }
+      content += decoder.decode();
+      setMessages(current => current.map(message => (
+        message.id === assistantId ? { ...message, content: content || '응답이 비어 있습니다.' } : message
+      )));
+    } catch (err) {
+      console.error('[experimental chat] send failed', err);
+      setError(true);
+      setMessages(current => current.filter(message => message.id !== assistantId));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void sendMessage();
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      void sendMessage();
+    }
+  };
 
   return (
     <div className="flex flex-col h-[calc(100vh-116px)] md:h-[calc(100vh-120px)] max-w-[720px] mx-auto">
@@ -68,7 +134,7 @@ export default function ChatPage() {
                   : 'bg-white border border-[var(--color-border)] text-[var(--color-text)]'
               }`}
             >
-              <p className="whitespace-pre-wrap break-words">{m.content}</p>
+              <p className="whitespace-pre-wrap break-words">{m.content || '작성 중...'}</p>
             </div>
 
             {m.role === 'user' && (
@@ -111,21 +177,14 @@ export default function ChatPage() {
           <div className="flex-1 relative">
             <textarea
               value={input}
-              onChange={handleInputChange}
+              onChange={(event) => setInput(event.currentTarget.value)}
               placeholder="メッセージを入力..."
               rows={1}
               className="w-full resize-none rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-subtle)] px-3.5 py-2.5 text-[13.5px] text-[var(--color-text)] placeholder:text-[var(--color-text-muted)] focus:outline-none focus:border-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/10 transition-colors"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  if (input.trim()) {
-                    handleSubmit(e as any);
-                  }
-                }
-              }}
+              onKeyDown={handleKeyDown}
               style={{ minHeight: '42px', maxHeight: '120px' }}
-              onInput={(e) => {
-                const target = e.target as HTMLTextAreaElement;
+              onInput={(event) => {
+                const target = event.currentTarget;
                 target.style.height = 'auto';
                 target.style.height = Math.min(target.scrollHeight, 120) + 'px';
               }}
