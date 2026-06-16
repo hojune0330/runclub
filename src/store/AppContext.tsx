@@ -121,6 +121,9 @@ interface AppActions {
     discountReason?: string;
     adminMemo?: string;
     startDate?: string;
+    grantType?: 'sale' | 'manual_paid' | 'free' | 'promo' | 'compensation' | 'staff_adjustment';
+    grantReason?: string;
+    settlementStatus?: 'pending' | 'settled' | 'waived' | 'review';
   }) => Promise<{ id: string } | null>;
   pauseMemberPass: (passId: string) => Promise<void>;
   resumeMemberPass: (passId: string) => Promise<void>;

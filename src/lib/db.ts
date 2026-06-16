@@ -358,6 +358,48 @@ async function initSchema(): Promise<void> {
       ON member_passes(payment_status)
   `);
 
+  // ─── Admin direct pass grant ledger ─────────────────────────────────────
+  // member_passes 는 현재 상태(잔여 횟수/결제 상태)가 계속 바뀌므로,
+  // 관리자가 직접 지급한 순간의 상품·금액·사유·담당자를 별도 원장에 스냅샷으로 남긴다.
+  // 정산/감사 화면은 이 append-only 성격의 테이블을 기준으로 보여준다.
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS pass_grant_records (
+      id                 TEXT PRIMARY KEY,
+      pass_id            TEXT NOT NULL,
+      member_id          TEXT NOT NULL,
+      member_name        TEXT,
+      product_id         TEXT NOT NULL,
+      product_name       TEXT NOT NULL,
+      product_category   TEXT,
+      admin_id           TEXT NOT NULL,
+      admin_name         TEXT,
+      grant_type         TEXT NOT NULL DEFAULT 'sale'
+        CHECK (grant_type IN ('sale','manual_paid','free','promo','compensation','staff_adjustment')),
+      settlement_status  TEXT NOT NULL DEFAULT 'pending'
+        CHECK (settlement_status IN ('pending','settled','waived','review')),
+      total_count        INTEGER,
+      remaining_count    INTEGER,
+      start_date         TEXT NOT NULL,
+      expiry_date        TEXT NOT NULL,
+      issued_date        TEXT NOT NULL,
+      regular_price      INTEGER NOT NULL DEFAULT 0,
+      charged_amount     INTEGER NOT NULL DEFAULT 0,
+      discount_amount    INTEGER NOT NULL DEFAULT 0,
+      payment_status     TEXT NOT NULL DEFAULT 'unpaid',
+      payment_method     TEXT,
+      transaction_id     TEXT,
+      reason             TEXT,
+      memo               TEXT,
+      product_snapshot   JSONB,
+      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_pass_grant_records_created ON pass_grant_records(created_at DESC)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_pass_grant_records_member ON pass_grant_records(member_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_pass_grant_records_pass ON pass_grant_records(pass_id)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_pass_grant_records_settlement ON pass_grant_records(settlement_status, created_at DESC)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_pass_grant_records_admin ON pass_grant_records(admin_id, created_at DESC)`);
+
   // ─── PR-7: Session "pre-registration info" columns ─────────────────────
   // Adds optional rich-info fields the admin can edit per session so members
   // see context (description, event link, Instagram review, OpenChat link,

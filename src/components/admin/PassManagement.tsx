@@ -12,7 +12,7 @@ import { sessionTypeConfig, passStatusConfig } from '@/lib/config';
 import { formatKoreanDate, formatPrice, cn, getDaysUntilExpiry, isPassExpiringSoon } from '@/lib/utils';
 import { Tabs, Badge, Modal, FormField, useToast } from '@/components/ui';
 import { api } from '@/lib/api';
-import type { Member, PassProduct, MemberPass, SessionType } from '@/types';
+import type { Member, PassProduct, MemberPass, SessionType, PaymentStatus } from '@/types';
 
 // ─────────────────────────────────────────────────────────────────────
 // PR-6: PassManagement
@@ -47,7 +47,47 @@ const paymentMethodLabel: Record<string, string> = {
   toss: '토스페이먼츠', manual: '외부결제', free: '무료',
 };
 
-type Tab = 'products' | 'issued' | 'payments';
+const grantTypeLabel: Record<string, string> = {
+  sale: '일반 판매',
+  manual_paid: '관리자 수기결제',
+  free: '무료 지급',
+  promo: '프로모션 지급',
+  compensation: '보상 지급',
+  staff_adjustment: '내부 조정',
+};
+const settlementStatusLabel: Record<string, string> = {
+  pending: '정산 대기', settled: '정산 완료', waived: '수납 없음', review: '검토 필요',
+};
+const settlementTone: Record<string, 'success' | 'warning' | 'danger' | 'muted'> = {
+  pending: 'warning', settled: 'success', waived: 'muted', review: 'danger',
+};
+
+type Tab = 'products' | 'issued' | 'grants' | 'payments';
+type GrantType = 'sale' | 'manual_paid' | 'free' | 'promo' | 'compensation' | 'staff_adjustment';
+type SettlementStatus = 'pending' | 'settled' | 'waived' | 'review';
+type IssuePassOptions = {
+  grantType?: GrantType;
+  grantReason?: string;
+  settlementStatus?: SettlementStatus;
+  paymentStatus?: 'unpaid' | 'paid';
+  paymentMethod?: string;
+  paymentAmount?: number;
+  discountAmount?: number;
+  discountReason?: string;
+  adminMemo?: string;
+};
+type ProductFormData = Omit<Partial<PassProduct>, 'totalCount' | 'originalPrice' | 'description' | 'descriptionLong' | 'refundPolicy' | 'imageUrl'> & {
+  totalCount?: number | null;
+  originalPrice?: number | null;
+  description?: string | null;
+  descriptionLong?: string | null;
+  refundPolicy?: string | null;
+  imageUrl?: string | null;
+};
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 export default function PassManagement() {
   const {
@@ -88,6 +128,9 @@ export default function PassManagement() {
         if (!search) return true;
         const q = search.toLowerCase();
         return (
+          p.id.toLowerCase().includes(q) ||
+          p.memberId.toLowerCase().includes(q) ||
+          p.productId.toLowerCase().includes(q) ||
           (p.memberName || '').toLowerCase().includes(q) ||
           (p.productName || '').toLowerCase().includes(q) ||
           (p.transactionId || '').toLowerCase().includes(q)
@@ -118,13 +161,13 @@ export default function PassManagement() {
         </div>
         <button
           onClick={() => {
-            if (tab === 'issued') setShowIssueModal(true);
-            else setProductCreate(true);
+            if (tab === 'products') setProductCreate(true);
+            else setShowIssueModal(true);
           }}
           className="flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)] transition-colors"
         >
           <Plus size={15} />
-          {tab === 'products' ? '상품 추가' : '수강권 발급'}
+          {tab === 'products' ? '상품 추가' : tab === 'payments' ? '수강권 발급' : '수강권 지급'}
         </button>
       </div>
 
@@ -133,6 +176,8 @@ export default function PassManagement() {
           tabs={[
             { id: 'products', label: '수강권 상품', count: passProducts.length },
             { id: 'issued', label: '발급 내역', count: memberPasses.length },
+            { id: 'grants', label: '지급/정산 기록' },
+            { id: 'payments', label: '결제 모니터' },
           ]}
           active={tab}
           onChange={setTab}
@@ -140,6 +185,15 @@ export default function PassManagement() {
 
         {tab === 'payments' ? (
           <PaymentsMonitorPanel />
+        ) : tab === 'grants' ? (
+          <GrantLedgerPanel
+            onIssueClick={() => setShowIssueModal(true)}
+            onSelectPass={(passId) => {
+              const target = memberPasses.find(p => p.id === passId);
+              if (target) setPassDetail(target);
+              else { setTab('issued'); setSearch(passId); setToast('해당 수강권을 발급 내역에서 확인해주세요.'); }
+            }}
+          />
         ) : tab === 'products' ? (
           <ProductsTable
             products={passProducts}
@@ -241,7 +295,7 @@ export default function PassManagement() {
             const r = await issueMemberPass(memberId, productId, opts);
             if (r) {
               setShowIssueModal(false);
-              setTab('issued');
+              setTab('grants');
               const m = members.find(x => x.id === memberId);
               const p = passProducts.find(x => x.id === productId);
               setToast(`${m?.name ?? '회원'}님에게 ${p?.name ?? '수강권'}을(를) 발급했습니다.`);
@@ -711,11 +765,14 @@ function IssuePassModal({
   products: PassProduct[];
   existingPasses: MemberPass[];
   onClose: () => void;
-  onIssue: (memberId: string, productId: string, opts?: any) => Promise<void>;
+  onIssue: (memberId: string, productId: string, opts?: IssuePassOptions) => Promise<void>;
 }) {
   const [memberQuery, setMemberQuery] = useState('');
   const [memberId, setMemberId] = useState<string | null>(null);
   const [productId, setProductId] = useState<string | null>(null);
+  const [grantType, setGrantType] = useState<GrantType>('sale');
+  const [settlementStatus, setSettlementStatus] = useState<SettlementStatus>('pending');
+  const [grantReason, setGrantReason] = useState<string>('');
   const [paymentStatus, setPaymentStatus] = useState<'unpaid' | 'paid'>('unpaid');
   const [paymentMethod, setPaymentMethod] = useState<string>('cash');
   const [discountAmount, setDiscountAmount] = useState<string>('0');
@@ -761,6 +818,24 @@ function IssuePassModal({
   const discountNum = Math.max(0, Number(discountAmount) || 0);
   const finalPrice = selectedProduct ? Math.max(0, selectedProduct.price - discountNum) : 0;
 
+  useEffect(() => {
+    if (!selectedProduct) return;
+    if (grantType === 'free' || grantType === 'compensation' || grantType === 'staff_adjustment') {
+      setPaymentStatus('paid');
+      setPaymentMethod('free');
+      setDiscountAmount(String(selectedProduct.price));
+      setSettlementStatus('waived');
+    } else if (grantType === 'manual_paid') {
+      setPaymentStatus('paid');
+      setSettlementStatus('settled');
+    } else if (grantType === 'promo') {
+      setSettlementStatus('review');
+    } else {
+      setSettlementStatus(paymentStatus === 'paid' ? 'settled' : 'pending');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grantType, selectedProduct?.id]);
+
   const duplicateActive = useMemo(() => {
     if (!memberId || !productId) return false;
     return existingPasses.some(p => p.memberId === memberId && p.productId === productId && p.status === 'active');
@@ -782,9 +857,17 @@ function IssuePassModal({
       const ok = confirm('이 회원은 이미 같은 상품의 사용중 수강권을 보유하고 있습니다.\n그래도 추가로 발급하시겠습니까?');
       if (!ok) return;
     }
+    const requiresReason = grantType !== 'sale' || discountNum > 0 || finalPrice === 0;
+    if (requiresReason && !grantReason.trim() && !discountReason.trim() && !adminMemo.trim()) {
+      setError('무료/할인/보상 지급은 지급 사유 또는 관리자 메모를 남겨야 합니다');
+      return;
+    }
     setError(null); setSubmitting(true);
     try {
       await onIssue(memberId, productId, {
+        grantType,
+        grantReason: grantReason.trim() || undefined,
+        settlementStatus,
         paymentStatus,
         paymentMethod: paymentStatus === 'paid' ? paymentMethod : undefined,
         paymentAmount: finalPrice,
@@ -792,8 +875,8 @@ function IssuePassModal({
         discountReason: discountReason.trim() || undefined,
         adminMemo: adminMemo.trim() || undefined,
       });
-    } catch (e: any) {
-      setError(e?.message || '수강권 발급에 실패했습니다');
+    } catch (e: unknown) {
+      setError(errorMessage(e, '수강권 발급에 실패했습니다'));
     } finally { setSubmitting(false); }
   };
 
@@ -911,10 +994,54 @@ function IssuePassModal({
             )}
           </div>
 
-          {/* Step 3: payment */}
+          {/* Step 3: grant metadata */}
           {selectedProduct && (
             <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
-              <label className="block text-[13px] font-medium text-[var(--color-text)]">3. 결제 정보</label>
+              <label className="block text-[13px] font-medium text-[var(--color-text)]">3. 지급 구분 / 기록</label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {([
+                  { id: 'sale', label: '일반 판매' },
+                  { id: 'manual_paid', label: '수기 결제' },
+                  { id: 'free', label: '무료 지급' },
+                  { id: 'promo', label: '프로모션' },
+                  { id: 'compensation', label: '보상 지급' },
+                  { id: 'staff_adjustment', label: '내부 조정' },
+                ] as const).map(g => (
+                  <button key={g.id} type="button" onClick={() => setGrantType(g.id)}
+                    className={cn(
+                      'px-2.5 py-2 text-[12.5px] rounded border text-left',
+                      grantType === g.id ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/5 text-[var(--color-primary)] font-medium' : 'border-[var(--color-border)] text-[var(--color-text-secondary)]'
+                    )}>
+                    {g.label}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <FormField label="지급/할인 사유" hint="무료·할인·보상은 필수">
+                  <input type="text" value={grantReason} onChange={e => setGrantReason(e.target.value)}
+                    placeholder="예: 체험권 제공, 컴플레인 보상, 지인 프로모션"
+                    className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]" />
+                </FormField>
+                <FormField label="정산 상태">
+                  <select value={settlementStatus} onChange={e => setSettlementStatus(e.target.value as SettlementStatus)}
+                    className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]">
+                    <option value="pending">정산 대기</option>
+                    <option value="settled">정산 완료</option>
+                    <option value="waived">수납 없음</option>
+                    <option value="review">검토 필요</option>
+                  </select>
+                </FormField>
+              </div>
+              <p className="text-[11.5px] text-[var(--color-text-muted)] leading-relaxed">
+                지급 구분·사유·정산 상태는 별도 원장에 저장되어 나중에 관리자/담당자가 한눈에 확인할 수 있습니다.
+              </p>
+            </div>
+          )}
+
+          {/* Step 4: payment */}
+          {selectedProduct && (
+            <div className="space-y-3 border-t border-[var(--color-border)] pt-3">
+              <label className="block text-[13px] font-medium text-[var(--color-text)]">4. 결제 정보</label>
               <div className="flex items-center gap-2">
                 {(['unpaid', 'paid'] as const).map(s => (
                   <button key={s} type="button" onClick={() => setPaymentStatus(s)}
@@ -980,6 +1107,9 @@ function IssuePassModal({
                 <span className="text-[var(--color-text-muted)]"> · 청구: </span>
                 <span className="tabular-nums font-semibold text-[var(--color-primary)]">{formatPrice(finalPrice)}</span>
               </p>
+              <p className="text-[12.5px] text-[var(--color-text)]">
+                <span className="text-[var(--color-text-muted)]">기록: </span>{grantTypeLabel[grantType]} · {settlementStatusLabel[settlementStatus]}
+              </p>
               <p className="text-[11.5px] text-[var(--color-text-muted)] leading-relaxed">{passCategoryHelp(selectedProduct.category)}</p>
             </div>
           )}
@@ -1022,7 +1152,7 @@ function ProductFormModal({
 }: {
   product: PassProduct | null;
   onClose: () => void;
-  onSubmit: (data: any) => Promise<void>;
+  onSubmit: (data: ProductFormData) => Promise<void>;
 }) {
   // PR-A: 태그 마스터를 컨텍스트에서 가져온다.
   const { sessionTags } = useApp();
@@ -1110,8 +1240,8 @@ function ProductFormModal({
         isFeatured,
         isActive,
       });
-    } catch (e: any) {
-      setError(e?.message || '저장 중 오류가 발생했습니다');
+    } catch (e: unknown) {
+      setError(errorMessage(e, '저장 중 오류가 발생했습니다'));
     } finally { setSubmitting(false); }
   };
 
@@ -1125,7 +1255,7 @@ function ProductFormModal({
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormField label="분류" required>
-            <select value={category} onChange={e => setCategory(e.target.value as any)}
+            <select value={category} onChange={e => setCategory(e.target.value as PassProduct['category'])}
               className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]">
               <option value="count">횟수권</option>
               <option value="season">시즌권</option>
@@ -1403,7 +1533,7 @@ function PassDetailModal({
   onClose: () => void;
   onExtend: (params: { days?: number; expiryDate?: string }) => Promise<boolean>;
   onAdjust: (params: { totalCount?: number; remainingCount?: number }) => Promise<boolean>;
-  onPayment: (params: { paymentStatus: any; paymentMethod?: string; paymentAmount?: number; transactionId?: string }) => Promise<boolean>;
+  onPayment: (params: { paymentStatus: PaymentStatus; paymentMethod?: string; paymentAmount?: number; transactionId?: string }) => Promise<boolean>;
   onMemo: (memo: string) => Promise<boolean>;
   onPause: () => void; onResume: () => void; onRefund: () => void;
 }) {
@@ -1603,7 +1733,7 @@ function PassDetailModal({
             <button onClick={async () => {
               setBusy(true);
               const ok = await onPayment({
-                paymentStatus: pStatus as any,
+                paymentStatus: pStatus as PaymentStatus,
                 paymentMethod: pMethod,
                 paymentAmount: Number(pAmount) || 0,
                 transactionId: pTxn || undefined,
@@ -1847,6 +1977,252 @@ function RefundModal({
   );
 }
 
+
+// ─────────────────────────────────────────────────────────────────────
+// GrantLedgerPanel — admin direct grant / settlement dashboard.
+// ─────────────────────────────────────────────────────────────────────
+type PassGrantItem = {
+  id: string;
+  passId: string;
+  memberId: string;
+  memberName: string | null;
+  productId: string;
+  productName: string;
+  productCategory: string | null;
+  adminId: string;
+  adminName: string | null;
+  grantType: 'sale' | 'manual_paid' | 'free' | 'promo' | 'compensation' | 'staff_adjustment';
+  settlementStatus: 'pending' | 'settled' | 'waived' | 'review';
+  totalCount: number | null;
+  remainingCount: number | null;
+  startDate: string;
+  expiryDate: string;
+  issuedDate: string;
+  regularPrice: number;
+  chargedAmount: number;
+  discountAmount: number;
+  paymentStatus: string;
+  paymentMethod: string | null;
+  transactionId: string | null;
+  reason: string | null;
+  memo: string | null;
+  passStatus: string | null;
+  createdAt: string;
+};
+type PassGrantStats = {
+  today: { count: number; chargedAmount: number; discountAmount: number };
+  month: { count: number; chargedAmount: number; discountAmount: number };
+  pending: { count: number; amount: number };
+  waived: { count: number; amount: number };
+  nonSaleCount: number;
+};
+
+function GrantLedgerPanel({
+  onIssueClick,
+  onSelectPass,
+}: {
+  onIssueClick: () => void;
+  onSelectPass: (passId: string) => void;
+}) {
+  const [items, setItems] = useState<PassGrantItem[]>([]);
+  const [stats, setStats] = useState<PassGrantStats | null>(null);
+  const [grantFilter, setGrantFilter] = useState<'all' | PassGrantItem['grantType']>('all');
+  const [settlementFilter, setSettlementFilter] = useState<'all' | PassGrantItem['settlementStatus']>('all');
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setErr(null);
+    try {
+      const [listRes, statsRes] = await Promise.all([
+        api.passGrants.list({
+          grantType: grantFilter === 'all' ? undefined : grantFilter,
+          settlementStatus: settlementFilter === 'all' ? undefined : settlementFilter,
+          q: query.trim() || undefined,
+          limit: 100,
+        }),
+        api.passGrants.stats(),
+      ]);
+      setItems(listRes.items);
+      setStats(statsRes);
+    } catch (e: unknown) {
+      setErr(errorMessage(e, '지급 기록을 불러오지 못했습니다'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [grantFilter, settlementFilter]);
+
+  const typeBadge = (type: PassGrantItem['grantType']) => {
+    const tone: 'success' | 'warning' | 'muted' = type === 'sale' || type === 'manual_paid' ? 'success' : type === 'free' ? 'muted' : 'warning';
+    return <Badge tone={tone}>{grantTypeLabel[type] ?? type}</Badge>;
+  };
+
+  const recordTime = (iso: string) => new Date(iso).toLocaleString('ko-KR', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 px-3 sm:px-4 py-3 sm:py-4 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)]">
+        <StatCard icon={<Ticket size={14} />} label="오늘 지급"
+          value={stats ? `${stats.today.count}건` : '—'}
+          sub={stats ? `청구 ${formatPrice(stats.today.chargedAmount)}` : ''} tone="primary" />
+        <StatCard icon={<Calendar size={14} />} label="이번달 지급"
+          value={stats ? `${stats.month.count}건` : '—'}
+          sub={stats ? `할인/면제 ${formatPrice(stats.month.discountAmount)}` : ''} tone="success" />
+        <StatCard icon={<Clock size={14} />} label="정산 대기"
+          value={stats ? `${stats.pending.count}건` : '—'}
+          sub={stats ? formatPrice(stats.pending.amount) : ''} tone="warning" />
+        <StatCard icon={<Wallet size={14} />} label="수납 없음/면제"
+          value={stats ? `${stats.waived.count}건` : '—'}
+          sub={stats ? formatPrice(stats.waived.amount) : ''} tone="muted" />
+      </div>
+
+      <div className="px-4 py-3 border-b border-[var(--color-border)] flex items-center gap-3 flex-wrap bg-white">
+        <div className="relative">
+          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--color-text-muted)]" />
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') load(); }}
+            placeholder="회원, 상품, 사유, 거래ID"
+            className="pl-8 pr-3 py-1.5 text-[13px] border border-[var(--color-border)] rounded w-[240px] focus:outline-none focus:border-[var(--color-primary)]"
+          />
+        </div>
+        <select value={grantFilter} onChange={e => setGrantFilter(e.target.value as 'all' | PassGrantItem['grantType'])}
+          className="px-2.5 h-8 text-[12.5px] border border-[var(--color-border)] rounded bg-white">
+          <option value="all">전체 지급구분</option>
+          <option value="sale">일반 판매</option>
+          <option value="manual_paid">수기 결제</option>
+          <option value="free">무료 지급</option>
+          <option value="promo">프로모션</option>
+          <option value="compensation">보상 지급</option>
+          <option value="staff_adjustment">내부 조정</option>
+        </select>
+        <select value={settlementFilter} onChange={e => setSettlementFilter(e.target.value as 'all' | PassGrantItem['settlementStatus'])}
+          className="px-2.5 h-8 text-[12.5px] border border-[var(--color-border)] rounded bg-white">
+          <option value="all">전체 정산상태</option>
+          <option value="pending">정산 대기</option>
+          <option value="settled">정산 완료</option>
+          <option value="waived">수납 없음</option>
+          <option value="review">검토 필요</option>
+        </select>
+        <div className="flex-1" />
+        <button onClick={load} disabled={loading}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-subtle)] disabled:opacity-50">
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> 조회
+        </button>
+        <button onClick={onIssueClick}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[12px] font-medium text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)]">
+          <Plus size={12} /> 직접 지급
+        </button>
+      </div>
+
+      {err && <div className="py-12 text-center text-[13px] text-[var(--color-danger)]">{err}</div>}
+      {!err && loading && items.length === 0 && (
+        <div className="py-12 text-center text-[13px] text-[var(--color-text-muted)]">
+          <Loader2 size={16} className="inline animate-spin mr-1" /> 불러오는 중…
+        </div>
+      )}
+      {!err && !loading && items.length === 0 && (
+        <div className="py-12 px-6 text-center">
+          <p className="text-[13px] text-[var(--color-text-muted)]">아직 기록된 관리자 지급 내역이 없습니다.</p>
+          <button onClick={onIssueClick}
+            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-medium text-[var(--color-primary)] border border-[var(--color-primary)]/30 rounded hover:bg-[var(--color-primary)]/10">
+            <Plus size={13} /> 첫 지급 기록 만들기
+          </button>
+        </div>
+      )}
+
+      {!err && items.length > 0 && (
+        <>
+          <ul className="sm:hidden divide-y divide-[var(--color-border-subtle)]">
+            {items.map(it => (
+              <li key={it.id} className="px-3 py-3" onClick={() => onSelectPass(it.passId)}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[14px] font-semibold text-[var(--color-text)] truncate">{it.memberName ?? '(회원 없음)'}</span>
+                      {typeBadge(it.grantType)}
+                      <Badge tone={settlementTone[it.settlementStatus] ?? 'muted'}>{settlementStatusLabel[it.settlementStatus]}</Badge>
+                    </div>
+                    <p className="text-[12.5px] text-[var(--color-text-secondary)] mt-0.5 truncate">{it.productName}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-[13px] font-semibold text-[var(--color-text)] tabular-nums">{formatPrice(it.chargedAmount)}</div>
+                    {it.discountAmount > 0 && <div className="text-[10.5px] text-[var(--color-danger)]">-{formatPrice(it.discountAmount)}</div>}
+                  </div>
+                </div>
+                <p className="text-[11.5px] text-[var(--color-text-muted)] mt-1.5 truncate">
+                  {recordTime(it.createdAt)} · 담당 {it.adminName ?? it.adminId} {it.reason ? `· ${it.reason}` : ''}
+                </p>
+              </li>
+            ))}
+          </ul>
+
+          <div className="hidden sm:block scroll-x">
+            <table className="responsive-table" style={{ minWidth: 920 }}>
+              <thead>
+                <tr className="bg-[var(--color-bg-subtle)] border-b border-[var(--color-border)] text-[12px] text-[var(--color-text-muted)]">
+                  <th className="text-left font-medium px-4 py-2.5 w-[130px]">지급일</th>
+                  <th className="text-left font-medium px-4 py-2.5 w-[110px]">회원</th>
+                  <th className="text-left font-medium px-4 py-2.5 w-[200px]">수강권</th>
+                  <th className="text-center font-medium px-4 py-2.5 w-[120px]">구분</th>
+                  <th className="text-right font-medium px-4 py-2.5 w-[110px]">청구</th>
+                  <th className="text-right font-medium px-4 py-2.5 w-[110px]">할인/면제</th>
+                  <th className="text-center font-medium px-4 py-2.5 w-[110px]">정산</th>
+                  <th className="text-left font-medium px-4 py-2.5 w-[160px]">담당/사유</th>
+                  <th className="text-right font-medium px-4 py-2.5 w-[70px]">확인</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map(it => (
+                  <tr key={it.id} className="border-b border-[var(--color-border-subtle)] last:border-0 hover:bg-[var(--color-bg-subtle)] cursor-pointer" onClick={() => onSelectPass(it.passId)}>
+                    <td className="px-4 py-2.5 text-[12px] text-[var(--color-text-secondary)] tabular-nums">{recordTime(it.createdAt)}</td>
+                    <td className="px-4 py-2.5 text-[var(--color-text)] font-medium">{it.memberName ?? '(회원 없음)'}</td>
+                    <td className="px-4 py-2.5 text-[var(--color-text-secondary)] max-w-[200px] truncate" title={it.productName}>
+                      {it.productName}
+                      <div className="text-[10.5px] text-[var(--color-text-muted)] tabular-nums">
+                        {it.totalCount != null ? `${it.remainingCount}/${it.totalCount}회 · ` : ''}{it.startDate}—{it.expiryDate}
+                      </div>
+                    </td>
+                    <td className="px-4 py-2.5 text-center">{typeBadge(it.grantType)}</td>
+                    <td className="px-4 py-2.5 text-right text-[var(--color-text)] tabular-nums">{formatPrice(it.chargedAmount)}</td>
+                    <td className="px-4 py-2.5 text-right text-[var(--color-danger)] tabular-nums">{it.discountAmount > 0 ? `-${formatPrice(it.discountAmount)}` : '—'}</td>
+                    <td className="px-4 py-2.5 text-center"><Badge tone={settlementTone[it.settlementStatus] ?? 'muted'}>{settlementStatusLabel[it.settlementStatus]}</Badge></td>
+                    <td className="px-4 py-2.5 text-[11.5px] text-[var(--color-text-muted)] max-w-[160px] truncate" title={[it.adminName ?? it.adminId, it.reason, it.memo].filter(Boolean).join(' · ')}>
+                      <span className="font-medium text-[var(--color-text-secondary)]">{it.adminName ?? it.adminId}</span>
+                      {it.reason && <div className="truncate">{it.reason}</div>}
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <button className="inline-flex items-center gap-1 text-[11.5px] text-[var(--color-primary)] hover:underline">
+                        상세 <ExternalLink size={11} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <div className="px-4 py-2.5 border-t border-[var(--color-border)] text-[11.5px] text-[var(--color-text-muted)] flex items-center gap-1.5">
+        <Info size={11} />
+        관리자 직접 지급은 별도 원장과 감사 로그에 남습니다. 무료·보상·프로모션 지급은 사유를 함께 남겨 정산 검토에 사용하세요.
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // PR-6 STEP 4: PaymentsMonitorPanel — admin payment monitoring tab
 //
@@ -1886,14 +2262,17 @@ function PaymentsMonitorPanel() {
       ]);
       setItems(listRes.items);
       setStats(statsRes);
-    } catch (e: any) {
-      setErr(e?.message ?? '결제 내역을 불러오지 못했습니다');
+    } catch (e: unknown) {
+      setErr(errorMessage(e, '결제 내역을 불러오지 못했습니다'));
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [statusFilter]);
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter]);
 
   const statusBadge = (s: PaymentItem['status']) => {
     if (s === 'confirmed') return <Badge tone="success">결제완료</Badge>;

@@ -20,6 +20,8 @@ import { Badge } from '@/components/ui';
  * default view scannable.
  */
 
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
 interface AuditEntry {
   id: number;
   adminId: string;
@@ -29,8 +31,8 @@ interface AuditEntry {
   targetId: string | null;
   targetName: string | null;
   summary: string | null;
-  beforeValue: any;
-  afterValue: any;
+  beforeValue: JsonValue;
+  afterValue: JsonValue;
   ipAddress: string | null;
   userAgent: string | null;
   createdAt: string;
@@ -48,8 +50,13 @@ const ACTION_LABEL: Record<string, string> = {
   'session.update': '세션 수정',
   'session.delete': '세션 삭제',
   'pass.issue': '수강권 발급',
+  'pass.grant': '관리자 수강권 지급',
   'pass.pause': '수강권 일시정지',
   'pass.resume': '수강권 재개',
+  'pass.extend': '수강권 기간 연장',
+  'pass.adjust': '수강권 횟수 조정',
+  'pass.payment': '결제 정보 변경',
+  'pass.memo': '수강권 메모 변경',
   'pass.refund': '수강권 환불',
   'notice.create': '공지 등록',
   'notice.delete': '공지 삭제',
@@ -75,7 +82,7 @@ function actionTone(action: string): 'success' | 'warning' | 'danger' | 'default
     action === 'pass.pause'
   )
     return 'warning';
-  if (action.endsWith('.create') || action === 'pass.issue' || action === 'member.activate')
+  if (action.endsWith('.create') || action === 'pass.issue' || action === 'pass.grant' || action === 'member.activate')
     return 'success';
   return 'default';
 }
@@ -128,12 +135,12 @@ export default function AuditLog() {
       });
       setEntries(prev => (reset ? res.entries : [...prev, ...res.entries]));
       setNextBefore(res.nextBefore);
-    } catch (e: any) {
+    } catch (e: unknown) {
       if (e instanceof AuthExpiredError) {
         logout();
         return;
       }
-      setError(e?.message ?? '감사 로그를 불러오지 못했습니다');
+      setError(e instanceof Error ? e.message : '감사 로그를 불러오지 못했습니다');
     } finally {
       setLoading(false);
       setLoadingMore(false);

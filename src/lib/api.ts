@@ -390,6 +390,9 @@ export const api = {
       adminMemo?: string;
       startDate?: string;
       transactionId?: string;
+      grantType?: 'sale' | 'manual_paid' | 'free' | 'promo' | 'compensation' | 'staff_adjustment';
+      grantReason?: string;
+      settlementStatus?: 'pending' | 'settled' | 'waived' | 'review';
     }) =>
       request<{ id: string; success: boolean }>('/passes', {
         method: 'POST',
@@ -433,6 +436,40 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ passId, action: 'memo', adminMemo }),
       }),
+  },
+
+  passGrants: {
+    list: (params?: { grantType?: string; settlementStatus?: string; q?: string; limit?: number }) => {
+      const query = new URLSearchParams();
+      if (params?.grantType) query.set('grantType', params.grantType);
+      if (params?.settlementStatus) query.set('settlementStatus', params.settlementStatus);
+      if (params?.q) query.set('q', params.q);
+      if (params?.limit) query.set('limit', String(params.limit));
+      const qs = query.toString() ? `?${query.toString()}` : '';
+      return request<{
+        items: Array<{
+          id: string; passId: string; memberId: string; memberName: string | null;
+          productId: string; productName: string; productCategory: string | null;
+          adminId: string; adminName: string | null;
+          grantType: 'sale' | 'manual_paid' | 'free' | 'promo' | 'compensation' | 'staff_adjustment';
+          settlementStatus: 'pending' | 'settled' | 'waived' | 'review';
+          totalCount: number | null; remainingCount: number | null;
+          startDate: string; expiryDate: string; issuedDate: string;
+          regularPrice: number; chargedAmount: number; discountAmount: number;
+          paymentStatus: string; paymentMethod: string | null; transactionId: string | null;
+          reason: string | null; memo: string | null; passStatus: string | null; createdAt: string;
+        }>;
+        count: number; limit: number;
+      }>(`/pass-grants${qs}`);
+    },
+    stats: () =>
+      request<{
+        today: { count: number; chargedAmount: number; discountAmount: number };
+        month: { count: number; chargedAmount: number; discountAmount: number };
+        pending: { count: number; amount: number };
+        waived: { count: number; amount: number };
+        nonSaleCount: number;
+      }>('/pass-grants?stats=true'),
   },
 
   passProducts: {

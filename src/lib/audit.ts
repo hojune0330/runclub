@@ -38,6 +38,7 @@ export type AuditAction =
   | 'session.update'
   | 'session.delete'
   | 'pass.issue'
+  | 'pass.grant'
   | 'pass.pause'
   | 'pass.resume'
   | 'pass.refund'

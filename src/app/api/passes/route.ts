@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { dbAll, dbGet, dbRun, genId } from '@/lib/db';
+import { dbAll, dbGet, dbRun, dbTx, genId } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { safeSync } from '@/lib/sheets';
 import { mapPassRow } from '@/lib/sheets-mappers';
@@ -132,8 +132,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'memberId와 productId가 필요합니다' }, { status: 400 });
     }
 
-    const member = await dbGet<{ id: string; is_active: boolean }>(
-      'SELECT id, is_active FROM members WHERE id = $1',
+    const member = await dbGet<{ id: string; name: string; phone: string | null; is_active: boolean }>(
+      'SELECT id, name, phone, is_active FROM members WHERE id = $1',
       [memberId]
     );
     if (!member) return NextResponse.json({ error: '회원을 찾을 수 없습니다' }, { status: 404 });
@@ -173,6 +173,34 @@ export async function POST(req: NextRequest) {
       ? body.transactionId
       : null;
 
+    // ── Direct grant / settlement envelope ──
+    const allowedGrantTypes = ['sale', 'manual_paid', 'free', 'promo', 'compensation', 'staff_adjustment'] as const;
+    const grantType = allowedGrantTypes.includes(body.grantType)
+      ? body.grantType
+      : paymentMethod === 'free' || paymentAmount === 0
+      ? 'free'
+      : paymentStatus === 'paid'
+      ? 'manual_paid'
+      : 'sale';
+    const allowedSettlement = ['pending', 'settled', 'waived', 'review'] as const;
+    const settlementStatus = allowedSettlement.includes(body.settlementStatus)
+      ? body.settlementStatus
+      : grantType === 'free' || grantType === 'compensation' || paymentMethod === 'free'
+      ? 'waived'
+      : paymentStatus === 'paid'
+      ? 'settled'
+      : 'pending';
+    const grantReason = typeof body.grantReason === 'string' && body.grantReason.length <= 500
+      ? body.grantReason.trim() || null
+      : null;
+    const needsReason = grantType !== 'sale' || discountAmount > 0 || paymentAmount === 0;
+    if (needsReason && !grantReason && !discountReason && !adminMemo) {
+      return NextResponse.json(
+        { error: '무료/할인/보상 지급은 지급 사유 또는 관리자 메모를 남겨야 합니다' },
+        { status: 400 }
+      );
+    }
+
     // ── Date envelope ──
     const today = new Date().toISOString().split('T')[0];
     const startDate = typeof body.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.startDate)
@@ -184,34 +212,76 @@ export async function POST(req: NextRequest) {
       .toISOString().split('T')[0];
 
     const id = genId('mp');
+    const grantId = genId('pgr');
     const paidAt = paymentStatus === 'paid' ? 'NOW()' : 'NULL';
+    const admin = await dbGet<{ name: string }>('SELECT name FROM members WHERE id = $1', [auth.memberId]);
 
     // We can't parameterise NOW() cleanly while keeping pg type inference
     // happy, so the SQL is split: paidAt is interpolated literally (safe —
-    // it's one of two hard-coded strings).
-    await dbRun(`
-      INSERT INTO member_passes (
-        id, member_id, product_id,
-        total_count, remaining_count,
-        start_date, expiry_date, issued_date,
-        price, status,
-        payment_status, payment_method, payment_amount, paid_at,
-        transaction_id, discount_amount, discount_reason, admin_memo,
-        updated_at
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, 'active',
-        $10, $11, $12, ${paidAt},
-        $13, $14, $15, $16,
-        NOW()
-      )
-    `, [
-      id, memberId, productId,
-      product.total_count, product.total_count,
-      startDate, expiryDate, today,
-      product.price,
-      paymentStatus, paymentMethod, paymentAmount,
-      transactionId, discountAmount, discountReason, adminMemo,
-    ]);
+    // it's one of two hard-coded strings). Pass row + grant ledger are committed
+    // atomically so a direct admin 지급 can never exist without its audit record.
+    await dbTx(async (client) => {
+      await client.query(`
+        INSERT INTO member_passes (
+          id, member_id, product_id,
+          total_count, remaining_count,
+          start_date, expiry_date, issued_date,
+          price, status,
+          payment_status, payment_method, payment_amount, paid_at,
+          transaction_id, discount_amount, discount_reason, admin_memo,
+          updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, 'active',
+          $10, $11, $12, ${paidAt},
+          $13, $14, $15, $16,
+          NOW()
+        )
+      `, [
+        id, memberId, productId,
+        product.total_count, product.total_count,
+        startDate, expiryDate, today,
+        product.price,
+        paymentStatus, paymentMethod, paymentAmount,
+        transactionId, discountAmount, discountReason, adminMemo,
+      ]);
+
+      await client.query(`
+        INSERT INTO pass_grant_records (
+          id, pass_id, member_id, member_name,
+          product_id, product_name, product_category,
+          admin_id, admin_name, grant_type, settlement_status,
+          total_count, remaining_count, start_date, expiry_date, issued_date,
+          regular_price, charged_amount, discount_amount,
+          payment_status, payment_method, transaction_id,
+          reason, memo, product_snapshot, created_at
+        ) VALUES (
+          $1, $2, $3, $4,
+          $5, $6, $7,
+          $8, $9, $10, $11,
+          $12, $13, $14, $15, $16,
+          $17, $18, $19,
+          $20, $21, $22,
+          $23, $24, $25::jsonb, NOW()
+        )
+      `, [
+        grantId, id, memberId, member.name,
+        productId, product.name, product.category,
+        auth.memberId, admin?.name ?? null, grantType, settlementStatus,
+        product.total_count, product.total_count, startDate, expiryDate, today,
+        product.price, paymentAmount, discountAmount,
+        paymentStatus, paymentMethod, transactionId,
+        grantReason ?? discountReason, adminMemo,
+        JSON.stringify({
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          applicableSessions: product.applicable_sessions,
+          totalCount: product.total_count,
+          durationDays: product.duration_days,
+          price: product.price,
+        }),
+      ]);
+    });
 
     let issuedRow: any = null;
     try {
@@ -222,15 +292,16 @@ export async function POST(req: NextRequest) {
     } catch { /* swallow */ }
 
     void logAdminAction(req, auth.memberId, {
-      action: 'pass.issue',
+      action: 'pass.grant',
       targetType: 'pass',
       targetId: id,
       targetName: issuedRow?.product_name ?? product.name,
-      summary: `수강권 발급: ${issuedRow?.member_name ?? memberId} → ${issuedRow?.product_name ?? product.name} (${paymentStatus === 'paid' ? '결제완료' : '미결제'} ₩${paymentAmount})`,
+      summary: `관리자 수강권 지급: ${issuedRow?.member_name ?? member.name} → ${issuedRow?.product_name ?? product.name} (${grantType}, ${paymentStatus === 'paid' ? '결제완료' : '미결제'} ₩${paymentAmount}, 정산 ${settlementStatus})`,
       afterValue: {
-        id, memberId, productId,
+        id, grantId, memberId, productId,
         startDate, expiryDate, paymentStatus, paymentMethod,
-        paymentAmount, discountAmount,
+        paymentAmount, discountAmount, grantType, settlementStatus,
+        grantReason: grantReason ?? discountReason ?? null,
       },
     });
 
