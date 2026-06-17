@@ -37,13 +37,23 @@ function compactName(value: unknown): string {
   return String(value ?? '').trim().replace(/\s+/g, '');
 }
 
-async function findMemberByNameAndPhone(name: string, phoneDigits: string): Promise<{ member?: MemberRow; ambiguous?: boolean }> {
+async function findMember(name: string, phoneDigits: string): Promise<{ member?: MemberRow; ambiguous?: boolean }> {
   const nameKey = compactName(name);
-  if (!nameKey || phoneDigits.length < 4) return {};
+  if (!nameKey) return {};
 
-  const phoneClause = phoneDigits.length >= 8
-    ? `regexp_replace(phone, '\\D', '', 'g') = $2`
-    : `right(regexp_replace(phone, '\\D', '', 'g'), 4) = $2`;
+  // Phone is optional. When at least 4 digits are provided we narrow by phone
+  // (full match if >= 8 digits, otherwise last-4). When phone is omitted we
+  // match by name alone and rely on the ambiguous fallback to ask for a phone
+  // only when more than one member shares the name.
+  const hasPhone = phoneDigits.length >= 4;
+  const phoneClause = hasPhone
+    ? (phoneDigits.length >= 8
+        ? `AND regexp_replace(phone, '\\D', '', 'g') = $2`
+        : `AND right(regexp_replace(phone, '\\D', '', 'g'), 4) = $2`)
+    : '';
+
+  const params: string[] = [nameKey];
+  if (hasPhone) params.push(phoneDigits.length >= 8 ? phoneDigits : phoneDigits.slice(-4));
 
   const rows = await dbGet<{ items: MemberRow[] }>(
     `SELECT COALESCE(json_agg(row_to_json(t)), '[]'::json) AS items
@@ -51,11 +61,11 @@ async function findMemberByNameAndPhone(name: string, phoneDigits: string): Prom
          SELECT id, name, phone, is_active
            FROM members
           WHERE regexp_replace(name, '\\s+', '', 'g') = $1
-            AND ${phoneClause}
+            ${phoneClause}
           ORDER BY is_active DESC, created_at DESC
           LIMIT 3
        ) t`,
-    [nameKey, phoneDigits.length >= 8 ? phoneDigits : phoneDigits.slice(-4)]
+    params
   );
 
   const items = rows?.items ?? [];
@@ -159,7 +169,8 @@ async function maybeDeductCountPass(passId: string | null): Promise<number> {
   return -1;
 }
 
-// POST /api/attendance/checkin - Admin/tablet field check-in by member name + phone.
+// POST /api/attendance/checkin - Admin/tablet field check-in by member name
+// (phone optional; required only as a fallback to disambiguate same-name members).
 export async function POST(req: NextRequest) {
   const auth = await getAuthFromRequest(req);
   if (!auth) return unauthorizedResponse();
@@ -173,9 +184,9 @@ export async function POST(req: NextRequest) {
     const allowWalkIn = body?.allowWalkIn === true;
     const skipPass = body?.skipPass === true;
 
-    if (!sessionId || !name || phoneDigits.length < 4) {
+    if (!sessionId || !name) {
       return NextResponse.json(
-        { error: '세션, 이름, 연락처(최소 뒤 4자리)를 입력해주세요.' },
+        { error: '세션과 이름을 입력해주세요.' },
         { status: 400 }
       );
     }
@@ -189,16 +200,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '취소된 세션은 출석 처리할 수 없습니다' }, { status: 400 });
     }
 
-    const found = await findMemberByNameAndPhone(name, phoneDigits);
+    const found = await findMember(name, phoneDigits);
     if (found.ambiguous) {
+      const ambiguousMessage = phoneDigits.length >= 4
+        ? '동명이인/연락처 중복 후보가 있습니다. 연락처 전체 번호를 입력해주세요.'
+        : '같은 이름의 회원이 여러 명입니다. 연락처(뒤 4자리 이상)를 함께 입력해주세요.';
       return NextResponse.json(
-        { error: '동명이인/연락처 중복 후보가 있습니다. 연락처 전체 번호를 입력해주세요.', code: 'AMBIGUOUS_MEMBER' },
+        { error: ambiguousMessage, code: 'AMBIGUOUS_MEMBER' },
         { status: 409 }
       );
     }
     if (!found.member) {
+      const notFoundMessage = phoneDigits.length >= 4
+        ? '일치하는 회원을 찾지 못했습니다. 이름과 연락처를 확인해주세요.'
+        : '일치하는 회원을 찾지 못했습니다. 이름을 확인하거나 연락처를 함께 입력해주세요.';
       return NextResponse.json(
-        { error: '일치하는 회원을 찾지 못했습니다. 이름과 연락처를 확인해주세요.', code: 'MEMBER_NOT_FOUND' },
+        { error: notFoundMessage, code: 'MEMBER_NOT_FOUND' },
         { status: 404 }
       );
     }

@@ -249,9 +249,9 @@ export default function AdminQR() {
 
                   <form onSubmit={handleFieldCheckin} className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-subtle)] p-4 sm:p-5 space-y-4">
                     <div className="text-center">
-                      <h2 className="text-[20px] font-bold text-[var(--color-text)]">이름과 연락처만 입력하세요</h2>
+                      <h2 className="text-[20px] font-bold text-[var(--color-text)]">이름만 입력하면 출석돼요</h2>
                       <p className="text-[13px] text-[var(--color-text-muted)] mt-1">
-                        예약자 · 현장 참가자 모두 즉시 출석됩니다. 연락처는 뒤 4자리만 입력해도 돼요.
+                        예약자 · 현장 참가자 모두 즉시 출석됩니다. 같은 이름이 여러 명일 때만 연락처를 함께 입력하세요.
                       </p>
                     </div>
 
@@ -268,13 +268,13 @@ export default function AdminQR() {
                         />
                       </label>
                       <label className="space-y-1.5">
-                        <span className="text-[12px] font-medium text-[var(--color-text-secondary)]">연락처</span>
+                        <span className="text-[12px] font-medium text-[var(--color-text-secondary)]">연락처 <span className="text-[var(--color-text-muted)] font-normal">(선택 · 동명이인일 때만)</span></span>
                         <input
                           value={phone}
                           onChange={e => setPhone(e.target.value)}
                           inputMode="numeric"
                           autoComplete="off"
-                          placeholder="01012345678 또는 5678"
+                          placeholder="동명이인일 때만 입력 (예: 5678)"
                           className="w-full h-14 rounded-lg border border-[var(--color-border)] bg-white px-4 text-[18px] font-semibold outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:border-[var(--color-primary)]"
                         />
                       </label>
@@ -317,7 +317,7 @@ export default function AdminQR() {
 
                     <button
                       type="submit"
-                      disabled={checkingIn || !name.trim() || phone.replace(/\D/g, '').length < 4}
+                      disabled={checkingIn || !name.trim()}
                       className="w-full h-14 rounded-lg bg-[var(--color-primary)] text-white text-[16px] font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                     >
                       {checkingIn ? <RefreshCw size={18} className="animate-spin" /> : <UserCheck size={18} />}
