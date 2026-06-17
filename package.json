@@ -14,7 +14,9 @@
     "db:reset": "node scripts/db-reset.mjs",
     "verify:prod-seed": "node scripts/verify-prod-seed.mjs",
     "sheet:init": "node scripts/sheet-init.mjs",
-    "sheet:backfill": "node scripts/sheet-sync-backfill.mjs"
+    "sheet:backfill": "node scripts/sheet-sync-backfill.mjs",
+    "passes:verify-spring": "tsx scripts/verify-spring-2026-passes.mjs",
+    "passes:import-spring": "tsx scripts/import-spring-2026-passes.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.67",
