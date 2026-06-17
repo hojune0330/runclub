@@ -6,12 +6,14 @@ import {
   Edit3, EyeOff, Eye, Trash2, Sparkles, ChevronRight, Wallet, FileText,
   Star, Clock, Pencil, Save, Coins, RotateCcw, ArrowRightCircle, Info,
   CreditCard, RefreshCw, TrendingUp, AlertTriangle, Loader2, ExternalLink,
+  ListPlus,
 } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig, passStatusConfig } from '@/lib/config';
 import { formatKoreanDate, formatPrice, cn, getDaysUntilExpiry, isPassExpiringSoon } from '@/lib/utils';
 import { Tabs, Badge, Modal, FormField, useToast } from '@/components/ui';
 import { api } from '@/lib/api';
+import SpringPassImportModal from './SpringPassImportModal';
 import type { Member, PassProduct, MemberPass, SessionType, PaymentStatus } from '@/types';
 
 // ─────────────────────────────────────────────────────────────────────
@@ -102,6 +104,7 @@ export default function PassManagement() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'expired' | 'expiring' | 'unpaid'>('all');
   const [search, setSearch] = useState('');
   const [showIssueModal, setShowIssueModal] = useState(false);
+  const [showSpringImport, setShowSpringImport] = useState(false);
   const [productEdit, setProductEdit] = useState<PassProduct | null>(null);
   const [productCreate, setProductCreate] = useState(false);
   const [productDetail, setProductDetail] = useState<PassProduct | null>(null);
@@ -159,17 +162,29 @@ export default function PassManagement() {
             수강권 상품과 회원별 발급 내역을 관리합니다.
           </p>
         </div>
-        <button
-          onClick={() => {
-            if (tab === 'products') setProductCreate(true);
-            else setShowIssueModal(true);
-          }}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)] transition-colors"
-        >
-          <Plus size={15} />
-          {tab === 'products' ? '상품 추가' : tab === 'payments' ? '수강권 발급' : '수강권 지급'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSpringImport(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium border border-[var(--color-border)] rounded hover:bg-[var(--color-surface-hover,#f9fafb)] transition-colors"
+            title="확정 장부(40건)를 회원과 매칭해 일괄 발급합니다"
+          >
+            <ListPlus size={15} />
+            장부 일괄 발급
+          </button>
+          <button
+            onClick={() => {
+              if (tab === 'products') setProductCreate(true);
+              else setShowIssueModal(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)] transition-colors"
+          >
+            <Plus size={15} />
+            {tab === 'products' ? '상품 추가' : tab === 'payments' ? '수강권 발급' : '수강권 지급'}
+          </button>
+        </div>
       </div>
+
+      {showSpringImport && <SpringPassImportModal onClose={() => setShowSpringImport(false)} />}
 
       <div className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
         <Tabs<Tab>
