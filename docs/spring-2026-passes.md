@@ -166,3 +166,45 @@ npx tsx scripts/import-spring-2026-passes.mjs --map map.json --apply
 3. dry-run → (필요 시 --map) → --apply 순으로 발급.
 
 > 규칙이 바뀌면 `src/lib/pass-term.ts` **한 곳만** 고치면 모든 화면·스크립트에 반영됩니다.
+
+---
+
+## 6. 관리자 API (CLI 없이 웹에서)
+
+CLI 와 **동일한 lib**(`src/lib/spring-pass-import.ts`)을 쓰는 관리자 전용 엔드포인트.
+관리자 토큰 필요(`role=admin`). 규칙·멱등성이 CLI 와 100% 일치.
+
+| 메서드 | 경로 | 용도 |
+|--------|------|------|
+| `GET`  | `/api/admin/pass-import` | dry-run 미리보기(ready/unmatched/ambiguous/already_issued 분류) |
+| `GET`  | `/api/admin/pass-import?override={...}` | 동명이인 해소 미리보기 |
+| `POST` | `/api/admin/pass-import` (body `{ "override": {...} }`) | `ready` 행만 실제 발급 |
+
+응답 예(미리보기):
+```json
+{
+  "ledger": { "count": 40, "totalAmount": 690000, "openingWaitlistCount": 17 },
+  "stats": { "ready": 4, "unmatched": 34, "ambiguous": 2, "alreadyIssued": 0 },
+  "rows": [ { "name": "한혜지", "status": "ready", "startDate": "2026-05-06", ... } ]
+}
+```
+
+override 형식: `{ "이름#장부순서(0-based)": "010-…-…", "이름": "memberId" }`
+(동명이인 서보경·김준택·유명훈은 phone 으로 지정).
+
+> POST 발급은 `admin_audit_log` 에 `pass.grant` 로 기록됩니다.
+
+---
+
+## 7. 정산/만료 리포트 API
+
+`src/lib/pass-reports.ts` 의 집계를 노출. 장부 일괄 발급분도 함께 잡힌다.
+
+```
+GET /api/admin/pass-reports?withinDays=14&groupBy=month&from=2026-04-01&to=2026-12-31
+```
+
+- **만료 임박/만료**: `expiring.items[]` (D-day, 회원·연락처 포함) — 재등록 유도 리스트.
+- **기간별 매출**: `revenue.periods[]` (월/일 집계, 개강대기 분리 카운트).
+- 개강대기 분리는 `admin_memo LIKE '%개강대기%'` 로 판별(일괄 발급 시 메모에 박힘).
+
