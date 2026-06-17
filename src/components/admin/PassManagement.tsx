@@ -49,14 +49,14 @@ const paymentMethodLabel: Record<string, string> = {
 
 const grantTypeLabel: Record<string, string> = {
   sale: '일반 판매',
-  manual_paid: '관리자 수기결제',
+  manual_paid: '수기 결제',
   free: '무료 지급',
-  promo: '프로모션 지급',
+  promo: '프로모션',
   compensation: '보상 지급',
   staff_adjustment: '내부 조정',
 };
 const settlementStatusLabel: Record<string, string> = {
-  pending: '정산 대기', settled: '정산 완료', waived: '수납 없음', review: '검토 필요',
+  pending: '입금 확인 전', settled: '입금 확인', waived: '무료/면제', review: '확인 필요',
 };
 const settlementTone: Record<string, 'success' | 'warning' | 'danger' | 'muted'> = {
   pending: 'warning', settled: 'success', waived: 'muted', review: 'danger',
@@ -176,7 +176,7 @@ export default function PassManagement() {
           tabs={[
             { id: 'products', label: '수강권 상품', count: passProducts.length },
             { id: 'issued', label: '발급 내역', count: memberPasses.length },
-            { id: 'grants', label: '지급/정산 기록' },
+            { id: 'grants', label: '지급 기록' },
             { id: 'payments', label: '결제 모니터' },
           ]}
           active={tab}
@@ -1022,18 +1022,18 @@ function IssuePassModal({
                     placeholder="예: 체험권 제공, 컴플레인 보상, 지인 프로모션"
                     className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]" />
                 </FormField>
-                <FormField label="정산 상태">
+                <FormField label="입금 상태">
                   <select value={settlementStatus} onChange={e => setSettlementStatus(e.target.value as SettlementStatus)}
                     className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)]">
-                    <option value="pending">정산 대기</option>
-                    <option value="settled">정산 완료</option>
-                    <option value="waived">수납 없음</option>
-                    <option value="review">검토 필요</option>
+                    <option value="pending">입금 확인 전</option>
+                    <option value="settled">입금 확인</option>
+                    <option value="waived">무료/면제</option>
+                    <option value="review">확인 필요</option>
                   </select>
                 </FormField>
               </div>
               <p className="text-[11.5px] text-[var(--color-text-muted)] leading-relaxed">
-                지급 구분·사유·정산 상태는 별도 원장에 저장되어 나중에 관리자/담당자가 한눈에 확인할 수 있습니다.
+                지급 구분·사유·입금 상태는 지급 기록에 저장됩니다. 목록에서는 핵심만 보고, 행을 누르면 수강권 상세를 확인할 수 있습니다.
               </p>
             </div>
           )}
@@ -1979,7 +1979,7 @@ function RefundModal({
 
 
 // ─────────────────────────────────────────────────────────────────────
-// GrantLedgerPanel — admin direct grant / settlement dashboard.
+// GrantLedgerPanel — admin/manager friendly grant ledger dashboard.
 // ─────────────────────────────────────────────────────────────────────
 type PassGrantItem = {
   id: string;
@@ -2077,7 +2077,7 @@ function GrantLedgerPanel({
         <StatCard icon={<Calendar size={14} />} label="이번달 지급"
           value={stats ? `${stats.month.count}건` : '—'}
           sub={stats ? `할인/면제 ${formatPrice(stats.month.discountAmount)}` : ''} tone="success" />
-        <StatCard icon={<Clock size={14} />} label="정산 대기"
+        <StatCard icon={<Clock size={14} />} label="입금 확인 전"
           value={stats ? `${stats.pending.count}건` : '—'}
           sub={stats ? formatPrice(stats.pending.amount) : ''} tone="warning" />
         <StatCard icon={<Wallet size={14} />} label="수납 없음/면제"
@@ -2109,11 +2109,11 @@ function GrantLedgerPanel({
         </select>
         <select value={settlementFilter} onChange={e => setSettlementFilter(e.target.value as 'all' | PassGrantItem['settlementStatus'])}
           className="px-2.5 h-8 text-[12.5px] border border-[var(--color-border)] rounded bg-white">
-          <option value="all">전체 정산상태</option>
-          <option value="pending">정산 대기</option>
-          <option value="settled">정산 완료</option>
-          <option value="waived">수납 없음</option>
-          <option value="review">검토 필요</option>
+          <option value="all">전체 입금상태</option>
+          <option value="pending">입금 확인 전</option>
+          <option value="settled">입금 확인</option>
+          <option value="waived">무료/면제</option>
+          <option value="review">확인 필요</option>
         </select>
         <div className="flex-1" />
         <button onClick={load} disabled={loading}
@@ -2176,9 +2176,9 @@ function GrantLedgerPanel({
                   <th className="text-left font-medium px-4 py-2.5 w-[110px]">회원</th>
                   <th className="text-left font-medium px-4 py-2.5 w-[200px]">수강권</th>
                   <th className="text-center font-medium px-4 py-2.5 w-[120px]">구분</th>
-                  <th className="text-right font-medium px-4 py-2.5 w-[110px]">청구</th>
+                  <th className="text-right font-medium px-4 py-2.5 w-[110px]">받을 금액</th>
                   <th className="text-right font-medium px-4 py-2.5 w-[110px]">할인/면제</th>
-                  <th className="text-center font-medium px-4 py-2.5 w-[110px]">정산</th>
+                  <th className="text-center font-medium px-4 py-2.5 w-[110px]">입금</th>
                   <th className="text-left font-medium px-4 py-2.5 w-[160px]">담당/사유</th>
                   <th className="text-right font-medium px-4 py-2.5 w-[70px]">확인</th>
                 </tr>
@@ -2217,7 +2217,7 @@ function GrantLedgerPanel({
 
       <div className="px-4 py-2.5 border-t border-[var(--color-border)] text-[11.5px] text-[var(--color-text-muted)] flex items-center gap-1.5">
         <Info size={11} />
-        관리자 직접 지급은 별도 원장과 감사 로그에 남습니다. 무료·보상·프로모션 지급은 사유를 함께 남겨 정산 검토에 사용하세요.
+        지급 기록은 핵심 정보만 먼저 보여줍니다. 행을 누르면 수강권 상세를 볼 수 있고, 무료·보상·프로모션 지급은 사유까지 함께 남습니다.
       </div>
     </div>
   );

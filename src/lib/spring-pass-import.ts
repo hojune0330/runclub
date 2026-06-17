@@ -17,7 +17,7 @@
  * ⚠️ 서버 전용(pg 사용). 클라이언트 컴포넌트에서 import 금지.
  */
 
-import { dbAll, dbGet, dbRun, ensureSchema, genId } from './db';
+import { dbAll, dbGet, dbTx, ensureSchema, genId } from './db';
 import {
   buildSpring2026Passes,
   springPassSummary,
@@ -37,6 +37,7 @@ export interface SpringImportRow {
   expiryDate: string;
   months: number;
   amount: number;
+  durationDays: number;
   openingWaitlist: boolean;
   status: SpringImportStatus;
   /** 매칭된 회원(있을 때). */
@@ -75,6 +76,7 @@ async function resolveRow(r: SpringPassRecord, override?: SpringImportOverride):
     expiryDate: r.expiryDate,
     months: r.months,
     amount: r.amount,
+    durationDays: r.durationDays,
     openingWaitlist: r.openingWaitlist,
     status: 'unmatched',
   };
@@ -147,40 +149,132 @@ export interface SpringImportApplyResult extends SpringImportPreview {
   issuedPassIds: string[];
 }
 
+export interface SpringImportApplyOptions {
+  /** 지급 기록에 남길 실행자. API는 로그인 관리자, CLI는 기본 운영 계정을 사용한다. */
+  adminId?: string;
+  adminName?: string | null;
+}
+
+type SpringPassProductRow = {
+  id: string;
+  name: string;
+  category: string;
+  applicable_sessions: string;
+  total_count: number | null;
+  duration_days: number;
+  price: number;
+};
+
 /**
  * 미리보기에서 status==='ready' 인 행만 실제 발급한다.
  * 만료일이 오늘보다 과거면 status='expired', 아니면 'active' 로 넣는다.
  * 결제는 현금/완납으로 기록(장부가 이미 입금 확정분이므로).
+ * member_passes 와 지급 기록(pass_grant_records)은 한 트랜잭션으로 함께 저장한다.
  */
-export async function applySpringImport(override?: SpringImportOverride): Promise<SpringImportApplyResult> {
+export async function applySpringImport(
+  override?: SpringImportOverride,
+  options?: SpringImportApplyOptions,
+): Promise<SpringImportApplyResult> {
   const preview = await buildSpringImportPreview(override);
   const ready = preview.rows.filter((r) => r.status === 'ready' && r.memberId);
   const issuedPassIds: string[] = [];
   const today = new Date().toISOString().slice(0, 10);
+  const adminId = options?.adminId ?? 'spring_pass_import';
+  const adminName = options?.adminName ?? '봄 장부 등록';
 
-  for (const r of ready) {
-    const passId = genId('mp');
-    const status = r.expiryDate < today ? 'expired' : 'active';
-    await dbRun(
-      `INSERT INTO member_passes
-         (id, member_id, product_id, total_count, remaining_count,
-          start_date, expiry_date, issued_date, price, status,
-          payment_status, payment_method, payment_amount, paid_at, admin_memo)
-       VALUES ($1,$2,$3,NULL,NULL,$4,$5,$6,$7,$8,'paid','cash',$7,NOW(),$9)`,
-      [
-        passId,
-        r.memberId,
-        SPRING_PASS_PRODUCT_ID,
-        r.startDate,
-        r.expiryDate,
-        r.paymentDate,
-        r.amount,
-        status,
-        `2026 봄 장부 일괄 등록${r.openingWaitlist ? ' · 4월결제·개강대기' : ''}`,
-      ],
-    );
-    issuedPassIds.push(passId);
+  if (ready.length === 0) {
+    return { ...preview, issued: 0, issuedPassIds };
   }
+
+  const product = await dbGet<SpringPassProductRow>(
+    `SELECT id, name, category, applicable_sessions, total_count, duration_days, price
+       FROM pass_products
+      WHERE id = $1`,
+    [SPRING_PASS_PRODUCT_ID],
+  );
+  if (!product) {
+    throw new Error(`봄 장부 수강권 상품을 찾을 수 없습니다: ${SPRING_PASS_PRODUCT_ID}`);
+  }
+
+  await dbTx(async (client) => {
+    for (const r of ready) {
+      if (!r.memberId) continue;
+
+      // 트랜잭션 시작 후 한 번 더 확인해, 동시에 실행돼도 같은 장부 행이 중복 발급되지 않게 한다.
+      const dup = await client.query<{ id: string }>(
+        `SELECT id FROM member_passes
+          WHERE member_id = $1 AND product_id = $2 AND start_date = $3 AND issued_date = $4`,
+        [r.memberId, SPRING_PASS_PRODUCT_ID, r.startDate, r.paymentDate],
+      );
+      if (dup.rows[0]) continue;
+
+      const passId = genId('mp');
+      const grantId = genId('pgr');
+      const status = r.expiryDate < today ? 'expired' : 'active';
+      const memo = `2026 봄 장부 일괄 등록${r.openingWaitlist ? ' · 4월결제·개강대기' : ''}`;
+
+      await client.query(
+        `INSERT INTO member_passes
+           (id, member_id, product_id, total_count, remaining_count,
+            start_date, expiry_date, issued_date, price, status,
+            payment_status, payment_method, payment_amount, paid_at, admin_memo, updated_at)
+         VALUES ($1,$2,$3,NULL,NULL,$4,$5,$6,$7,$8,'paid','cash',$7,NOW(),$9,NOW())`,
+        [
+          passId,
+          r.memberId,
+          SPRING_PASS_PRODUCT_ID,
+          r.startDate,
+          r.expiryDate,
+          r.paymentDate,
+          r.amount,
+          status,
+          memo,
+        ],
+      );
+
+      await client.query(
+        `INSERT INTO pass_grant_records (
+          id, pass_id, member_id, member_name,
+          product_id, product_name, product_category,
+          admin_id, admin_name, grant_type, settlement_status,
+          total_count, remaining_count, start_date, expiry_date, issued_date,
+          regular_price, charged_amount, discount_amount,
+          payment_status, payment_method, transaction_id,
+          reason, memo, product_snapshot, created_at
+        ) VALUES (
+          $1, $2, $3, $4,
+          $5, $6, $7,
+          $8, $9, 'manual_paid', 'settled',
+          NULL, NULL, $10, $11, $12,
+          $13, $13, 0,
+          'paid', 'cash', NULL,
+          $14, $15, $16::jsonb, NOW()
+        )`,
+        [
+          grantId, passId, r.memberId, r.name,
+          product.id, product.name, product.category,
+          adminId, adminName,
+          r.startDate, r.expiryDate, r.paymentDate,
+          r.amount,
+          '2026 봄 장부 등록', memo,
+          JSON.stringify({
+            id: product.id,
+            name: product.name,
+            category: product.category,
+            applicableSessions: product.applicable_sessions,
+            totalCount: product.total_count,
+            durationDays: r.durationDays,
+            catalogDurationDays: product.duration_days,
+            catalogPrice: product.price,
+            ledgerMonths: r.months,
+            ledgerAmount: r.amount,
+            openingWaitlist: r.openingWaitlist,
+          }),
+        ],
+      );
+      issuedPassIds.push(passId);
+    }
+  });
 
   // 발급 후 상태가 바뀌므로 미리보기를 다시 만들어 정확한 결과를 반환.
   const after = await buildSpringImportPreview(override);

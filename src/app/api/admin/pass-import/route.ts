@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ensureSchema } from '@/lib/db';
+import { dbGet, ensureSchema } from '@/lib/db';
 import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/lib/auth';
 import { logAdminAction } from '@/lib/audit';
 import {
@@ -67,7 +67,11 @@ export async function POST(req: NextRequest) {
     // 본문 없으면 override 없이 진행
   }
 
-  const result = await applySpringImport(override);
+  const admin = await dbGet<{ name: string }>('SELECT name FROM members WHERE id = $1', [auth.memberId]);
+  const result = await applySpringImport(override, {
+    adminId: auth.memberId,
+    adminName: admin?.name ?? null,
+  });
 
   await logAdminAction(req, auth.memberId, {
     action: 'pass.grant',
@@ -77,6 +81,7 @@ export async function POST(req: NextRequest) {
       issued: result.issued,
       issuedPassIds: result.issuedPassIds,
       stats: result.stats,
+      grantLedger: 'pass_grant_records',
     },
   });
 
