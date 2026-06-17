@@ -61,12 +61,35 @@ const statusConfig: Record<ImportStatus, { label: string; tone: 'success' | 'war
   unmatched: { label: '회원 없음', tone: 'danger', icon: UserX },
 };
 
-async function callImport(method: 'GET' | 'POST'): Promise<ImportPreview | ApplyResult> {
-  const res = await fetch('/api/admin/pass-import', {
+type Override = Record<string, string>;
+
+/** 빈 값/공백만 있는 항목은 제거해 깨끗한 override 객체를 만든다. */
+function cleanOverride(ov: Override): Override {
+  const out: Override = {};
+  for (const [k, v] of Object.entries(ov)) {
+    const trimmed = (v ?? '').trim();
+    if (trimmed) out[k] = trimmed;
+  }
+  return out;
+}
+
+async function callImport(
+  method: 'GET' | 'POST',
+  override?: Override,
+): Promise<ImportPreview | ApplyResult> {
+  const ov = override ? cleanOverride(override) : {};
+  const hasOv = Object.keys(ov).length > 0;
+
+  // GET 은 쿼리스트링으로, POST 는 본문으로 override 를 전달한다(라우트가 둘 다 지원).
+  const url = method === 'GET' && hasOv
+    ? `/api/admin/pass-import?override=${encodeURIComponent(JSON.stringify(ov))}`
+    : '/api/admin/pass-import';
+
+  const res = await fetch(url, {
     method,
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: method === 'POST' ? JSON.stringify({}) : undefined,
+    body: method === 'POST' ? JSON.stringify(hasOv ? { override: ov } : {}) : undefined,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -81,20 +104,29 @@ export default function SpringPassImportModal({ onClose }: { onClose: () => void
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState<ApplyResult | null>(null);
+  // 동명이인/회원없음 행을 "이 사람!"으로 지정하기 위한 휴대폰 매핑.
+  // key = `${이름}#${장부순서}`, value = 휴대폰 번호(또는 회원 id).
+  const [override, setOverride] = useState<Override>({});
+
+  const setRowPhone = useCallback((key: string, phone: string) => {
+    setOverride((prev) => ({ ...prev, [key]: phone }));
+  }, []);
+
+  const overrideCount = Object.values(override).filter((v) => v.trim()).length;
 
   const runPreview = useCallback(async () => {
     setLoading(true);
     setError(null);
     setApplied(null);
     try {
-      const data = (await callImport('GET')) as ImportPreview;
+      const data = (await callImport('GET', override)) as ImportPreview;
       setPreview(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : '미리보기에 실패했습니다.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [override]);
 
   const runApply = useCallback(async () => {
     if (!preview) return;
@@ -107,7 +139,7 @@ export default function SpringPassImportModal({ onClose }: { onClose: () => void
     setApplying(true);
     setError(null);
     try {
-      const data = (await callImport('POST')) as ApplyResult;
+      const data = (await callImport('POST', override)) as ApplyResult;
       setApplied(data);
       setPreview(data); // 결과로 표 갱신(이제 ready→already_issued 로 바뀜)
     } catch (e) {
@@ -115,7 +147,7 @@ export default function SpringPassImportModal({ onClose }: { onClose: () => void
     } finally {
       setApplying(false);
     }
-  }, [preview]);
+  }, [preview, override]);
 
   const stats = preview?.stats;
   const blocked = (stats?.unmatched ?? 0) + (stats?.ambiguous ?? 0);
@@ -132,6 +164,7 @@ export default function SpringPassImportModal({ onClose }: { onClose: () => void
           <ul className="list-disc pl-4 space-y-0.5">
             <li>먼저 <b>미리보기</b>로 누가 발급되고 누가 보류되는지 확인하세요.</li>
             <li>4월 결제(개강대기)는 시작 5/6 고정, 그 외는 결제일=시작입니다.</li>
+            <li><b>동명이인·회원없음</b>은 표에서 <b>휴대폰 번호를 입력</b>한 뒤 미리보기를 다시 누르면 지정됩니다.</li>
             <li>이미 발급된 건은 자동으로 건너뜁니다 — <b>여러 번 눌러도 중복 발급되지 않아요.</b></li>
           </ul>
         </div>
@@ -151,7 +184,9 @@ export default function SpringPassImportModal({ onClose }: { onClose: () => void
             className="flex items-center gap-1.5 px-3.5 py-2 text-[13px] font-medium border border-[var(--color-border)] rounded hover:bg-[var(--color-surface-hover,#f9fafb)] transition-colors disabled:opacity-50"
           >
             {loading ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
-            {preview ? '미리보기 새로고침' : '미리보기 (dry-run)'}
+            {preview
+              ? (overrideCount > 0 ? `지정 반영해 다시 미리보기 (${overrideCount})` : '미리보기 새로고침')
+              : '미리보기 (dry-run)'}
           </button>
 
           <button
@@ -240,6 +275,18 @@ export default function SpringPassImportModal({ onClose }: { onClose: () => void
                           {r.reason && (
                             <div className="text-[10.5px] text-[var(--color-text-muted)] mt-0.5">{r.reason}</div>
                           )}
+                          {(r.status === 'ambiguous' || r.status === 'unmatched') && (
+                            <div className="mt-1.5 flex items-center gap-1.5">
+                              <input
+                                type="tel"
+                                inputMode="numeric"
+                                value={override[`${r.name}#${r.index}`] ?? ''}
+                                onChange={(e) => setRowPhone(`${r.name}#${r.index}`, e.target.value)}
+                                placeholder="휴대폰 번호로 지정 (예: 01012345678)"
+                                className="w-[200px] px-2 py-1 text-[11.5px] border border-[var(--color-border)] rounded focus:outline-none focus:border-[var(--color-primary)] tabular-nums"
+                              />
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -253,10 +300,10 @@ export default function SpringPassImportModal({ onClose }: { onClose: () => void
         {/* 보류 안내 */}
         {stats && blocked > 0 && (
           <div className="rounded-md bg-[var(--color-warning-soft,#fffbeb)] border border-[var(--color-warning,#f59e0b)]/30 px-3.5 py-2.5 text-[12px] leading-relaxed text-[var(--color-text-secondary)]">
-            <b className="text-[var(--color-text)]">보류 {blocked}건이 있어요.</b>
+            <b className="text-[var(--color-text)]">보류 {blocked}건이 있어요.</b> 표의 해당 행에 <b>휴대폰 번호를 입력</b>한 뒤 <b>미리보기를 다시</b> 누르면 지정됩니다.
             <ul className="list-disc pl-4 mt-1 space-y-0.5">
-              {stats.unmatched > 0 && <li><b>회원 없음 {stats.unmatched}건</b>: 해당 이름이 회원 DB에 없습니다. 웹에서 먼저 가입해야 발급됩니다.</li>}
-              {stats.ambiguous > 0 && <li><b>동명이인 {stats.ambiguous}건</b>: 같은 이름이 여러 명이라 자동 매칭이 안 됩니다. 휴대폰 번호로 지정이 필요해요(개발자에게 요청).</li>}
+              {stats.ambiguous > 0 && <li><b>동명이인 {stats.ambiguous}건</b>: 같은 이름이 여러 명입니다. 표에서 그 회원의 휴대폰 번호를 입력해 지정하세요.</li>}
+              {stats.unmatched > 0 && <li><b>회원 없음 {stats.unmatched}건</b>: 이름이 회원 DB에 없습니다. 가입된 휴대폰 번호를 입력해보고, 그래도 안 되면 먼저 회원 가입이 필요합니다.</li>}
             </ul>
           </div>
         )}
