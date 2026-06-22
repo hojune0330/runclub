@@ -22,9 +22,9 @@ import { logAdminAction } from '@/lib/audit';
  *     - Mirrored to the Members sheet (status column G) without touching the
  *       manager memo columns (J~O).
  *
- * The endpoints below intentionally do NOT touch sensitive auth columns
- * (password_hash, failed_login_count, locked_until) — those are managed by
- * the dedicated reset-password / login flows.
+ * The endpoints below intentionally do NOT touch password_hash. Reactivation
+ * clears stale login lockout fields so an admin action does not accidentally
+ * leave a member unable to log in after being restored.
  */
 
 export async function DELETE(
@@ -195,6 +195,9 @@ export async function PATCH(
       await dbRun(
         `UPDATE members
             SET is_active = TRUE,
+                failed_login_count = 0,
+                locked_until = NULL,
+                last_login_failed_at = NULL,
                 updated_at = NOW()
           WHERE id = $1`,
         [id]
@@ -223,9 +226,9 @@ export async function PATCH(
       summary:
         action === 'deactivate'
           ? '관리자가 회원을 비활성화 (모든 세션 즉시 무효화)'
-          : '관리자가 회원을 다시 활성화',
+          : '관리자가 회원을 다시 활성화 (로그인 잠금 상태 초기화)',
       beforeValue: { is_active: !!member.is_active },
-      afterValue: { is_active: action === 'activate' },
+      afterValue: { is_active: action === 'activate', loginLockCleared: action === 'activate' },
     });
 
     return NextResponse.json({ success: true, id, action });

@@ -6,6 +6,7 @@ import { getAuthFromRequest, unauthorizedResponse, forbiddenResponse } from '@/l
 import { logAdminAction } from '@/lib/audit';
 import { rateLimit } from '@/lib/rate-limit';
 import { normalizePhone, validateName, validateText } from '@/lib/validation';
+import { recordAuthEvent } from '@/lib/auth-events';
 
 const GENERIC_RESET_MESSAGE =
   '요청이 접수되었습니다. 가입 정보가 확인되면 관리자가 임시 비밀번호를 발급해 안내드립니다.';
@@ -128,7 +129,33 @@ export async function POST(req: NextRequest) {
     );
 
     // Enumeration 방지: 정보가 맞지 않거나 비활성 계정이어도 동일 성공 응답.
-    if (!member || !member.is_active) {
+    // 대신 내부 auth_events 에 원인을 남겨 관리자가 왜 요청함에 안 보이는지
+    // 추적할 수 있게 한다.
+    if (!member) {
+      const phoneOnly = await dbGet<{ id: string; name: string; is_active: boolean }>(
+        `SELECT id, name, is_active FROM members WHERE phone = $1 LIMIT 1`,
+        [phone]
+      );
+      void recordAuthEvent({
+        req,
+        eventType: 'password_reset',
+        reason: phoneOnly ? (phoneOnly.is_active ? 'reset_name_mismatch' : 'reset_inactive') : 'reset_no_account',
+        memberId: phoneOnly?.id ?? null,
+        phone,
+        metadata: { requestName: nameCheck.value },
+      });
+      return NextResponse.json({ success: true, message: GENERIC_RESET_MESSAGE });
+    }
+
+    if (!member.is_active) {
+      void recordAuthEvent({
+        req,
+        eventType: 'password_reset',
+        reason: 'reset_inactive',
+        memberId: member.id,
+        phone,
+        metadata: { requestName: nameCheck.value },
+      });
       return NextResponse.json({ success: true, message: GENERIC_RESET_MESSAGE });
     }
 
@@ -157,6 +184,15 @@ export async function POST(req: NextRequest) {
         [genId('prr'), member.id, nameCheck.value, phone, noteCheck.value ?? null]
       );
     }
+
+    void recordAuthEvent({
+      req,
+      eventType: 'password_reset',
+      reason: 'reset_requested',
+      memberId: member.id,
+      phone,
+      metadata: { requestName: nameCheck.value, reusedPending: !!existing },
+    });
 
     return NextResponse.json({ success: true, message: GENERIC_RESET_MESSAGE });
   } catch (error: any) {

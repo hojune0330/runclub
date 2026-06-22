@@ -295,6 +295,34 @@ async function initSchema(): Promise<void> {
     ALTER TABLE members
       ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ
   `);
+  await dbRun(`
+    ALTER TABLE members
+      ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ,
+      ADD COLUMN IF NOT EXISTS last_login_failed_at TIMESTAMPTZ
+  `);
+
+  // ─── Auth diagnostics ledger ─────────────────────────────────────────────
+  // Append-only support ledger for login/reset troubleshooting. Public auth
+  // responses stay generic, but admins can see whether a member is locked,
+  // inactive, using the wrong name for reset, or simply mistyping passwords.
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS auth_events (
+      id          BIGSERIAL PRIMARY KEY,
+      member_id   TEXT REFERENCES members(id) ON DELETE SET NULL,
+      phone       TEXT,
+      phone_mask  TEXT,
+      event_type  TEXT NOT NULL CHECK (event_type IN ('login','password_reset','session')),
+      reason      TEXT NOT NULL,
+      ip_address  TEXT,
+      user_agent  TEXT,
+      metadata    JSONB,
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_auth_events_created ON auth_events(created_at DESC)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_auth_events_member_created ON auth_events(member_id, created_at DESC)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_auth_events_phone_created ON auth_events(phone, created_at DESC)`);
+  await dbRun(`CREATE INDEX IF NOT EXISTS idx_auth_events_reason_created ON auth_events(reason, created_at DESC)`);
 
   // ─── Sheets member metadata import columns ───────────────────────────────
   // Members sheet J~O are intentionally manager-editable. Core profile fields

@@ -37,7 +37,11 @@ export async function GET(req: NextRequest) {
     SELECT id, name, phone, email, role, join_date, is_active, memo, profile_image,
            sheet_manager_memo, sheet_tag, sheet_member_grade,
            sheet_acquisition_source, sheet_next_contact_date,
-           sheet_assigned_manager, sheet_meta_synced_at
+           sheet_assigned_manager, sheet_meta_synced_at,
+           must_change_password, failed_login_count, locked_until,
+           last_login_at, last_login_failed_at,
+           (SELECT ae.reason FROM auth_events ae WHERE ae.member_id = members.id ORDER BY ae.created_at DESC LIMIT 1) AS last_auth_event_reason,
+           (SELECT ae.created_at FROM auth_events ae WHERE ae.member_id = members.id ORDER BY ae.created_at DESC LIMIT 1) AS last_auth_event_at
     FROM members ORDER BY join_date DESC
   `, []);
 
@@ -58,6 +62,13 @@ export async function GET(req: NextRequest) {
     sheetNextContactDate: m.sheet_next_contact_date,
     sheetAssignedManager: m.sheet_assigned_manager,
     sheetMetaSyncedAt: m.sheet_meta_synced_at,
+    mustChangePassword: !!m.must_change_password,
+    failedLoginCount: Number(m.failed_login_count ?? 0),
+    lockedUntil: m.locked_until,
+    lastLoginAt: m.last_login_at,
+    lastLoginFailedAt: m.last_login_failed_at,
+    lastAuthEventReason: m.last_auth_event_reason,
+    lastAuthEventAt: m.last_auth_event_at,
   })));
 }
 

@@ -66,6 +66,73 @@ export default function MemberManagement() {
     sheetAssignedManager: '담당매니저',
   };
 
+  const authReasonLabel: Record<string, string> = {
+    success: '로그인 성공',
+    invalid_phone: '번호 형식 오류',
+    no_account: '계정 없음',
+    inactive: '비활성 계정',
+    locked: '로그인 잠김',
+    wrong_password: '비밀번호 불일치',
+    rate_limited: '요청 과다',
+    reset_requested: '재설정 요청',
+    reset_name_mismatch: '재설정 이름 불일치',
+    reset_inactive: '비활성 재설정 요청',
+    reset_no_account: '미등록 재설정 요청',
+  };
+
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return `${formatKoreanDate(date.toISOString().slice(0, 10), 'yy.M.d')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  };
+
+  const getLoginSupportInfo = (m: Member) => {
+    const lockedUntil = m.lockedUntil ? new Date(m.lockedUntil) : null;
+    if (lockedUntil && lockedUntil.getTime() > Date.now()) {
+      return {
+        tone: 'danger' as const,
+        label: '로그인 잠김',
+        detail: `${formatDateTime(m.lockedUntil) ?? '잠시 후'}까지 자동 해제`,
+      };
+    }
+    if (!m.isActive) {
+      return { tone: 'muted' as const, label: '비활성', detail: '활성화 전에는 로그인 불가' };
+    }
+    if (m.mustChangePassword) {
+      return { tone: 'warning' as const, label: '비번 변경 필요', detail: '임시 비밀번호 로그인 후 변경 필요' };
+    }
+    if ((m.failedLoginCount ?? 0) > 0) {
+      return {
+        tone: 'warning' as const,
+        label: `실패 ${m.failedLoginCount}회`,
+        detail: `${formatDateTime(m.lastLoginFailedAt) ?? '최근'} 비밀번호 불일치`,
+      };
+    }
+    if (m.lastAuthEventReason === 'reset_name_mismatch') {
+      return { tone: 'warning' as const, label: '이름 확인', detail: '재설정 요청 이름이 회원명과 다름' };
+    }
+    if (m.lastLoginAt) {
+      return { tone: 'success' as const, label: '최근 로그인', detail: formatDateTime(m.lastLoginAt) ?? '로그인 기록 있음' };
+    }
+    return { tone: 'default' as const, label: '이상 없음', detail: '최근 로그인 오류 없음' };
+  };
+
+  const loginSupportMembers = useMemo(() => {
+    return members
+      .filter(m => {
+        const lockedUntil = m.lockedUntil ? new Date(m.lockedUntil) : null;
+        return (
+          !m.isActive ||
+          !!m.mustChangePassword ||
+          (m.failedLoginCount ?? 0) > 0 ||
+          !!(lockedUntil && lockedUntil.getTime() > Date.now()) ||
+          m.lastAuthEventReason === 'reset_name_mismatch'
+        );
+      })
+      .slice(0, 8);
+  }, [members]);
+
   const loadResetRequests = async () => {
     setResetRequestsLoading(true);
     try {
@@ -187,7 +254,13 @@ export default function MemberManagement() {
       const ok = await setMemberActive(selectedMember.id, !willDeactivate);
       if (ok) {
         // Reflect the new state locally so the buttons swap immediately.
-        setSelectedMember({ ...selectedMember, isActive: !willDeactivate });
+        setSelectedMember({
+          ...selectedMember,
+          isActive: !willDeactivate,
+          failedLoginCount: willDeactivate ? selectedMember.failedLoginCount : 0,
+          lockedUntil: willDeactivate ? selectedMember.lockedUntil : null,
+          lastLoginFailedAt: willDeactivate ? selectedMember.lastLoginFailedAt : null,
+        });
       }
     } finally {
       setActionBusy(false);
@@ -311,7 +384,7 @@ export default function MemberManagement() {
         <div>
           <h1 className="page-title">회원 관리</h1>
           <p className="text-[13px] text-[var(--color-text-muted)] mt-0.5">
-            전체 {members.length}명 · 활성 {members.filter(m => m.isActive).length}명
+            전체 {members.length}명 · 활성 {members.filter(m => m.isActive).length}명 · 로그인 확인 {loginSupportMembers.length}명
           </p>
         </div>
         <button
@@ -322,6 +395,55 @@ export default function MemberManagement() {
           회원 등록
         </button>
       </div>
+
+      {/* Login support summary */}
+      <section className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
+        <div className="px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-subtle)] flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-[14px] font-semibold text-[var(--color-text)] flex items-center gap-1.5">
+              <KeyRound size={14} />
+              로그인 확인
+              {loginSupportMembers.length > 0 && <Badge tone="warning">{loginSupportMembers.length}명 확인</Badge>}
+            </h2>
+            <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">
+              잠김·임시 비밀번호·비활성처럼 문의가 생기기 쉬운 상태를 먼저 보여줍니다.
+            </p>
+          </div>
+        </div>
+        {loginSupportMembers.length === 0 ? (
+          <div className="px-4 py-4 text-[13px] text-[var(--color-text-muted)]">
+            현재 바로 확인해야 할 로그인 상태가 없습니다.
+          </div>
+        ) : (
+          <ul className="divide-y divide-[var(--color-border-subtle)]">
+            {loginSupportMembers.map(m => {
+              const info = getLoginSupportInfo(m);
+              return (
+                <li key={m.id} className="px-4 py-3 flex flex-col md:flex-row md:items-center gap-2.5">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[13.5px] font-semibold text-[var(--color-text)]">{m.name}</span>
+                      <span className="text-[12px] text-[var(--color-text-muted)] tabular-nums">{m.phone}</span>
+                      <Badge tone={info.tone}>{info.label}</Badge>
+                    </div>
+                    <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5">
+                      {info.detail}
+                      {m.lastAuthEventReason && ` · 최근 기록: ${authReasonLabel[m.lastAuthEventReason] ?? m.lastAuthEventReason}`}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMember(m)}
+                    className="h-8 px-2.5 text-[12px] rounded border border-[var(--color-border)] bg-white text-[var(--color-text-secondary)] hover:border-[var(--color-border-strong)] self-start md:self-auto"
+                  >
+                    회원 보기
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
 
       {/* Password reset request inbox */}
       <section className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
@@ -561,6 +683,7 @@ export default function MemberManagement() {
                 const isSelected = selectedMember?.id === m.id;
                 const activePasses = activePassCountByMember[m.id] || 0;
                 const lastAttend = lastAttendanceByMember[m.id];
+                const loginInfo = getLoginSupportInfo(m);
                 return (
                   <li
                     key={m.id}
@@ -580,6 +703,7 @@ export default function MemberManagement() {
                           {m.isActive
                             ? <Badge tone="success" className="shrink-0">활성</Badge>
                             : <Badge tone="muted" className="shrink-0">비활성</Badge>}
+                          {loginInfo.label !== '이상 없음' && <Badge tone={loginInfo.tone} className="shrink-0">{loginInfo.label}</Badge>}
                         </div>
                         <p className="text-[12px] text-[var(--color-text-muted)] mt-0.5 tabular-nums truncate">
                           {m.phone}
@@ -616,6 +740,7 @@ export default function MemberManagement() {
                     const isSelected = selectedMember?.id === m.id;
                     const activePasses = activePassCountByMember[m.id] || 0;
                     const lastAttend = lastAttendanceByMember[m.id];
+                    const loginInfo = getLoginSupportInfo(m);
                     return (
                       <tr
                         key={m.id}
@@ -649,11 +774,14 @@ export default function MemberManagement() {
                           {lastAttend ? formatKoreanDate(lastAttend, 'yyyy.M.d') : '—'}
                         </td>
                         <td className="px-4 py-2.5 text-center">
-                          {m.isActive ? (
-                            <Badge tone="success">활성</Badge>
-                          ) : (
-                            <Badge tone="muted">비활성</Badge>
-                          )}
+                          <div className="flex items-center justify-center gap-1 flex-wrap">
+                            {m.isActive ? (
+                              <Badge tone="success">활성</Badge>
+                            ) : (
+                              <Badge tone="muted">비활성</Badge>
+                            )}
+                            {loginInfo.label !== '이상 없음' && <Badge tone={loginInfo.tone}>{loginInfo.label}</Badge>}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -764,6 +892,9 @@ export default function MemberManagement() {
                     <h3 className="text-[16px] font-semibold text-[var(--color-text)]">{selectedMember.name}</h3>
                     {selectedMember.isActive ? <Badge tone="success">활성</Badge> : <Badge tone="muted">비활성</Badge>}
                     {selectedMember.role === 'admin' && <Badge tone="primary">관리자</Badge>}
+                    {getLoginSupportInfo(selectedMember).label !== '이상 없음' && (
+                      <Badge tone={getLoginSupportInfo(selectedMember).tone}>{getLoginSupportInfo(selectedMember).label}</Badge>
+                    )}
                   </div>
                 </div>
               </div>
@@ -784,6 +915,20 @@ export default function MemberManagement() {
                   가입 {formatKoreanDate(selectedMember.joinDate, 'yyyy.M.d')}
                 </div>
               </dl>
+
+              <div className="mt-4 p-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border-subtle)] rounded text-[12.5px] text-[var(--color-text-secondary)] leading-relaxed">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <p className="text-[11px] text-[var(--color-text-muted)]">로그인 상태</p>
+                  <Badge tone={getLoginSupportInfo(selectedMember).tone}>{getLoginSupportInfo(selectedMember).label}</Badge>
+                </div>
+                <p>{getLoginSupportInfo(selectedMember).detail}</p>
+                {selectedMember.lastAuthEventReason && (
+                  <p className="mt-1 text-[12px] text-[var(--color-text-muted)]">
+                    최근 기록: {authReasonLabel[selectedMember.lastAuthEventReason] ?? selectedMember.lastAuthEventReason}
+                    {selectedMember.lastAuthEventAt && ` · ${formatDateTime(selectedMember.lastAuthEventAt) ?? ''}`}
+                  </p>
+                )}
+              </div>
 
               {selectedMember.memo && (
                 <div className="mt-4 p-3 bg-[var(--color-bg-subtle)] border border-[var(--color-border-subtle)] rounded text-[12.5px] text-[var(--color-text-secondary)] leading-relaxed">

@@ -226,6 +226,14 @@ export interface Member {
   sheetNextContactDate?: string | null;
   sheetAssignedManager?: string | null;
   sheetMetaSyncedAt?: string | null;
+  /** Admin-only login support fields. Public auth responses do not expose these. */
+  mustChangePassword?: boolean;
+  failedLoginCount?: number;
+  lockedUntil?: string | null;
+  lastLoginAt?: string | null;
+  lastLoginFailedAt?: string | null;
+  lastAuthEventReason?: string | null;
+  lastAuthEventAt?: string | null;
 }
 
 // ─── Notice Types ───

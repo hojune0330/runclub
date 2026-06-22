@@ -207,6 +207,18 @@ export default function LoginPage() {
             {error && (
               <div className="text-[13px] text-[var(--color-danger)] bg-[var(--color-danger-bg)] border border-[var(--color-danger-border)] px-3 py-2 rounded space-y-2">
                 <p>{error}</p>
+                {mode === 'login' && (
+                  <div className="space-y-1.5 text-[12px] text-[var(--color-text-secondary)]">
+                    <p>연락처 형식(010-XXXX-XXXX), 임시 비밀번호, 계정 활성 상태를 확인해 주세요. 여러 번 실패하면 잠시 잠길 수 있습니다.</p>
+                    <button
+                      type="button"
+                      onClick={openResetRequest}
+                      className="font-medium underline underline-offset-2 text-[var(--color-primary)]"
+                    >
+                      비밀번호 재설정 요청하기
+                    </button>
+                  </div>
+                )}
                 {mode === 'register' && error.includes('이미 가입') && (
                   <button
                     type="button"

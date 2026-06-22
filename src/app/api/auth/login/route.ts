@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { dbGet, dbRun } from '@/lib/db';
+import { dbGet, dbRun, ensureSchema } from '@/lib/db';
 import { createToken, setAuthCookie } from '@/lib/auth';
 import { rateLimit } from '@/lib/rate-limit';
 import { normalizePhone } from '@/lib/validation';
 import { readJsonBody } from '@/lib/http';
+import { recordAuthEvent } from '@/lib/auth-events';
 import bcrypt from 'bcryptjs';
 
 // EXT-C4 (account enumeration): A single, generic message is returned for
@@ -23,6 +24,7 @@ const LOCKOUT_WINDOW_MS = 15 * 60_000;
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureSchema();
     let body: any;
     try {
       body = await readJsonBody(req);
@@ -42,6 +44,12 @@ export async function POST(req: NextRequest) {
     // plus a per-account guard below.
     const flood = rateLimit(req, 'login-flood', { windowMs: 60_000, max: 600 });
     if (!flood.ok) {
+      void recordAuthEvent({
+        req,
+        eventType: 'login',
+        reason: 'rate_limited',
+        metadata: { limiter: 'login-flood', retryAfterSec: flood.retryAfterSec },
+      });
       return NextResponse.json(
         { error: `로그인 요청이 일시적으로 많습니다. ${flood.retryAfterSec}초 후 다시 시도해주세요.` },
         { status: 429, headers: { 'Retry-After': String(flood.retryAfterSec) } }
@@ -67,6 +75,12 @@ export async function POST(req: NextRequest) {
       }
       // Still return the generic message — don't reveal whether the format
       // was even valid (helps against scripted enum).
+      void recordAuthEvent({
+        req,
+        eventType: 'login',
+        reason: 'invalid_phone',
+        phone: typeof phoneRaw === 'string' ? phoneRaw.slice(0, 32) : null,
+      });
       return NextResponse.json({ error: GENERIC_LOGIN_FAIL }, { status: 401 });
     }
 
@@ -76,6 +90,13 @@ export async function POST(req: NextRequest) {
       extraKey: phone,
     });
     if (!accountRl.ok) {
+      void recordAuthEvent({
+        req,
+        eventType: 'login',
+        reason: 'rate_limited',
+        phone,
+        metadata: { limiter: 'login-account', retryAfterSec: accountRl.retryAfterSec },
+      });
       return NextResponse.json(
         { error: `로그인 시도가 너무 많습니다. ${accountRl.retryAfterSec}초 후 다시 시도해주세요.` },
         { status: 429, headers: { 'Retry-After': String(accountRl.retryAfterSec) } }
@@ -95,6 +116,13 @@ export async function POST(req: NextRequest) {
         password,
         '$2a$10$CwTycUXWue0Thq9StjUM0uJ8.F3Dj5CYy7L7qqGq0Kj8aPjKP2gEa'
       );
+      void recordAuthEvent({
+        req,
+        eventType: 'login',
+        reason: !member ? 'no_account' : 'inactive',
+        memberId: member?.id ?? null,
+        phone,
+      });
       return NextResponse.json({ error: GENERIC_LOGIN_FAIL }, { status: 401 });
     }
 
@@ -103,6 +131,14 @@ export async function POST(req: NextRequest) {
     // caller "this account is locked" would itself be an enumeration oracle.
     if (member.locked_until && new Date(member.locked_until).getTime() > Date.now()) {
       console.warn('[auth/login] locked account attempt:', member.id);
+      void recordAuthEvent({
+        req,
+        eventType: 'login',
+        reason: 'locked',
+        memberId: member.id,
+        phone,
+        metadata: { lockedUntil: member.locked_until },
+      });
       return NextResponse.json({ error: GENERIC_LOGIN_FAIL }, { status: 401 });
     }
 
@@ -114,26 +150,63 @@ export async function POST(req: NextRequest) {
       if (nextCount >= LOCKOUT_FAIL_THRESHOLD) {
         const lockUntil = new Date(Date.now() + LOCKOUT_WINDOW_MS).toISOString();
         await dbRun(
-          `UPDATE members SET failed_login_count = $1, locked_until = $2 WHERE id = $3`,
+          `UPDATE members
+              SET failed_login_count = $1,
+                  locked_until = $2,
+                  last_login_failed_at = NOW(),
+                  updated_at = NOW()
+            WHERE id = $3`,
           [nextCount, lockUntil, member.id]
         );
         console.warn('[auth/login] account locked:', member.id);
       } else {
         await dbRun(
-          `UPDATE members SET failed_login_count = $1 WHERE id = $2`,
+          `UPDATE members
+              SET failed_login_count = $1,
+                  last_login_failed_at = NOW(),
+                  updated_at = NOW()
+            WHERE id = $2`,
           [nextCount, member.id]
         );
       }
+      void recordAuthEvent({
+        req,
+        eventType: 'login',
+        reason: 'wrong_password',
+        memberId: member.id,
+        phone,
+        metadata: { failedLoginCount: nextCount, locked: nextCount >= LOCKOUT_FAIL_THRESHOLD },
+      });
       return NextResponse.json({ error: GENERIC_LOGIN_FAIL }, { status: 401 });
     }
 
-    // EXT-I8: Successful login — clear failure state.
+    // EXT-I8: Successful login — clear failure state and store last-login time
+    // for support triage.
     if ((member.failed_login_count ?? 0) > 0 || member.locked_until) {
       await dbRun(
-        `UPDATE members SET failed_login_count = 0, locked_until = NULL WHERE id = $1`,
+        `UPDATE members
+            SET failed_login_count = 0,
+                locked_until = NULL,
+                last_login_at = NOW(),
+                updated_at = NOW()
+          WHERE id = $1`,
+        [member.id]
+      );
+    } else {
+      await dbRun(
+        `UPDATE members SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1`,
         [member.id]
       );
     }
+
+    void recordAuthEvent({
+      req,
+      eventType: 'login',
+      reason: 'success',
+      memberId: member.id,
+      phone,
+      metadata: { mustChangePassword: !!member.must_change_password },
+    });
 
     const token = await createToken({
       memberId: member.id,
