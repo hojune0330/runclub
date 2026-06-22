@@ -4,10 +4,11 @@ import { useMemo, useState, useEffect } from 'react';
 import {
   Sun, Clock, MapPin, Phone, Check, Ban, RotateCcw,
   Sprout, History, StickyNote, RefreshCw, ChevronRight, AlertTriangle,
+  TicketX, Send, X,
 } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { sessionTypeConfig, reservationStatusConfig } from '@/lib/config';
-import { formatKoreanDate, cn, format } from '@/lib/utils';
+import { formatKoreanDate, cn, format, getDaysUntilExpiry } from '@/lib/utils';
 import { Button, ConfirmDialog, EmptyState, useToast } from '@/components/ui';
 import type { Session, Reservation, ReservationStatus, Member } from '@/types';
 
@@ -17,13 +18,29 @@ interface MemberHistory {
   lastAttendedDate: string | null; // YYYY-MM-DD
 }
 
+// 회원이 현재 사용 가능한 수강권의 "임박" 상태 요약.
+//   - expiringDays: 만료까지 남은 일수(0~7일이면 임박)
+//   - lowCount: 횟수권 잔여가 적은지(1~2회)
+//   - remainingCount: 횟수권 잔여(있으면)
+interface PassAlert {
+  productName: string;
+  expiryDate: string;
+  daysLeft: number;
+  expiringSoon: boolean;
+  lowCount: boolean;
+  remainingCount?: number;
+}
+
+const EXPIRY_WARN_DAYS = 7; // 만료 임박 기준(일)
+const LOW_COUNT_WARN = 2;   // 횟수권 잔여 경고 기준(회)
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : '잠시 후 다시 시도해주세요';
 }
 
 export default function TodayDashboard() {
   const {
-    sessions, reservations, members,
+    sessions, reservations, members, memberPasses,
     updateReservationStatus, bulkMarkNoshow,
     refreshReservations, refreshSessions, loading,
   } = useApp();
@@ -69,6 +86,41 @@ export default function TodayDashboard() {
     return m;
   }, [members]);
 
+  // ── 기능 1: 수강권 만료/소진 임박 알리미 ──
+  // 회원별로 "사용중(active)인 수강권 중 가장 임박한 것"을 골라 경고 정보를 만든다.
+  // 만료가 가까운 것(없으면 잔여가 적은 것)을 우선해 1건만 노출 → 현장 응대용으로 단순하게.
+  const passAlertByMember = useMemo(() => {
+    const map = new Map<string, PassAlert>();
+    for (const p of memberPasses) {
+      if (p.status !== 'active') continue;
+      const daysLeft = getDaysUntilExpiry(p);
+      const expiringSoon = daysLeft >= 0 && daysLeft <= EXPIRY_WARN_DAYS;
+      const isCount = p.category === 'count';
+      const remaining = isCount ? (p.remainingCount ?? 0) : undefined;
+      const lowCount = isCount && remaining !== undefined && remaining <= LOW_COUNT_WARN;
+      if (!expiringSoon && !lowCount) continue; // 임박/소진 아닌 건 표시하지 않음
+
+      const candidate: PassAlert = {
+        productName: p.productName,
+        expiryDate: p.expiryDate,
+        daysLeft,
+        expiringSoon,
+        lowCount,
+        remainingCount: remaining,
+      };
+      const prev = map.get(p.memberId);
+      // 더 급한 것을 우선: 만료 임박(daysLeft 작은 것) > 잔여 적은 것
+      if (!prev) {
+        map.set(p.memberId, candidate);
+      } else {
+        const prevUrgency = prev.expiringSoon ? prev.daysLeft : 999;
+        const curUrgency = candidate.expiringSoon ? candidate.daysLeft : 999;
+        if (curUrgency < prevUrgency) map.set(p.memberId, candidate);
+      }
+    }
+    return map;
+  }, [memberPasses]);
+
   // 선택 세션 참여자 — 활성 상태 우선 정렬
   const attendees = useMemo(() => {
     if (!selected) return [];
@@ -93,6 +145,13 @@ export default function TodayDashboard() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+
+  // ── 기능 4: 출석 예정(예약 상태)자에게만 안내 보내기 ──
+  const reservedMemberIds = useMemo(
+    () => attendees.filter(r => r.status === 'reserved').map(r => r.memberId),
+    [attendees]
+  );
+  const [notifyOpen, setNotifyOpen] = useState(false);
 
   const setStatus = async (r: Reservation, status: ReservationStatus) => {
     if (busyId) return;
@@ -208,9 +267,21 @@ export default function TodayDashboard() {
                 </div>
 
                 <div className="bg-white border border-[var(--color-border)] rounded-md overflow-hidden">
-                  <div className="px-4 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
+                  <div className="px-4 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between gap-2">
                     <h2 className="text-[14px] font-semibold text-[var(--color-text)]">참여자 명단</h2>
-                    <span className="text-[12px] text-[var(--color-text-muted)]">{attendees.length}명</span>
+                    <div className="flex items-center gap-2">
+                      {reservedMemberIds.length > 0 && (
+                        <button
+                          onClick={() => setNotifyOpen(true)}
+                          className="inline-flex items-center gap-1 h-8 px-2.5 text-[12px] text-[var(--color-primary)] border border-[var(--color-primary)]/30 rounded hover:bg-[var(--color-primary)]/10"
+                          title="출석 예정(예약)인 회원에게만 푸시 안내를 보냅니다"
+                        >
+                          <Send size={12} />
+                          예약자에게 안내 ({reservedMemberIds.length})
+                        </button>
+                      )}
+                      <span className="text-[12px] text-[var(--color-text-muted)]">{attendees.length}명</span>
+                    </div>
                   </div>
                   {attendees.length === 0 ? (
                     <div className="py-12 text-center text-[13px] text-[var(--color-text-muted)]">
@@ -224,6 +295,7 @@ export default function TodayDashboard() {
                           reservation={r}
                           member={memberById.get(r.memberId)}
                           history={historyByMember.get(r.memberId)}
+                          passAlert={passAlertByMember.get(r.memberId)}
                           busy={busyId === r.id}
                           onMark={(status) => setStatus(r, status)}
                         />
@@ -248,6 +320,121 @@ export default function TodayDashboard() {
         onConfirm={runBulkNoshow}
         onClose={() => setBulkConfirmOpen(false)}
       />
+
+      {notifyOpen && selected && (
+        <NotifyReservedModal
+          session={selected}
+          memberIds={reservedMemberIds}
+          onClose={() => setNotifyOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── 기능 4: 출석 예정(예약)자에게만 푸시 안내 보내기 ───────────────────────
+// 안내는 '예약(reserved)' 상태인 회원에게만 발송한다(출석/노쇼/취소 제외).
+function NotifyReservedModal({ session, memberIds, onClose }: {
+  session: Session;
+  memberIds: string[];
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const [title, setTitle] = useState(`[${session.name}] 안내`);
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const handleSend = async () => {
+    if (!title.trim() || !body.trim() || sending) return;
+    if (memberIds.length === 0) {
+      toast.info('보낼 대상이 없습니다', '출석 예정(예약)인 회원이 없습니다.');
+      return;
+    }
+    setSending(true);
+    try {
+      const res = await fetch('/api/notifications/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title.trim(),
+          body: body.trim(),
+          memberIds, // 출석 예정(예약)자에게만
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error('발송 실패', data?.error || '잠시 후 다시 시도해주세요');
+        return;
+      }
+      toast.success('안내를 보냈어요', `성공 ${data.sent ?? 0}건 · 실패 ${data.failed ?? 0}건`);
+      onClose();
+    } catch (e: unknown) {
+      toast.error('발송 실패', getErrorMessage(e));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4" onClick={onClose}>
+      <div
+        className="w-full sm:max-w-[440px] bg-white rounded-t-2xl sm:rounded-xl shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+          <h3 className="text-[14px] font-semibold text-[var(--color-text)] flex items-center gap-1.5">
+            <Send size={14} className="text-[var(--color-primary)]" />
+            예약자에게 안내 보내기
+          </h3>
+          <button onClick={onClose} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className="rounded-md bg-[var(--color-bg-subtle)] border border-[var(--color-border-subtle)] px-3 py-2 text-[12.5px] text-[var(--color-text-secondary)]">
+            <strong className="text-[var(--color-text)]">{session.name}</strong> 세션의 <strong className="text-[var(--color-primary)]">출석 예정(예약) {memberIds.length}명</strong>에게만 푸시 알림을 보냅니다.
+            <span className="text-[var(--color-text-muted)]"> (출석 완료·노쇼·취소한 회원은 제외)</span>
+          </div>
+
+          <label className="block space-y-1">
+            <span className="text-[12px] font-medium text-[var(--color-text-secondary)]">제목</span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full h-11 rounded-lg border border-[var(--color-border)] px-3 text-[14px] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:border-[var(--color-primary)]"
+              placeholder="안내 제목"
+            />
+          </label>
+          <label className="block space-y-1">
+            <span className="text-[12px] font-medium text-[var(--color-text-secondary)]">내용</span>
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={3}
+              className="w-full rounded-lg border border-[var(--color-border)] px-3 py-2 text-[14px] outline-none resize-none focus:ring-2 focus:ring-[var(--color-primary)]/20 focus:border-[var(--color-primary)]"
+              placeholder="예: 오늘 비 예보로 실내에서 진행합니다. 우산 챙겨 오세요!"
+            />
+          </label>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[var(--color-border)]">
+          <button
+            onClick={onClose}
+            className="h-10 px-4 text-[13px] text-[var(--color-text-secondary)] border border-[var(--color-border)] rounded-md hover:bg-[var(--color-bg-hover)]"
+          >
+            취소
+          </button>
+          <button
+            onClick={handleSend}
+            disabled={sending || !title.trim() || !body.trim()}
+            className="h-10 px-4 text-[13px] font-semibold text-white bg-[var(--color-primary)] rounded-md hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5"
+          >
+            {sending ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
+            {memberIds.length}명에게 보내기
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -325,10 +512,11 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: 'pri
   );
 }
 
-function AttendeeRow({ reservation, member, history, busy, onMark }: {
+function AttendeeRow({ reservation, member, history, passAlert, busy, onMark }: {
   reservation: Reservation;
   member?: Member;
   history?: MemberHistory;
+  passAlert?: PassAlert;
   busy: boolean;
   onMark: (status: ReservationStatus) => void;
 }) {
@@ -337,6 +525,16 @@ function AttendeeRow({ reservation, member, history, busy, onMark }: {
   const phone = member?.phone ?? '';
   const memo = member?.memo;
   const attendedCount = history?.attendedCount ?? 0;
+
+  // 만료/소진 임박 배지 문구 — 만료 임박을 우선 표기, 둘 다면 함께.
+  const alertParts: string[] = [];
+  if (passAlert?.expiringSoon) {
+    alertParts.push(passAlert.daysLeft === 0 ? '오늘 만료' : `${passAlert.daysLeft}일 후 만료`);
+  }
+  if (passAlert?.lowCount) {
+    alertParts.push(`잔여 ${passAlert.remainingCount}회`);
+  }
+  const alertLabel = alertParts.join(' · ');
   // 이 예약이 이미 '출석'으로 집계돼 있으면, 그 1회를 제외한 "이전" 누적을 보여준다.
   const priorCount = status === 'attended' ? Math.max(0, attendedCount - 1) : attendedCount;
   const isNew = priorCount === 0;
@@ -366,6 +564,14 @@ function AttendeeRow({ reservation, member, history, busy, onMark }: {
                 {history?.lastAttendedDate && status !== 'attended' && (
                   <span> · 최근 {formatKoreanDate(history.lastAttendedDate, 'M.d')}</span>
                 )}
+              </span>
+            )}
+            {alertLabel && (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-[var(--color-warning-bg)] text-[var(--color-warning)] border border-[var(--color-warning-border)]"
+                title={passAlert ? `${passAlert.productName} · 만료 ${formatKoreanDate(passAlert.expiryDate, 'yyyy.M.d')}` : undefined}
+              >
+                <TicketX size={10} />수강권 {alertLabel}
               </span>
             )}
           </div>
