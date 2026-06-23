@@ -409,6 +409,12 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ passId, action: 'refund', ...params }),
       }),
+    // 수강권 회수 — 잘못 발급/무효 처리. 결제 로직 없이 사용 불가 상태로 만든다.
+    revoke: (passId: string, params: { reason: string }) =>
+      request<any>('/passes', {
+        method: 'PUT',
+        body: JSON.stringify({ passId, action: 'revoke', ...params }),
+      }),
     // PR-6: extend expiry by relative days OR absolute YYYY-MM-DD.
     extend: (passId: string, params: { days?: number; expiryDate?: string }) =>
       request<any>('/passes', {

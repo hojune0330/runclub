@@ -46,6 +46,7 @@ export type AuditAction =
   | 'pass.adjust'
   | 'pass.payment'
   | 'pass.memo'
+  | 'pass.revoke'
   | 'pass_product.create'
   | 'pass_product.update'
   | 'pass_product.delete'

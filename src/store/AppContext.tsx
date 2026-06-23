@@ -129,6 +129,7 @@ interface AppActions {
   pauseMemberPass: (passId: string) => Promise<void>;
   resumeMemberPass: (passId: string) => Promise<void>;
   refundMemberPass: (passId: string, params: { cancelReason: string; cancelAmount?: number; skipToss?: boolean }) => Promise<boolean>;
+  revokeMemberPass: (passId: string, params: { reason: string }) => Promise<boolean>;
   extendMemberPass: (passId: string, params: { days?: number; expiryDate?: string }) => Promise<boolean>;
   adjustMemberPass: (passId: string, params: { totalCount?: number; remainingCount?: number }) => Promise<boolean>;
   setMemberPassPayment: (passId: string, params: {
@@ -556,6 +557,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshPasses, handleAuthError]);
 
+  const revokeMemberPass = useCallback(async (passId: string, params: { reason: string }): Promise<boolean> => {
+    try {
+      await api.passes.revoke(passId, params);
+      await refreshPasses();
+      return true;
+    } catch (e: any) {
+      if (!handleAuthError(e)) alert(e.message);
+      return false;
+    }
+  }, [refreshPasses, handleAuthError]);
+
   const extendMemberPass = useCallback(async (passId: string, params: { days?: number; expiryDate?: string }) => {
     try {
       await api.passes.extend(passId, params);
@@ -776,7 +788,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     createNotice, deleteNotice, markNoticeRead,
     addMember,
     resetMemberPassword, deleteMember, setMemberActive, setMemberRole,
-    issueMemberPass, pauseMemberPass, resumeMemberPass, refundMemberPass,
+    issueMemberPass, pauseMemberPass, resumeMemberPass, refundMemberPass, revokeMemberPass,
     extendMemberPass, adjustMemberPass, setMemberPassPayment, setMemberPassMemo,
     createPassProduct, updatePassProduct, deactivatePassProduct, deletePassProduct,
     createSessionTag, updateSessionTag, deleteSessionTag,

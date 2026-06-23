@@ -349,7 +349,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'passId와 action이 필요합니다' }, { status: 400 });
     }
 
-    const allowed = ['pause', 'refund', 'resume', 'extend', 'adjust', 'payment', 'memo'] as const;
+    const allowed = ['pause', 'refund', 'resume', 'extend', 'adjust', 'payment', 'memo', 'revoke'] as const;
     if (!allowed.includes(action)) {
       return NextResponse.json({ error: '허용되지 않는 action 값입니다' }, { status: 400 });
     }
@@ -550,6 +550,37 @@ export async function PUT(req: NextRequest) {
       const memo = typeof body.adminMemo === 'string' ? body.adminMemo.slice(0, 1000) : null;
       await dbRun(`UPDATE member_passes SET admin_memo=$1, updated_at=NOW() WHERE id=$2`, [memo, passId]);
       summary = `관리자 메모 변경`;
+    } else if (action === 'revoke') {
+      // 수강권 회수 — 잘못 발급했거나 무효 처리해야 하는 수강권을 사용 불가 상태로 만든다.
+      //   - 환불(refund)과 달리 결제/Toss 로직 없음. 순수 운영상의 회수.
+      //   - 이력 보존을 위해 행을 삭제하지 않고 status='expired'(만료=사용불가)로 두고,
+      //     횟수권은 잔여횟수를 0으로 만들고, 회수 사유를 admin_memo에 남긴다.
+      //   - body.reason (필수): 회수 사유 (2~200자)
+      const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+      if (!reason || reason.length < 2 || reason.length > 200) {
+        return NextResponse.json(
+          { error: '회수 사유는 2~200자 사이로 입력해주세요' },
+          { status: 400 }
+        );
+      }
+      if (before.status === 'refunded') {
+        return NextResponse.json(
+          { error: '이미 환불된 수강권은 회수할 수 없습니다' },
+          { status: 400 }
+        );
+      }
+      await dbRun(`
+        UPDATE member_passes
+           SET status = 'expired',
+               remaining_count = CASE WHEN category = 'count' THEN 0 ELSE remaining_count END,
+               admin_memo = TRIM(BOTH E'\n' FROM COALESCE(admin_memo, '') || E'\n' || $1),
+               updated_at = NOW()
+         WHERE id = $2
+      `, [
+        `[회수 ${new Date().toISOString().split('T')[0]}] ${reason}`,
+        passId,
+      ]);
+      summary = `수강권 회수 (${reason})`;
     }
 
     let updatedRow: any = null;

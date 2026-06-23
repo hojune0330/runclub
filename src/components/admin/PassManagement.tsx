@@ -96,7 +96,7 @@ function errorMessage(error: unknown, fallback: string): string {
 export default function PassManagement() {
   const {
     passProducts, memberPasses, members,
-    issueMemberPass, pauseMemberPass, resumeMemberPass, refundMemberPass,
+    issueMemberPass, pauseMemberPass, resumeMemberPass, refundMemberPass, revokeMemberPass,
     extendMemberPass, adjustMemberPass, setMemberPassPayment, setMemberPassMemo,
     createPassProduct, updatePassProduct, deactivatePassProduct, deletePassProduct,
   } = useApp();
@@ -360,6 +360,7 @@ export default function PassManagement() {
           onPause={async () => { await pauseMemberPass(refreshedPass.id); setToast('수강권이 일시정지되었습니다.'); }}
           onResume={async () => { await resumeMemberPass(refreshedPass.id); setToast('수강권이 재개되었습니다.'); }}
           onRefund={() => { setRefundTarget(refreshedPass); }}
+          onRevoke={async (reason) => { const ok = await revokeMemberPass(refreshedPass.id, { reason }); if (ok) { setToast('수강권이 회수되었습니다.'); setPassDetail(null); } return ok; }}
         />
       )}
 
@@ -1613,7 +1614,7 @@ function Info_({ label, value }: { label: string; value: string }) {
 // PassDetailModal — issued pass detail with all admin tools.
 // ─────────────────────────────────────────────────────────────────────
 function PassDetailModal({
-  pass, onClose, onExtend, onAdjust, onPayment, onMemo, onPause, onResume, onRefund,
+  pass, onClose, onExtend, onAdjust, onPayment, onMemo, onPause, onResume, onRefund, onRevoke,
 }: {
   pass: MemberPass;
   onClose: () => void;
@@ -1622,6 +1623,7 @@ function PassDetailModal({
   onPayment: (params: { paymentStatus: PaymentStatus; paymentMethod?: string; paymentAmount?: number; transactionId?: string }) => Promise<boolean>;
   onMemo: (memo: string) => Promise<boolean>;
   onPause: () => void; onResume: () => void; onRefund: () => void;
+  onRevoke: (reason: string) => Promise<boolean>;
 }) {
   const [section, setSection] = useState<'overview' | 'extend' | 'adjust' | 'payment' | 'memo'>('overview');
   const [extendDays, setExtendDays] = useState<string>('30');
@@ -1635,6 +1637,9 @@ function PassDetailModal({
   const [pTxn, setPTxn] = useState<string>(pass.transactionId ?? '');
   const [memo, setMemo] = useState<string>(pass.adminMemo ?? '');
   const [busy, setBusy] = useState(false);
+  const [revokeOpen, setRevokeOpen] = useState(false);
+  const [revokeReason, setRevokeReason] = useState('');
+  const revokeReasonValid = revokeReason.trim().length >= 2 && revokeReason.trim().length <= 200;
 
   const ps = pass.paymentStatus ?? 'unpaid';
   const daysLeft = getDaysUntilExpiry(pass);
@@ -1702,7 +1707,36 @@ function PassDetailModal({
                 <button onClick={() => { setBusy(true); Promise.resolve(onResume()).finally(() => setBusy(false)); }} disabled={busy}
                   className="px-3 py-1.5 text-[12.5px] text-[var(--color-primary)] border border-[var(--color-primary)]/30 rounded hover:bg-[var(--color-primary)]/10">재개</button>
               )}
+              {pass.status !== 'refunded' && !revokeOpen && (
+                <button onClick={() => { setRevokeReason(''); setRevokeOpen(true); }} disabled={busy}
+                  className="px-3 py-1.5 text-[12.5px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-subtle)]">회수</button>
+              )}
             </div>
+            {revokeOpen && (
+              <div className="bg-[var(--color-bg-subtle)] border border-[var(--color-border)] rounded-md p-3 space-y-2">
+                <p className="text-[12.5px] font-medium text-[var(--color-text)]">수강권 회수</p>
+                <p className="text-[11.5px] text-[var(--color-text-muted)] leading-relaxed">
+                  잘못 발급했거나 무효 처리할 수강권을 사용 불가 상태로 만듭니다. 환불(결제 취소)과 다르며, 이력은 보존됩니다.
+                  {pass.category === 'count' && ' 횟수권은 잔여 횟수가 0으로 처리됩니다.'}
+                </p>
+                <textarea
+                  value={revokeReason}
+                  onChange={e => setRevokeReason(e.target.value)}
+                  rows={2}
+                  maxLength={200}
+                  placeholder="회수 사유 (예: 중복 발급, 결제 오류 등) · 2~200자"
+                  className="w-full px-2.5 py-1.5 text-[12.5px] border border-[var(--color-border)] rounded resize-none focus:outline-none focus:border-[var(--color-primary)]"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => { setBusy(true); const ok = await onRevoke(revokeReason.trim()); setBusy(false); if (ok) { setRevokeOpen(false); setRevokeReason(''); } }}
+                    disabled={busy || !revokeReasonValid}
+                    className="px-3 py-1.5 text-[12.5px] text-white bg-[var(--color-danger)] rounded disabled:opacity-50">회수 처리</button>
+                  <button onClick={() => { setRevokeOpen(false); setRevokeReason(''); }} disabled={busy}
+                    className="px-3 py-1.5 text-[12.5px] text-[var(--color-text-muted)] border border-[var(--color-border)] rounded hover:bg-white">취소</button>
+                </div>
+              </div>
+            )}
             {pass.discountAmount && pass.discountAmount > 0 && (
               <div className="bg-[var(--color-bg-subtle)] p-3 rounded text-[12.5px]">
                 <p className="text-[var(--color-text-muted)] mb-1">할인 적용</p>
