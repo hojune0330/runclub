@@ -389,6 +389,7 @@ export const api = {
       discountReason?: string;
       adminMemo?: string;
       startDate?: string;
+      expiryDate?: string;
       transactionId?: string;
       grantType?: 'sale' | 'manual_paid' | 'free' | 'promo' | 'compensation' | 'staff_adjustment';
       grantReason?: string;

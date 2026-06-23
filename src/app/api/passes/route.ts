@@ -119,6 +119,7 @@ export async function GET(req: NextRequest) {
 //   discountReason : free text
 //   adminMemo      : free text
 //   startDate      : ISO date — defaults to today
+//   expiryDate     : ISO date — optional; overrides startDate + duration_days
 //   transactionId  : provider transaction id (Toss orderId, etc.)
 export async function POST(req: NextRequest) {
   const auth = await getAuthFromRequest(req);
@@ -206,10 +207,25 @@ export async function POST(req: NextRequest) {
     const startDate = typeof body.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.startDate)
       ? body.startDate
       : today;
-    // Compute expiry by adding duration_days to startDate (UTC arithmetic ok for date-only).
     const startMs = new Date(`${startDate}T00:00:00Z`).getTime();
-    const expiryDate = new Date(startMs + product.duration_days * 86400000)
-      .toISOString().split('T')[0];
+    // Expiry: admin may set it explicitly (YYYY-MM-DD). Otherwise we fall back to
+    // startDate + product.duration_days. A custom expiry must not precede the
+    // start date (a same-day 0-length pass is allowed).
+    let expiryDate: string;
+    if (typeof body.expiryDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.expiryDate)) {
+      const expiryMs = new Date(`${body.expiryDate}T00:00:00Z`).getTime();
+      if (expiryMs < startMs) {
+        return NextResponse.json(
+          { error: '종료일은 시작일보다 빠를 수 없습니다' },
+          { status: 400 }
+        );
+      }
+      expiryDate = body.expiryDate;
+    } else {
+      // Compute expiry by adding duration_days to startDate (UTC arithmetic ok for date-only).
+      expiryDate = new Date(startMs + product.duration_days * 86400000)
+        .toISOString().split('T')[0];
+    }
 
     const id = genId('mp');
     const grantId = genId('pgr');

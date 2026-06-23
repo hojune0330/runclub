@@ -121,6 +121,7 @@ interface AppActions {
     discountReason?: string;
     adminMemo?: string;
     startDate?: string;
+    expiryDate?: string;
     grantType?: 'sale' | 'manual_paid' | 'free' | 'promo' | 'compensation' | 'staff_adjustment';
     grantReason?: string;
     settlementStatus?: 'pending' | 'settled' | 'waived' | 'review';

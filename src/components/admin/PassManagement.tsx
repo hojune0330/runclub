@@ -77,6 +77,8 @@ type IssuePassOptions = {
   discountAmount?: number;
   discountReason?: string;
   adminMemo?: string;
+  startDate?: string;
+  expiryDate?: string;
 };
 type ProductFormData = Omit<Partial<PassProduct>, 'totalCount' | 'originalPrice' | 'description' | 'descriptionLong' | 'refundPolicy' | 'imageUrl'> & {
   totalCount?: number | null;
@@ -862,10 +864,34 @@ export function IssuePassModal({
   const yyyy = today.getFullYear();
   const mm = String(today.getMonth() + 1).padStart(2, '0');
   const dd = String(today.getDate()).padStart(2, '0');
-  const startStr = `${yyyy}-${mm}-${dd}`;
-  const expiryDate = selectedProduct ? new Date(today.getTime() + selectedProduct.durationDays * 86400000) : null;
-  const expiryStr = expiryDate
-    ? `${expiryDate.getFullYear()}-${String(expiryDate.getMonth() + 1).padStart(2, '0')}-${String(expiryDate.getDate()).padStart(2, '0')}`
+  const todayStr = `${yyyy}-${mm}-${dd}`;
+
+  // 이용 기간(시작일/종료일)은 관리자가 직접 정할 수 있다.
+  // 기본값: 시작일 = 오늘, 종료일 = 시작일 + 상품 기간(durationDays).
+  // 상품을 바꾸면 기본 종료일을 다시 계산해 채운다(아래 effect).
+  const [startDate, setStartDate] = useState<string>(todayStr);
+  const [expiryDate, setExpiryDate] = useState<string>('');
+  const startStr = startDate;
+  const expiryStr = expiryDate || null;
+
+  const addDaysStr = (baseStr: string, days: number) => {
+    const ms = new Date(`${baseStr}T00:00:00Z`).getTime();
+    return new Date(ms + days * 86400000).toISOString().split('T')[0];
+  };
+
+  // 상품 선택 시 종료일 기본값을 시작일 + 상품 기간으로 설정.
+  useEffect(() => {
+    if (selectedProduct) {
+      setExpiryDate(addDaysStr(startDate || todayStr, selectedProduct.durationDays));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProduct?.id]);
+
+  // 종료일이 시작일보다 빠른지 검사(저장 차단용).
+  const expiryBeforeStart = !!(startDate && expiryDate &&
+    new Date(`${expiryDate}T00:00:00Z`).getTime() < new Date(`${startDate}T00:00:00Z`).getTime());
+  const periodDays = (startDate && expiryDate && !expiryBeforeStart)
+    ? Math.round((new Date(`${expiryDate}T00:00:00Z`).getTime() - new Date(`${startDate}T00:00:00Z`).getTime()) / 86400000)
     : null;
 
   const handleSubmit = async () => {
@@ -877,6 +903,14 @@ export function IssuePassModal({
     const requiresReason = grantType !== 'sale' || discountNum > 0 || finalPrice === 0;
     if (requiresReason && !grantReason.trim() && !discountReason.trim() && !adminMemo.trim()) {
       setError('무료/할인/보상 지급은 지급 사유 또는 관리자 메모를 남겨야 합니다');
+      return;
+    }
+    if (!startDate || !expiryDate) {
+      setError('시작일과 종료일을 입력해주세요');
+      return;
+    }
+    if (expiryBeforeStart) {
+      setError('종료일은 시작일보다 빠를 수 없습니다');
       return;
     }
     setError(null); setSubmitting(true);
@@ -891,6 +925,8 @@ export function IssuePassModal({
         discountAmount: discountNum,
         discountReason: discountReason.trim() || undefined,
         adminMemo: adminMemo.trim() || undefined,
+        startDate,
+        expiryDate,
       });
     } catch (e: unknown) {
       setError(errorMessage(e, '수강권 발급에 실패했습니다'));
@@ -1105,13 +1141,46 @@ export function IssuePassModal({
             </div>
           )}
 
+          {/* 이용 기간 — 시작일/종료일을 관리자가 직접 지정 */}
+          {selectedProduct && (
+            <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-[13px] font-medium text-[var(--color-text)]">이용 기간</label>
+                <button
+                  type="button"
+                  onClick={() => { setStartDate(todayStr); setExpiryDate(addDaysStr(todayStr, selectedProduct.durationDays)); }}
+                  className="text-[12px] text-[var(--color-text-muted)] hover:underline"
+                  title="오늘부터 상품 기본 기간으로 되돌립니다"
+                >
+                  기본값 ({selectedProduct.durationDays}일)
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <FormField label="시작일">
+                  <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+                    className="w-full px-3 h-9 text-[13px] border border-[var(--color-border)] rounded tabular-nums focus:outline-none focus:border-[var(--color-primary)]" />
+                </FormField>
+                <FormField label="종료일">
+                  <input type="date" value={expiryDate} min={startDate || undefined} onChange={e => setExpiryDate(e.target.value)}
+                    className={cn(
+                      'w-full px-3 h-9 text-[13px] border rounded tabular-nums focus:outline-none',
+                      expiryBeforeStart ? 'border-[var(--color-danger)] focus:border-[var(--color-danger)]' : 'border-[var(--color-border)] focus:border-[var(--color-primary)]'
+                    )} />
+                </FormField>
+              </div>
+              {expiryBeforeStart && (
+                <p className="text-[11.5px] text-[var(--color-danger)]">종료일은 시작일보다 빠를 수 없습니다.</p>
+              )}
+            </div>
+          )}
+
           {/* Preview */}
           {selectedProduct && expiryStr && (
             <div className="bg-[var(--color-bg-subtle)] border border-[var(--color-border)] rounded px-3 py-2.5 space-y-1.5">
               <p className="text-[12px] text-[var(--color-text-muted)] flex items-center gap-1"><Calendar size={11} /> 발급 후 정보</p>
               <p className="text-[12.5px] text-[var(--color-text)] tabular-nums">
                 <span className="text-[var(--color-text-muted)]">이용 기간: </span>{startStr} → {expiryStr}
-                <span className="text-[var(--color-text-muted)]"> ({selectedProduct.durationDays}일)</span>
+                {periodDays !== null && <span className="text-[var(--color-text-muted)]"> ({periodDays}일)</span>}
               </p>
               <p className="text-[12.5px] text-[var(--color-text)]">
                 <span className="text-[var(--color-text-muted)]">정가: </span><span className="tabular-nums">{formatPrice(selectedProduct.price)}</span>
@@ -1149,7 +1218,7 @@ export function IssuePassModal({
         <div className="flex items-center gap-2 px-4 md:px-5 py-3 border-t border-[var(--color-border)]">
           <button type="button" onClick={onClose} disabled={submitting}
             className="flex-1 md:flex-initial md:px-5 h-11 inline-flex items-center justify-center text-[13.5px] font-medium text-[var(--color-text)] border border-[var(--color-border)] rounded hover:bg-[var(--color-bg-subtle)] disabled:opacity-50">취소</button>
-          <button type="button" onClick={handleSubmit} disabled={!memberId || !productId || submitting}
+          <button type="button" onClick={handleSubmit} disabled={!memberId || !productId || submitting || expiryBeforeStart}
             className="flex-1 md:flex-initial md:px-5 h-11 inline-flex items-center justify-center gap-1.5 text-[13.5px] font-semibold text-white bg-[var(--color-primary)] rounded hover:bg-[var(--color-primary-hover)] disabled:bg-[var(--color-border)] disabled:text-[var(--color-text-muted)]">
             {submitting ? '발급 중…' : (<><Plus size={15} />발급하기</>)}
           </button>
