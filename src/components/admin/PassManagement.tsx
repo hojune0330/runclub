@@ -773,17 +773,19 @@ function PassesTable({
 // ─────────────────────────────────────────────────────────────────────
 // IssuePassModal — admin issues a pass with optional payment envelope.
 // ─────────────────────────────────────────────────────────────────────
-function IssuePassModal({
-  members, products, existingPasses, onClose, onIssue,
+export function IssuePassModal({
+  members, products, existingPasses, onClose, onIssue, lockedMemberId,
 }: {
   members: Member[];
   products: PassProduct[];
   existingPasses: MemberPass[];
   onClose: () => void;
   onIssue: (memberId: string, productId: string, opts?: IssuePassOptions) => Promise<void>;
+  // 회원관리 등에서 특정 회원에게 발급할 때 — 회원 선택 단계를 잠그고 그 회원으로 고정한다.
+  lockedMemberId?: string;
 }) {
   const [memberQuery, setMemberQuery] = useState('');
-  const [memberId, setMemberId] = useState<string | null>(null);
+  const [memberId, setMemberId] = useState<string | null>(lockedMemberId ?? null);
   const [productId, setProductId] = useState<string | null>(null);
   const [grantType, setGrantType] = useState<GrantType>('sale');
   const [settlementStatus, setSettlementStatus] = useState<SettlementStatus>('pending');
@@ -916,7 +918,7 @@ function IssuePassModal({
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-[13px] font-medium text-[var(--color-text)]">1. 회원 선택</label>
-              {selectedMember && (
+              {selectedMember && !lockedMemberId && (
                 <button type="button" onClick={() => { setMemberId(null); setMemberQuery(''); }} className="text-[12px] text-[var(--color-text-muted)] hover:underline">변경</button>
               )}
             </div>

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Search, Plus, X, Phone, Mail, Calendar as CalIcon,
   KeyRound, UserX, UserCheck, ShieldCheck, ShieldOff, Trash2, Copy,
-  FileSpreadsheet, RefreshCw, AlertTriangle,
+  FileSpreadsheet, RefreshCw, AlertTriangle, TicketPlus,
 } from 'lucide-react';
 import { useApp } from '@/store/AppContext';
 import { useAuth } from '@/store/AuthContext';
@@ -12,12 +12,14 @@ import { api, type PasswordResetRequestDto, type MemberSheetImportPreview } from
 import { sessionTypeConfig, reservationStatusConfig, passStatusConfig } from '@/lib/config';
 import { formatKoreanDate, cn, getDaysUntilExpiry } from '@/lib/utils';
 import { Modal, FormField, Badge, useToast } from '@/components/ui';
+import { IssuePassModal } from '@/components/admin/PassManagement';
 import type { Member } from '@/types';
 
 export default function MemberManagement() {
   const {
     members, memberPasses, reservations, sessions, addMember,
     resetMemberPassword, deleteMember, setMemberActive, setMemberRole, refreshMembers,
+    passProducts, issueMemberPass,
   } = useApp();
   const { user: currentUser } = useAuth();
   const toast = useToast();
@@ -25,6 +27,7 @@ export default function MemberManagement() {
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showIssuePass, setShowIssuePass] = useState(false);
 
   // Admin action busy/result state
   const [actionBusy, setActionBusy] = useState(false);
@@ -954,9 +957,19 @@ export default function MemberManagement() {
 
             {/* Passes */}
             <div className="p-5">
-              <h3 className="text-[13.5px] font-semibold text-[var(--color-text)] mb-3">
-                수강권 <span className="text-[var(--color-text-muted)] font-normal">{memberDetail.passes.length}건</span>
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[13.5px] font-semibold text-[var(--color-text)]">
+                  수강권 <span className="text-[var(--color-text-muted)] font-normal">{memberDetail.passes.length}건</span>
+                </h3>
+                <button
+                  onClick={() => setShowIssuePass(true)}
+                  className="inline-flex items-center gap-1 h-8 px-2.5 text-[12px] text-[var(--color-primary)] border border-[var(--color-primary)]/30 rounded hover:bg-[var(--color-primary)]/10"
+                  title="이 회원에게 수강권을 직접 발급합니다"
+                >
+                  <TicketPlus size={13} />
+                  수강권 발급
+                </button>
+              </div>
               {memberDetail.passes.length === 0 ? (
                 <p className="text-[13px] text-[var(--color-text-muted)] py-6 text-center border border-dashed border-[var(--color-border)] rounded">
                   보유 수강권 없음
@@ -1028,6 +1041,25 @@ export default function MemberManagement() {
             </div>
           </div>
         </section>
+      )}
+
+      {/* 수강권 발급 모달 — 회원관리에서 선택한 회원에게 직접 발급 (회원 고정) */}
+      {showIssuePass && selectedMember && (
+        <IssuePassModal
+          members={members}
+          products={passProducts}
+          existingPasses={memberPasses}
+          lockedMemberId={selectedMember.id}
+          onClose={() => setShowIssuePass(false)}
+          onIssue={async (memberId, productId, opts) => {
+            const r = await issueMemberPass(memberId, productId, opts);
+            if (r) {
+              setShowIssuePass(false);
+              const p = passProducts.find(x => x.id === productId);
+              toast.success('수강권을 발급했습니다', `${selectedMember.name}님에게 ${p?.name ?? '수강권'}을(를) 발급했어요.`);
+            }
+          }}
+        />
       )}
 
       {/* Add modal */}
