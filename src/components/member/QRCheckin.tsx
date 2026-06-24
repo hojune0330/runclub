@@ -212,9 +212,9 @@ export default function QRCheckin() {
       // 어떤 실패든 현장 대안(코치 출석)을 함께 노출해서 막다른 길을 없앤다.
       setShowFallback(true);
       if (msg.includes('수강권')) {
-        setError('예약이 없고 이 세션에 사용할 수 있는 수강권도 없어요. 괜찮아요 — 아래 "현장 체크인이 안 되나요?"로 코치에게 바로 처리받을 수 있어요.');
+        setError('예약이 없고 이 세션에 사용할 수 있는 수강권도 없어요. 괜찮아요 — 구매 연동 전이거나 수강권이 없어도 아래 "현장 체크인이 안 되나요?"로 코치에게 바로 처리받을 수 있어요.');
       } else if (msg.includes('예약')) {
-        setError('예약 없이 체크인하려면 수강권이 필요해요. 아래 현장 체크인 방법으로 코치가 직접 처리해드릴 수 있어요.');
+        setError('예약 없이 QR로 자동 체크인하려면 수강권이 필요해요. 구매 연동 전이거나 예외 처리 대상이면 아래 현장 체크인 방법으로 코치가 직접 처리해드릴 수 있어요.');
       } else if (msg.includes('만료') || msg.includes('유효')) {
         setError('QR 코드가 만료되었어요. 코치 화면의 최신 QR을 다시 스캔하거나, 아래 현장 체크인 방법을 이용하세요.');
       } else if (msg.includes('형식')) {
@@ -268,7 +268,7 @@ export default function QRCheckin() {
           title="수강권이 만료된 상태예요"
           action={{ label: '수강권 보기', onClick: () => window.dispatchEvent(new CustomEvent('member:navigate', { detail: 'passes' })) }}
         >
-          만료된 회원도 현장 출석이 가능해요. QR이 막히면 아래 "현장 체크인이 안 되나요?"에서 코치를 호출해 처리받으세요.
+          만료된 회원도 현장 출석이 가능해요. 구매 연동 전이거나 QR이 막히면 아래 &quot;현장 체크인이 안 되나요?&quot;에서 코치를 호출해 처리받으세요.
         </NoticeBox>
       )}
       {!hasAnyActivePass && !hasOnlyInactivePass && (
@@ -492,7 +492,7 @@ export default function QRCheckin() {
             {showFallback && (
               <div className="p-4 space-y-4">
                 <p className="text-[13px] text-[var(--color-text-secondary)] leading-relaxed">
-                  QR이 먹통이거나, 신규 참가자거나, 수강권이 만료됐어도 괜찮아요. 아래 정보를 코치에게 보여주면 코치가 태블릿에서 바로 출석 처리해드립니다.
+                  QR이 먹통이거나, 신규 참가자거나, 수강권이 없거나, 구매했는데 아직 연동되지 않았어도 괜찮아요. 아래 정보를 코치에게 보여주면 코치가 QR 화면에서 바로 수기 출석 처리해드립니다.
                 </p>
 
                 {/* 코치에게 보여줄 내 신원 카드 */}
@@ -515,8 +515,8 @@ export default function QRCheckin() {
                 <ol className="space-y-2.5">
                   {[
                     '코치에게 "현장 출석이요"라고 말하고 위 이름·연락처를 보여주세요.',
-                    '코치가 태블릿에서 이름/연락처로 검색해 즉시 출석 처리합니다. (예약·수강권 자동 확인)',
-                    '신규이거나 수강권이 만료된 경우, 코치가 체험·결제 안내와 함께 처리해드려요.',
+                    '코치가 QR 화면 또는 태블릿에서 이름/연락처로 검색해 즉시 출석 처리합니다. (예약·수강권 자동 확인)',
+                    '수강권이 없거나 구매 연동 전인 경우, 코치가 확인 후 예외 출석 또는 결제 안내로 처리해드려요.',
                   ].map((text, i) => (
                     <li key={i} className="flex items-start gap-2.5 text-[13px] text-[var(--color-text-secondary)]">
                       <span className="shrink-0 w-5 h-5 rounded-full bg-[var(--color-primary)] text-[11px] font-semibold text-white flex items-center justify-center tabular-nums">
@@ -531,7 +531,7 @@ export default function QRCheckin() {
                   onClick={() =>
                     toast.success(
                       '코치를 호출하세요',
-                      '위 이름·연락처를 코치에게 보여주면 태블릿에서 바로 출석 처리됩니다.'
+                      '위 이름·연락처를 코치에게 보여주면 QR 화면에서 바로 수기 출석 처리됩니다.'
                     )
                   }
                   className="w-full h-11 rounded-lg bg-[var(--color-primary)] text-white text-[14px] font-semibold hover:opacity-90 inline-flex items-center justify-center gap-2"
@@ -553,7 +553,7 @@ export default function QRCheckin() {
                 '미리 예약하면 가장 편하지만, 당일 현장 출석도 언제나 환영해요.',
                 '출석 가능 시간: 세션 시작 60분 전 ~ 종료 60분 후.',
                 '예약이 없어도 사용 가능한 수강권이 있으면 QR 스캔만으로 즉시 출석돼요.',
-                'QR이 안 되면 위 "현장 체크인이 안 되나요?"에서 코치를 호출하세요.',
+                '수강권이 없거나 구매 연동 전이라 QR이 안 되면 위 "현장 체크인이 안 되나요?"에서 코치를 호출하세요.',
               ].map((text, i) => (
                 <li key={i} className="flex items-start gap-2.5 text-[13px] text-[var(--color-text-secondary)]">
                   <Info size={13} className="shrink-0 mt-0.5 text-[var(--color-text-muted)]" />

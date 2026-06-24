@@ -32,10 +32,10 @@ export default function QRCheckinLandingPage() {
       } catch (error: any) {
         if (error instanceof AuthExpiredError || error?.name === 'AuthExpiredError') {
           setState('login');
-          setMessage('로그인 후 다시 QR을 열면 출석 처리됩니다.');
+          setMessage('로그인 후 다시 QR을 열면 출석 처리됩니다. 로그인이나 수강권 연동이 막히면 코치가 이름/연락처로 바로 현장 출석 처리할 수 있습니다.');
         } else {
           setState('error');
-          setMessage(error?.message || '출석 처리 중 오류가 발생했습니다. 코치에게 현장 출석 처리를 요청해주세요.');
+          setMessage(error?.message || '출석 처리 중 오류가 발생했습니다. 코치에게 이름/연락처로 현장 출석 처리를 요청해주세요.');
         }
       }
     };
@@ -94,8 +94,8 @@ export default function QRCheckinLandingPage() {
               앱으로 이동
             </Link>
           )}
-          <p className="text-[12px] text-[var(--color-text-muted)]">
-            문제가 계속되면 코치의 현장 태블릿에서 이름/연락처로 출석할 수 있습니다.
+          <p className="text-[12px] text-[var(--color-text-muted)] leading-relaxed">
+            수강권이 없거나 구매 연동 전이어도 담당자가 QR 화면에서 이름/연락처로 바로 현장 출석 처리할 수 있습니다.
           </p>
         </div>
       </section>
