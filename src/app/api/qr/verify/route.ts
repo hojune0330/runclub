@@ -228,7 +228,14 @@ export async function POST(req: NextRequest) {
       const pass = await findUsablePass(auth.memberId, session);
       if (!pass) {
         return NextResponse.json(
-          { error: '예약이 없고 이 세션에 사용할 수 있는 수강권도 없습니다. 코치에게 현장 확인을 요청해주세요.' },
+          {
+            error: '예약이 없고 이 세션에 사용할 수 있는 수강권도 없습니다. 수강권 구매 연동 전이거나 예외 대상이면 코치에게 이름/연락처 현장 출석 처리를 요청해주세요.',
+            code: 'QR_NO_USABLE_PASS',
+            fallback: 'STAFF_FIELD_CHECKIN',
+            sessionId: session.id,
+            sessionName: session.name,
+            sessionTime: session.start_time,
+          },
           { status: 400 }
         );
       }
@@ -281,7 +288,7 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     if (error?.message === 'NO_REMAINING_COUNT') {
       return NextResponse.json(
-        { error: '수강권 잔여횟수가 부족합니다. 코치에게 현장 확인을 요청해주세요.' },
+        { error: '수강권 잔여횟수가 부족합니다. 코치에게 이름/연락처 현장 출석 처리를 요청해주세요.', code: 'QR_NO_REMAINING_COUNT', fallback: 'STAFF_FIELD_CHECKIN' },
         { status: 409 }
       );
     }

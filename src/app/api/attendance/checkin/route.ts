@@ -287,7 +287,7 @@ export async function POST(req: NextRequest) {
       const pass = skipPass ? null : await findUsablePass(member.id, session);
       if (!pass && !skipPass) {
         return NextResponse.json(
-          { error: '예약이 없고 사용 가능한 수강권도 없습니다. 관리자 무료 처리 옵션이 필요한지 확인해주세요.', code: 'NO_USABLE_PASS' },
+          { error: '예약이 없고 사용 가능한 수강권도 없습니다. 구매 연동 전이거나 담당자 확인 대상이면 수강권 확인 전 예외 출석 옵션을 체크해주세요.', code: 'NO_USABLE_PASS' },
           { status: 409 }
         );
       }
@@ -337,7 +337,11 @@ export async function POST(req: NextRequest) {
       session: { id: session.id, name: session.name, date: session.date, startTime: session.start_time },
       reservationId: reservationId || existing?.id,
       checkedInAt: enriched?.checked_in_at ?? existing?.checked_in_at ?? new Date().toISOString(),
-      message: source === 'already_attended' ? '이미 출석 처리되어 있습니다.' : '출석 처리되었습니다.',
+      message: source === 'already_attended'
+        ? '이미 출석 처리되어 있습니다.'
+        : source === 'walk_in' && skipPass && !passId
+          ? '출석 처리되었습니다. 수강권 확인 전 예외 출석으로 기록했습니다.'
+          : '출석 처리되었습니다.',
     });
   } catch (error: any) {
     if (error?.message === 'NO_REMAINING_COUNT') {
